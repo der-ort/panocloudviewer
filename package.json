@@ -1,0 +1,11 @@
+{
+  "name": "pano-cloud-viewer-monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @der-ort/web dev",
+    "build": "pnpm -r build",
+    "build:viewer": "pnpm --filter @der-ort/pano-cloud-viewer build",
+    "build:web": "pnpm --filter @der-ort/web build",
+    "lint": "pnpm -r lint"
+  }
+}

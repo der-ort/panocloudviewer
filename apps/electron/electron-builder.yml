@@ -1,0 +1,33 @@
+appId: com.der-ort.pano-cloud-viewer
+productName: PanoCloud Viewer
+copyright: Copyright © 2024 der Ort
+
+directories:
+  buildResources: build
+  output: dist-electron
+
+files:
+  - dist/**
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!**/node_modules/*.d.ts"
+  - "!**/node_modules/.bin"
+
+extraResources:
+  - from: "../web/out"
+    to: "web/out"
+    filter: ["**/*"]
+
+mac:
+  category: public.app-category.productivity
+  target: dmg
+
+win:
+  target: nsis
+
+linux:
+  target: AppImage
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
