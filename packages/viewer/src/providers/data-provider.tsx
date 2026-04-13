@@ -48,7 +48,13 @@ export function DataProvider({ adapter, children }: DataProviderProps) {
           adapter.fetchJson<PointCloudMetadata>("metadata.json"),
         ]);
         if (cancelled) return;
-        if (cams.status === "fulfilled") setCameras(cams.value ?? []);
+        if (cams.status === "fulfilled") {
+          const resolved = (cams.value ?? []).map(cam => ({
+            ...cam,
+            image: cam.image ? adapter.resolveUrl(cam.image) : null,
+          }));
+          setCameras(resolved);
+        }
         if (meta.status === "fulfilled") setMetadata(meta.value);
       } catch (e) {
         if (!cancelled) setError(String(e));

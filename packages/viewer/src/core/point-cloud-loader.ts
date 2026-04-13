@@ -15,6 +15,7 @@ export class PointCloudLoader {
   private sceneManager: SceneManager;
   private adapter: FileSourceAdapter;
   private currentClouds: THREE.Object3D[] = [];
+  private hasRgb = false;
 
   constructor(sceneManager: SceneManager, adapter: FileSourceAdapter) {
     this.sceneManager = sceneManager;
@@ -24,7 +25,7 @@ export class PointCloudLoader {
   /** Load a point cloud from the adapter's base URL */
   async load(metadataPath = "metadata.json", pointBudget = 2_000_000): Promise<void> {
     // Lazy-import potree-core (client-only, heavy)
-    const { Potree } = await import("potree-core");
+    const { Potree, PointColorType } = await import("potree-core");
 
     if (!this.sceneManager.potree) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,7 +35,15 @@ export class PointCloudLoader {
     // Clear existing clouds
     this.clear();
 
-    const urlResolver = (relPath: string) => this.adapter.resolveUrl(relPath);
+    // potree-core loadPointCloud accepts either a base URL string
+    // or a RequestManager { fetch, getUrl }. Build the appropriate one.
+    const requestManager = {
+      fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+        this.adapter.fetchWithHeaders
+          ? this.adapter.fetchWithHeaders(input, init)
+          : fetch(input, init),
+      getUrl: (url: string) => Promise.resolve(this.adapter.resolveUrl(url)),
+    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const potree = this.sceneManager.potree as any;
@@ -42,21 +51,87 @@ export class PointCloudLoader {
 
     const pointCloud = await potree.loadPointCloud(
       metadataPath,
-      urlResolver
+      requestManager
     );
 
     pointCloud.material.size = 1.5;
-    pointCloud.material.pointSizeType = 0; // ADAPTIVE
-    pointCloud.material.shape = 2; // CIRCLE
+    pointCloud.material.pointSizeType = 2; // ADAPTIVE
+    pointCloud.material.shape = 1; // CIRCLE
+
+    // Read metadata to detect RGB attribute
+    let hasRgb = false;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const meta = await this.adapter.fetchJson<any>(metadataPath);
+      const attributes: Array<{ name: string }> = meta?.attributes ?? [];
+      hasRgb = attributes.some((a) => {
+        const n = (a.name ?? "").toLowerCase();
+        return n === "rgb" || n === "rgba" || n === "color";
+      });
+    } catch {
+      hasRgb = false;
+    }
+
+    this.hasRgb = hasRgb;
+
+    if (hasRgb) {
+      // Keep newFormat as set by loader; use RGB color type
+      pointCloud.material.pointColorType = PointColorType.RGB;
+    } else {
+      pointCloud.material.newFormat = false;
+      pointCloud.material.pointColorType = PointColorType.HEIGHT;
+    }
+    pointCloud.material.needsUpdate = true;
 
     this.sceneManager.scene.add(pointCloud);
     this.sceneManager.pointClouds.push(pointCloud);
     this.currentClouds.push(pointCloud as THREE.Object3D);
 
     // Fit camera to cloud
-    const box = new THREE.Box3().setFromObject(pointCloud as THREE.Object3D);
-    if (!box.isEmpty()) {
-      this.sceneManager.fitToBox(box);
+    const box = pointCloud.pcoGeometry?.boundingBox ?? pointCloud.boundingBox;
+    const tightBox = pointCloud.pcoGeometry?.tightBoundingBox ?? box;
+    const offset = pointCloud.pcoGeometry?.offset;
+
+    // Build world-space bounding box
+    const worldBox = new THREE.Box3();
+    if (tightBox && offset) {
+      worldBox.copy(tightBox);
+      worldBox.min.add(offset);
+      worldBox.max.add(offset);
+    } else if (box) {
+      worldBox.copy(box);
+    } else {
+      worldBox.setFromObject(pointCloud as THREE.Object3D);
+    }
+
+    if (!worldBox.isEmpty()) {
+      this.sceneManager.fitToBox(worldBox);
+    }
+  }
+
+  /** Set color mode on all loaded clouds */
+  async setColorMode(mode: "rgb" | "height" | "intensity"): Promise<void> {
+    const { PointColorType } = await import("potree-core");
+    for (const cloud of this.currentClouds) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mat = (cloud as any).material;
+      if (!mat) continue;
+      if (mode === "rgb") {
+        if (this.hasRgb) {
+          mat.newFormat = true;
+          mat.pointColorType = PointColorType.RGB;
+        } else {
+          mat.newFormat = false;
+          mat.pointColorType = PointColorType.HEIGHT;
+        }
+      } else if (mode === "height") {
+        mat.newFormat = false;
+        mat.pointColorType = PointColorType.HEIGHT;
+      } else if (mode === "intensity") {
+        mat.newFormat = false;
+        mat.pointColorType = PointColorType.INTENSITY;
+      }
+      mat.needsUpdate = true;
     }
   }
 

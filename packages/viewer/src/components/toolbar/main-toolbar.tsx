@@ -5,10 +5,9 @@ import { Sun, Moon, Camera, Map, Layers, Info, PanelRight } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useTheme } from "../../providers/theme-provider";
-import { MeasureTools } from "./measure-tools";
+import { useLocale } from "../../i18n/locale-context";
 import { ViewControls } from "./view-controls";
 import { DisplayControls } from "./display-controls";
-import { SectionTools } from "./section-tools";
 import { ExportTools } from "./export-tools";
 
 // Inline brand logos as SVG components
@@ -54,6 +53,7 @@ interface MainToolbarProps {
 export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, sidebarOpen }: MainToolbarProps) {
   const { showMarkers, setShowMarkers, showMinimap, setShowMinimap } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
+  const t = useLocale().toolbar;
 
   return (
     <div className="flex items-center h-10 px-2 gap-0 select-none overflow-x-auto">
@@ -70,16 +70,6 @@ export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar,
         <ViewControls />
       </ToolbarSection>
 
-      {/* Measurement tools */}
-      <ToolbarSection label="Measure">
-        <MeasureTools />
-      </ToolbarSection>
-
-      {/* Section / clipping */}
-      <ToolbarSection label="Section">
-        <SectionTools />
-      </ToolbarSection>
-
       {/* Display settings */}
       <ToolbarSection label="Display">
         <DisplayControls />
@@ -92,46 +82,46 @@ export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar,
       <ToolbarSection>
         <ToolbarIconBtn
           icon={<Camera size={14} />}
-          label="Panoramas"
+          label={t.panoramas}
           active={showMarkers}
           onClick={() => setShowMarkers(!showMarkers)}
-          title="Toggle panorama markers"
+          title={t.togglePanoramas}
         />
         <ToolbarIconBtn
           icon={<Map size={14} />}
-          label="Minimap"
+          label={t.minimap}
           active={showMinimap}
           onClick={() => setShowMinimap(!showMinimap)}
-          title="Toggle minimap"
+          title={t.toggleMinimap}
         />
         <ExportTools />
         <ToolbarIconBtn
           icon={<Layers size={14} />}
-          label="Clouds"
+          label={t.clouds}
           active={false}
           onClick={onOpenCloudSelector}
-          title="Point cloud selector"
+          title={t.cloudSelector}
         />
         <ToolbarIconBtn
           icon={resolvedTheme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-          label="Theme"
+          label={t.theme}
           active={false}
           onClick={toggleTheme}
-          title={resolvedTheme === "dark" ? "Switch to light" : "Switch to dark"}
+          title={resolvedTheme === "dark" ? t.switchToLight : t.switchToDark}
         />
         <ToolbarIconBtn
           icon={<Info size={14} />}
-          label="About"
+          label={t.about}
           active={false}
           onClick={onOpenAbout}
-          title="About"
+          title={t.about}
         />
         <ToolbarIconBtn
           icon={<PanelRight size={14} />}
-          label="Sidebar"
+          label={t.sidebar}
           active={sidebarOpen}
           onClick={onToggleSidebar}
-          title="Toggle sidebar"
+          title={t.toggleSidebar}
         />
       </ToolbarSection>
     </div>

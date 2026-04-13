@@ -3,19 +3,14 @@
 import React, { useState } from "react";
 import { Download } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
+import { useLocale } from "../../i18n/locale-context";
 import { ToolbarIconBtn } from "./main-toolbar";
 import { ExportManager } from "../../core/export-manager";
 import type { ExportView, ExportFormat } from "../../types";
 
-const VIEWS: { value: ExportView; label: string }[] = [
-  { value: "top", label: "Top (Plan)" },
-  { value: "front", label: "Front" },
-  { value: "side", label: "Side" },
-  { value: "back", label: "Back" },
-];
-
 export function ExportTools() {
   const { exporter } = useViewer();
+  const t = useLocale().exportPanel;
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<ExportView>("top");
   const [scale, setScale] = useState<1 | 2 | 4>(2);
@@ -36,25 +31,38 @@ export function ExportTools() {
     }
   };
 
+  const views: { value: ExportView; label: string }[] = [
+    { value: "top",   label: t.viewTop },
+    { value: "front", label: t.viewFront },
+    { value: "side",  label: t.viewSide },
+    { value: "back",  label: t.viewBack },
+  ];
+
+  const bgLabels: Record<"white" | "black" | "transparent", string> = {
+    white:       t.bgWhite,
+    black:       t.bgBlack,
+    transparent: t.bgTransparent,
+  };
+
   return (
     <div className="relative">
       <ToolbarIconBtn
         icon={<Download size={14} />}
-        title="Export orthographic image"
+        title={t.exportImageTitle}
         active={open}
         onClick={() => setOpen(!open)}
       />
       {open && (
         <div className="absolute right-0 top-full mt-1 bg-[hsl(var(--popover))] border border-[hsl(var(--border))] rounded-lg shadow-xl z-50 p-3 w-52 text-xs text-foreground">
-          <p className="font-semibold mb-2 text-[hsl(var(--brand))]">Export Image</p>
+          <p className="font-semibold mb-2 text-[hsl(var(--brand))]">{t.title}</p>
 
-          <label className="block mb-1 text-muted-foreground">View</label>
+          <label className="block mb-1 text-muted-foreground">{t.view}</label>
           <select value={view} onChange={e => setView(e.target.value as ExportView)}
             className="w-full mb-2 bg-muted text-foreground rounded px-1 py-0.5 text-xs border border-[hsl(var(--border))]">
-            {VIEWS.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
+            {views.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
           </select>
 
-          <label className="block mb-1 text-muted-foreground">Scale</label>
+          <label className="block mb-1 text-muted-foreground">{t.scale}</label>
           <div className="flex gap-1 mb-2">
             {([1, 2, 4] as const).map(s => (
               <button key={s} onClick={() => setScale(s)}
@@ -64,17 +72,17 @@ export function ExportTools() {
             ))}
           </div>
 
-          <label className="block mb-1 text-muted-foreground">Background</label>
+          <label className="block mb-1 text-muted-foreground">{t.background}</label>
           <div className="flex gap-1 mb-2">
             {(["white", "black", "transparent"] as const).map(b => (
               <button key={b} onClick={() => setBg(b)}
-                className={`flex-1 py-0.5 rounded text-xs border transition-colors capitalize ${bg === b ? "border-[hsl(var(--brand))] text-[hsl(var(--brand))] bg-[hsl(var(--brand)/0.15)]" : "border-[hsl(var(--border))] text-muted-foreground hover:text-foreground"}`}>
-                {b === "transparent" ? "α" : b}
+                className={`flex-1 py-0.5 rounded text-xs border transition-colors ${bg === b ? "border-[hsl(var(--brand))] text-[hsl(var(--brand))] bg-[hsl(var(--brand)/0.15)]" : "border-[hsl(var(--border))] text-muted-foreground hover:text-foreground"}`}>
+                {bgLabels[b]}
               </button>
             ))}
           </div>
 
-          <label className="block mb-1 text-muted-foreground">Format</label>
+          <label className="block mb-1 text-muted-foreground">{t.format}</label>
           <div className="flex gap-1 mb-3">
             {(["png", "jpeg"] as const).map(f => (
               <button key={f} onClick={() => setFmt(f)}
@@ -88,7 +96,7 @@ export function ExportTools() {
             onClick={doExport}
             disabled={exporting}
             className="w-full py-1.5 bg-[hsl(var(--brand))] text-[hsl(var(--brand-foreground))] rounded font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity">
-            {exporting ? "Exporting…" : "Download"}
+            {exporting ? t.exporting : t.download}
           </button>
         </div>
       )}

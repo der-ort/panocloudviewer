@@ -3,9 +3,11 @@
 import React from "react";
 import { Trash2, Download } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
+import { useLocale } from "../../i18n/locale-context";
 import { formatLength, formatArea, formatVolume, formatAngle, formatCoord, exportMeasurementsCSV } from "../../lib/utils";
 import type { Measurement } from "../../types";
 
+// Resolved at runtime inside the component — see TYPE_LABELS below
 function formatValue(m: Measurement): string {
   if (m.value === undefined) return "—";
   switch (m.type) {
@@ -20,13 +22,13 @@ function formatValue(m: Measurement): string {
   }
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  point: "Point", distance: "Distance", height: "Height",
-  area: "Area", volume: "Volume", angle: "Angle", profile: "Profile",
-};
-
 export function MeasurementsPanel() {
   const { measurementList, measurementManager, setMeasurementList } = useViewer();
+  const t = useLocale().measurementsPanel;
+  const TYPE_LABELS: Record<string, string> = {
+    point: t.typePoint, distance: t.typeDistance, height: t.typeHeight,
+    area: t.typeArea, volume: t.typeVolume, angle: t.typeAngle, profile: t.typeProfile,
+  };
 
   const del = (id: string) => {
     measurementManager?.remove(id);
@@ -52,8 +54,8 @@ export function MeasurementsPanel() {
   if (measurementList.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-4 gap-2">
-        <p className="text-xs text-muted-foreground">No measurements yet.</p>
-        <p className="text-[10px] text-muted-foreground">Use the toolbar to start measuring.</p>
+        <p className="text-xs text-muted-foreground">{t.noMeasurements}</p>
+        <p className="text-[10px] text-muted-foreground">{t.useMeasureToolHint}</p>
       </div>
     );
   }
@@ -61,13 +63,13 @@ export function MeasurementsPanel() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-2 py-1.5 border-b border-[hsl(var(--border))] shrink-0">
-        <span className="text-[10px] font-mono text-muted-foreground">{measurementList.length} measurements</span>
+        <span className="text-[10px] font-mono text-muted-foreground">{t.measurementCount(measurementList.length)}</span>
         <div className="flex items-center gap-2">
-          <button onClick={downloadCSV} title="Download CSV" className="text-muted-foreground hover:text-[hsl(var(--brand))] text-[10px] flex items-center gap-1 transition-colors">
-            <Download size={10} /> CSV
+          <button onClick={downloadCSV} title={t.downloadCsv} className="text-muted-foreground hover:text-[hsl(var(--brand))] text-[10px] flex items-center gap-1 transition-colors">
+            <Download size={10} /> {t.csv}
           </button>
-          <button onClick={clearAll} title="Clear all" className="text-muted-foreground hover:text-destructive text-[10px] flex items-center gap-1 transition-colors">
-            <Trash2 size={10} /> Clear all
+          <button onClick={clearAll} title={t.clearAll} className="text-muted-foreground hover:text-destructive text-[10px] flex items-center gap-1 transition-colors">
+            <Trash2 size={10} /> {t.clearAll}
           </button>
         </div>
       </div>

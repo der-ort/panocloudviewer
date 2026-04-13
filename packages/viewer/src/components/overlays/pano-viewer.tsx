@@ -3,9 +3,11 @@
 import React, { useEffect, useRef } from "react";
 import { X, Navigation } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
+import { useLocale } from "../../i18n/locale-context";
 
 export function PanoViewer() {
   const { selectedCamera, setSelectedCamera } = useViewer();
+  const tPano = useLocale().panoViewer;
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null);
 
@@ -79,7 +81,7 @@ export function PanoViewer() {
         <button
           onClick={() => setSelectedCamera(null)}
           className="text-white/70 hover:text-white transition-colors p-1"
-          title="Close panorama"
+          title={tPano.close}
         >
           <X size={18} />
         </button>

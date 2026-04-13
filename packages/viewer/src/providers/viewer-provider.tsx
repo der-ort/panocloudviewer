@@ -8,7 +8,11 @@ import type { MarkerManager } from "../core/marker-manager";
 import type { CameraAnimator } from "../core/camera-animator";
 import type { ExportManager } from "../core/export-manager";
 import type { MinimapRenderer } from "../core/minimap-renderer";
+import type { ClipManager } from "../core/clip-manager";
+import type { ClipBoxEntry } from "../core/clip-manager";
 import type { ActiveTool, CameraData, Measurement, ViewerConfig } from "../types";
+
+export type ColorMode = "rgb" | "height" | "intensity";
 
 interface ViewerContextValue {
   // Core managers (set after Three.js init)
@@ -19,6 +23,7 @@ interface ViewerContextValue {
   cameraAnimator: CameraAnimator | null;
   exporter: ExportManager | null;
   minimap: MinimapRenderer | null;
+  clipManager: ClipManager | null;
 
   // Setters (called by Viewport after init)
   setSceneManager: (sm: SceneManager) => void;
@@ -28,6 +33,7 @@ interface ViewerContextValue {
   setCameraAnimator: (a: CameraAnimator) => void;
   setExporter: (e: ExportManager) => void;
   setMinimap: (r: MinimapRenderer) => void;
+  setClipManager: (c: ClipManager) => void;
 
   // Viewer state
   activeTool: ActiveTool;
@@ -48,6 +54,12 @@ interface ViewerContextValue {
   setShowMinimap: (v: boolean) => void;
   selectedCamera: CameraData | null;
   setSelectedCamera: (cam: CameraData | null) => void;
+  clipBoxEntries: ClipBoxEntry[];
+  setClipBoxEntries: React.Dispatch<React.SetStateAction<ClipBoxEntry[]>>;
+  selectedClipBoxId: string | null;
+  setSelectedClipBoxId: (id: string | null) => void;
+  colorMode: ColorMode;
+  setColorMode: (mode: ColorMode) => void;
 
   config: ViewerConfig;
 }
@@ -73,6 +85,7 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const [cameraAnimator, _setCameraAnimator] = useState<CameraAnimator | null>(null);
   const [exporter, _setExporter] = useState<ExportManager | null>(null);
   const [minimap, _setMinimap] = useState<MinimapRenderer | null>(null);
+  const [clipManager, _setClipManager] = useState<ClipManager | null>(null);
 
   const [activeTool, setActiveTool] = useState<ActiveTool>("none");
   const [pointBudget, setPointBudget] = useState(config.pointBudget ?? 2_000_000);
@@ -83,6 +96,9 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const [showMarkers, setShowMarkers] = useState(true);
   const [showMinimap, setShowMinimap] = useState(config.showMinimap ?? true);
   const [selectedCamera, setSelectedCamera] = useState<import("../types").CameraData | null>(null);
+  const [clipBoxEntries, setClipBoxEntries] = useState<ClipBoxEntry[]>([]);
+  const [selectedClipBoxId, setSelectedClipBoxId] = useState<string | null>(null);
+  const [colorMode, setColorMode] = useState<ColorMode>("rgb");
 
   const setSceneManager = useCallback((sm: SceneManager) => _setSceneManager(sm), []);
   const setLoader = useCallback((l: PointCloudLoader) => _setLoader(l), []);
@@ -91,10 +107,11 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const setCameraAnimator = useCallback((a: CameraAnimator) => _setCameraAnimator(a), []);
   const setExporter = useCallback((e: ExportManager) => _setExporter(e), []);
   const setMinimap = useCallback((r: MinimapRenderer) => _setMinimap(r), []);
+  const setClipManager = useCallback((c: ClipManager) => _setClipManager(c), []);
 
   const value: ViewerContextValue = {
-    sceneManager, loader, measurementManager, markerManager, cameraAnimator, exporter, minimap,
-    setSceneManager, setLoader, setMeasurementManager, setMarkerManager, setCameraAnimator, setExporter, setMinimap,
+    sceneManager, loader, measurementManager, markerManager, cameraAnimator, exporter, minimap, clipManager,
+    setSceneManager, setLoader, setMeasurementManager, setMarkerManager, setCameraAnimator, setExporter, setMinimap, setClipManager,
     activeTool, setActiveTool,
     pointBudget, setPointBudget,
     pointSize, setPointSize,
@@ -104,6 +121,9 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
     showMarkers, setShowMarkers,
     showMinimap, setShowMinimap,
     selectedCamera, setSelectedCamera,
+    clipBoxEntries, setClipBoxEntries,
+    selectedClipBoxId, setSelectedClipBoxId,
+    colorMode, setColorMode,
     config,
   };
 

@@ -2,9 +2,11 @@
 
 import React from "react";
 import { useViewer } from "../../providers/viewer-provider";
+import { useLocale } from "../../i18n/locale-context";
 
 export function DisplayControls() {
   const { pointBudget, setPointBudget, pointSize, setPointSize, loader } = useViewer();
+  const t = useLocale().toolbar;
 
   const handleBudget = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = Number(e.target.value);
@@ -21,7 +23,7 @@ export function DisplayControls() {
   return (
     <div className="flex items-center gap-2 px-1">
       <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
-        <span className="hidden lg:block">Budget</span>
+        <span className="hidden lg:block">{t.budget}</span>
         <input
           type="range"
           min={500_000}
@@ -30,13 +32,13 @@ export function DisplayControls() {
           value={pointBudget}
           onChange={handleBudget}
           className="w-16 accent-[hsl(var(--brand))] h-1"
-          title={`Point budget: ${(pointBudget / 1e6).toFixed(1)}M`}
+          title={t.pointBudgetTitle(pointBudget / 1e6)}
         />
         <span className="w-8 text-right tabular-nums">{(pointBudget / 1e6).toFixed(0)}M</span>
       </label>
 
       <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
-        <span className="hidden lg:block">Size</span>
+        <span className="hidden lg:block">{t.size}</span>
         <input
           type="range"
           min={0.5}
@@ -45,7 +47,7 @@ export function DisplayControls() {
           value={pointSize}
           onChange={handleSize}
           className="w-12 accent-[hsl(var(--brand))] h-1"
-          title={`Point size: ${pointSize.toFixed(1)}`}
+          title={t.pointSizeTitle(pointSize)}
         />
       </label>
     </div>

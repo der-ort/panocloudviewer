@@ -8,6 +8,8 @@ export interface FileSourceAdapter {
   fetchJson<T>(relativePath: string): Promise<T>;
   /** Fetch binary data */
   fetchBinary(relativePath: string): Promise<ArrayBuffer>;
+  /** Optional: fetch with custom headers (used by potree-core RequestManager) */
+  fetchWithHeaders?(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
   /** Optional: list directories (used for multi-project scanning) */
   listDirectories?(path: string): Promise<string[]>;
 }
@@ -36,6 +38,11 @@ export class S3SourceAdapter implements FileSourceAdapter {
     const res = await fetch(this.resolveUrl(relativePath), { headers: this.headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${relativePath}`);
     return res.arrayBuffer();
+  }
+
+  fetchWithHeaders(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const mergedHeaders = { ...this.headers, ...(init?.headers as Record<string, string>) };
+    return fetch(input, { ...init, headers: mergedHeaders });
   }
 }
 

@@ -2,18 +2,20 @@
 
 import React from "react";
 import { useViewer } from "../../providers/viewer-provider";
+import { useLocale } from "../../i18n/locale-context";
 import { ToolbarIconBtn } from "./main-toolbar";
 
-const VIEWS = [
-  { label: "T", title: "Top view", pos: [0, 0, 1], up: [0, 1, 0] },
-  { label: "Fr", title: "Front view", pos: [0, -1, 0], up: [0, 0, 1] },
-  { label: "Bk", title: "Back view", pos: [0, 1, 0], up: [0, 0, 1] },
-  { label: "L", title: "Left view", pos: [-1, 0, 0], up: [0, 0, 1] },
-  { label: "R", title: "Right view", pos: [1, 0, 0], up: [0, 0, 1] },
+const VIEW_DEFS = [
+  { labelKey: "viewTopLabel",   titleKey: "viewTop",   pos: [0, 0, 1],  up: [0, 1, 0] },
+  { labelKey: "viewFrontLabel", titleKey: "viewFront", pos: [0, -1, 0], up: [0, 0, 1] },
+  { labelKey: "viewBackLabel",  titleKey: "viewBack",  pos: [0, 1, 0],  up: [0, 0, 1] },
+  { labelKey: "viewLeftLabel",  titleKey: "viewLeft",  pos: [-1, 0, 0], up: [0, 0, 1] },
+  { labelKey: "viewRightLabel", titleKey: "viewRight", pos: [1, 0, 0],  up: [0, 0, 1] },
 ] as const;
 
 export function ViewControls() {
   const { sceneManager } = useViewer();
+  const t = useLocale().toolbar;
 
   const flyToView = (pos: readonly [number, number, number], up: readonly [number, number, number]) => {
     if (!sceneManager) return;
@@ -30,11 +32,11 @@ export function ViewControls() {
 
   return (
     <>
-      {VIEWS.map(v => (
+      {VIEW_DEFS.map(v => (
         <ToolbarIconBtn
-          key={v.label}
-          icon={<span className="font-mono text-[10px] font-bold">{v.label}</span>}
-          title={v.title}
+          key={v.labelKey}
+          icon={<span className="font-mono text-[10px] font-bold">{t[v.labelKey]}</span>}
+          title={t[v.titleKey]}
           active={false}
           onClick={() => flyToView(v.pos, v.up)}
         />

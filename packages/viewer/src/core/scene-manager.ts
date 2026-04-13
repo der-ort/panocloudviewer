@@ -20,6 +20,7 @@ export class SceneManager {
   private onFpsUpdate?: (fps: number) => void;
   private onPointsUpdate?: (loaded: number) => void;
   private resizeObserver: ResizeObserver;
+  private frameCallbacks: Array<() => void> = [];
   // potree-core Potree instance (set after lazy import)
   potree: unknown = null;
   pointClouds: unknown[] = [];
@@ -95,6 +96,9 @@ export class SceneManager {
         );
       }
 
+      // Frame callbacks (minimap, etc.)
+      this.frameCallbacks.forEach(cb => cb());
+
       this.renderer.render(this.scene, this.camera);
 
       // FPS counter
@@ -108,6 +112,16 @@ export class SceneManager {
       void delta;
     };
     this.animationId = requestAnimationFrame(loop);
+  }
+
+  /** Register a callback to be called every animation frame before render */
+  addFrameCallback(cb: () => void): void {
+    this.frameCallbacks.push(cb);
+  }
+
+  /** Remove a previously registered frame callback */
+  removeFrameCallback(cb: () => void): void {
+    this.frameCallbacks = this.frameCallbacks.filter(fn => fn !== cb);
   }
 
   /** Stop animation loop and dispose resources */

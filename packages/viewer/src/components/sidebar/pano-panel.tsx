@@ -4,10 +4,12 @@ import React, { useState, useMemo } from "react";
 import { Search, Navigation } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useData } from "../../providers/data-provider";
+import { useLocale } from "../../i18n/locale-context";
 
 export function PanoPanel() {
   const { cameraAnimator, markerManager, setSelectedCamera } = useViewer();
   const { cameras } = useData();
+  const t = useLocale().panoPanel;
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<number | null>(null);
 
@@ -36,7 +38,7 @@ export function PanoPanel() {
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search panoramas…"
+            placeholder={t.searchPlaceholder}
             className="flex-1 bg-transparent text-xs outline-none text-foreground placeholder:text-muted-foreground"
           />
         </div>
@@ -46,7 +48,7 @@ export function PanoPanel() {
       {/* List */}
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center mt-8 px-4">No panoramas found</p>
+          <p className="text-xs text-muted-foreground text-center mt-8 px-4">{t.noResults}</p>
         ) : (
           filtered.map(cam => (
             <div
@@ -83,7 +85,7 @@ export function PanoPanel() {
 
               <button
                 onClick={e => { e.stopPropagation(); flyTo(cam.index); }}
-                title="Fly to"
+                title={t.flyTo}
                 className="shrink-0 text-muted-foreground hover:text-[hsl(var(--brand))] transition-colors"
               >
                 <Navigation size={11} />

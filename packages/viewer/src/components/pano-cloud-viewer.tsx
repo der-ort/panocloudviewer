@@ -4,9 +4,11 @@ import React from "react";
 import { ThemeProvider } from "../providers/theme-provider";
 import { ViewerProvider } from "../providers/viewer-provider";
 import { DataProvider } from "../providers/data-provider";
+import { LocaleProvider } from "../i18n/locale-context";
 import { WorkspaceLayout } from "./workspace-layout";
 import { createAdapter } from "../data/file-source-adapter";
 import type { PointCloudSource } from "../types";
+import type { ViewerLocale } from "../i18n/types";
 
 export interface PanoCloudViewerProps {
   /** Data source: S3 bucket, local path, or Electron IPC */
@@ -15,6 +17,16 @@ export interface PanoCloudViewerProps {
   theme?: "light" | "dark";
   /** CSS class applied to the root element */
   className?: string;
+  /**
+   * Override UI strings for internationalisation.
+   * Import a built-in locale (`en`, `de`) or supply a custom `ViewerLocale` object.
+   * Defaults to English when omitted.
+   *
+   * @example
+   * import { de } from '@der-ort/pano-cloud-viewer/i18n';
+   * <PanoCloudViewer locale={de} ... />
+   */
+  locale?: ViewerLocale;
 }
 
 /**
@@ -31,18 +43,20 @@ export interface PanoCloudViewerProps {
  * />
  * ```
  */
-export function PanoCloudViewer({ source, theme = "dark", className }: PanoCloudViewerProps) {
+export function PanoCloudViewer({ source, theme = "dark", className, locale }: PanoCloudViewerProps) {
   const adapter = createAdapter(source);
   const config = { source };
   return (
-    <ThemeProvider defaultTheme={theme}>
-      <DataProvider adapter={adapter}>
-        <ViewerProvider config={config}>
-          <div className={`w-full h-full ${className ?? ""}`}>
-            <WorkspaceLayout />
-          </div>
-        </ViewerProvider>
-      </DataProvider>
-    </ThemeProvider>
+    <LocaleProvider locale={locale}>
+      <ThemeProvider defaultTheme={theme}>
+        <DataProvider adapter={adapter}>
+          <ViewerProvider config={config}>
+            <div className={`w-full h-full ${className ?? ""}`}>
+              <WorkspaceLayout />
+            </div>
+          </ViewerProvider>
+        </DataProvider>
+      </ThemeProvider>
+    </LocaleProvider>
   );
 }
