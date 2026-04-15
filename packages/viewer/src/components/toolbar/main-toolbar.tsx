@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Sun, Moon, Camera, Map, Layers, Info, PanelRight } from "lucide-react";
+import { Sun, Moon, Camera, Map, Layers, Info, PanelRight, Sliders } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useTheme } from "../../providers/theme-provider";
@@ -47,10 +47,12 @@ interface MainToolbarProps {
   onOpenAbout?: () => void;
   onOpenCloudSelector?: () => void;
   onToggleSidebar?: () => void;
+  onToggleRenderSettings?: () => void;
   sidebarOpen?: boolean;
+  renderSettingsOpen?: boolean;
 }
 
-export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, sidebarOpen }: MainToolbarProps) {
+export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, sidebarOpen, renderSettingsOpen }: MainToolbarProps) {
   const { showMarkers, setShowMarkers, showMinimap, setShowMinimap } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().toolbar;
@@ -60,9 +62,6 @@ export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar,
       {/* Logo */}
       <div className="flex items-center gap-1.5 pr-3 mr-1 border-r border-[hsl(var(--toolbar-border))] shrink-0">
         <BildmarkeIcon className="w-5 h-5 text-[hsl(var(--brand))]" />
-        <span className="text-xs font-semibold tracking-tight hidden md:block" style={{ fontFamily: "var(--font-heading)" }}>
-          PanoCloud
-        </span>
       </div>
 
       {/* View controls */}
@@ -73,6 +72,12 @@ export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar,
       {/* Display settings */}
       <ToolbarSection label="Display">
         <DisplayControls />
+        <ToolbarIconBtn
+          icon={<Sliders size={14} />}
+          active={renderSettingsOpen}
+          onClick={onToggleRenderSettings}
+          title="Rendering settings"
+        />
       </ToolbarSection>
 
       {/* Spacer */}

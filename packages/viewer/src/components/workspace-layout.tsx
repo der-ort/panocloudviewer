@@ -9,6 +9,7 @@ import { MainToolbar } from "./toolbar/main-toolbar";
 import { ToolRail } from "./toolbar/tool-rail";
 import { Sidebar } from "./sidebar/sidebar";
 import { PanoViewer } from "./overlays/pano-viewer";
+import { RenderingSettings } from "./overlays/rendering-settings";
 
 const Viewport = lazy(() => import("./viewport").then(m => ({ default: m.Viewport })));
 
@@ -30,6 +31,7 @@ interface WorkspaceLayoutProps {
 
 export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
   const { fps, pointBudget, activeTool, selectedCamera } = useViewer();
   const { metadata } = useData();
   const t = useLocale().viewport;
@@ -38,7 +40,12 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
     <div className={cn("flex flex-col h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden", className)}>
       {/* Top toolbar — logo, views, display, toggles */}
       <div className="shrink-0 border-b border-[hsl(var(--border))] bg-[hsl(var(--toolbar-bg,var(--card)))] z-20">
-        <MainToolbar onToggleSidebar={() => setSidebarOpen(o => !o)} sidebarOpen={sidebarOpen} />
+        <MainToolbar
+          onToggleSidebar={() => setSidebarOpen(o => !o)}
+          sidebarOpen={sidebarOpen}
+          onToggleRenderSettings={() => setRenderSettingsOpen(o => !o)}
+          renderSettingsOpen={renderSettingsOpen}
+        />
       </div>
 
       {/* Main content: tool rail + viewport + right sidebar */}
@@ -52,6 +59,7 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
             <Viewport />
           </Suspense>
           {selectedCamera && <PanoViewer />}
+          <RenderingSettings open={renderSettingsOpen} onClose={() => setRenderSettingsOpen(false)} />
         </div>
 
         {/* Right sidebar */}

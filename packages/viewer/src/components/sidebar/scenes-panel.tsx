@@ -80,8 +80,9 @@ export function ScenesPanel() {
 
     // Restore color mode
     if (scene.colorMode && loader) {
-      await loader.setColorMode(scene.colorMode);
-      setColorMode(scene.colorMode);
+      const cm = scene.colorMode as import("../../core/point-cloud-loader").ColorMode;
+      await loader.setColorMode(cm);
+      setColorMode(cm);
     }
 
     // Restore point size & budget

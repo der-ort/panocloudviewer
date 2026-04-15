@@ -1,51 +1,360 @@
 # PanoCloudViewer
 
-Embeddable React component library for viewing Potree 2.0 point clouds and 360° panoramic images. Published as `@der-ort/pano-cloud-viewer`.
+Embeddable React component library for viewing Potree 2.0 point clouds and 360° panoramic images.
+Package name: `@der-ort/pano-cloud-viewer`
 
-## Monorepo structure
+---
+
+## Monorepo Structure
 
 ```
-packages/viewer/   → Main library (React + Three.js + Potree)
-apps/web/          → Next.js demo app
-apps/electron/     → Electron desktop wrapper
-docs/              → Documentation (Markdown)
+packages/viewer/        → Main library (React + Three.js + potree-core)
+  src/
+    components/         → React UI components
+      toolbar/          → MainToolbar, ViewControls, DisplayControls, MeasureTools, SectionTools, ExportTools, ToolRail
+      sidebar/          → Sidebar, PanoPanel, ScenePanel, MeasurementsPanel, ClassificationPanel, ScenesPanel
+      overlays/         → PanoViewer, AboutDialog, RenderingSettings
+      pano-cloud-viewer.tsx  → Root drop-in component
+      viewport.tsx           → Three.js wiring component
+      workspace-layout.tsx   → Shell layout (toolbar + viewport + sidebar)
+    core/               → Manager classes (Three.js, no React)
+    providers/          → React context providers
+    data/               → FileSourceAdapter and implementations
+    i18n/               → ViewerLocale, en, de, LocaleProvider
+    themes/             → CSS custom property themes (smart-agile.css)
+    lib/                → Utilities (cn, format helpers)
+    types.ts            → All exported TypeScript types
+    index.ts            → Public exports
+
+apps/web/               → Next.js demo / documentation site
+apps/electron/          → Electron desktop wrapper
+docs/                   → Documentation (Markdown)
 ```
+
+---
 
 ## Commands
 
 ```sh
-pnpm install                            # Install all dependencies
-pnpm build                              # Build everything
-pnpm dev                                # Run Next.js dev server
-pnpm --filter @der-ort/pano-cloud-viewer build  # Build viewer library only
-pnpm build:web                          # Build Next.js app (static export → apps/web/out/)
-pnpm lint                               # TypeScript check
+pnpm install                                          # Install all dependencies
+pnpm build                                            # Build everything
+pnpm dev                                              # Run Next.js dev server (apps/web)
+pnpm --filter @der-ort/pano-cloud-viewer build        # Build viewer library only
+pnpm build:web                                        # Build Next.js static export → apps/web/out/
+pnpm lint                                             # TypeScript check across all packages
 ```
 
-## Architecture
+---
 
-- **Provider pattern**: `ViewerProvider` (core state + managers), `DataProvider` (cameras/metadata), `ThemeProvider` (dark/light)
-- **Manager classes**: `SceneManager`, `PointCloudLoader`, `MeasurementManager`, `MarkerManager`, `ExportManager`, `CameraAnimator`, `MinimapRenderer` — encapsulate Three.js logic
-- **Adapter pattern**: `FileSourceAdapter` interface with `S3SourceAdapter` and `ElectronSourceAdapter` implementations
-- **Lazy loading**: Viewport and potree-core are lazy-imported to avoid SSR issues
+## Architecture: Three-Layer Model
+
+```
+┌─────────────────────────────────────────────────────┐
+│  LAYER 1 — React / Provider                         │
+│  ViewerProvider · DataProvider · ThemeProvider      │
+│  LocaleProvider                                     │
+│  Holds UI state; stores manager refs after init     │
+├─────────────────────────────────────────────────────┤
+│  LAYER 2 — Manager Classes (Three.js logic)         │
+│  SceneManager · PointCloudLoader · CameraAnimator   │
+│  MarkerManager · MeasurementManager · ClipManager   │
+│  ExportManager · MinimapRenderer · PresentationMgr  │
+│  Instantiated inside Viewport; passed up via setters│
+├─────────────────────────────────────────────────────┤
+│  LAYER 3 — Renderer / WebGL                         │
+│  THREE.WebGLRenderer · potree-core · OrbitControls  │
+│  FlyControls · TransformControls                    │
+└─────────────────────────────────────────────────────┘
+```
+
+**Layer 1 (Provider/React)**: Holds all UI state with `useState`. Providers expose their values through React context. Manager instances (layer 2) are stored *in React state as refs* after Viewport initialises them — this lets toolbar and sidebar components call manager methods without prop-drilling.
+
+**Layer 2 (Managers)**: Plain TypeScript classes that own Three.js objects and implement all 3D logic. They know nothing about React. They call back into React state via callback props (e.g. `onChange`, `onFpsUpdate`) rather than importing context directly.
+
+**Layer 3 (Three.js / WebGL)**: The raw rendering stack — `THREE.WebGLRenderer`, `potree-core`'s octree streaming, and the Three.js controls.
+
+---
+
+## Manager Classes
+
+### `SceneManager` (`core/scene-manager.ts`)
+Central Three.js scene, camera, renderer, and animation loop.
+
+- **Constructor**: `{ canvas, onFpsUpdate?, onPointsUpdate? }` — creates Scene, PerspectiveCamera, WebGLRenderer, OrbitControls, lights, ResizeObserver.
+- **`start()`**: Starts `requestAnimationFrame` loop. Each frame: updates active controls → calls `potree.updatePointClouds()` → fires frame callbacks → renders → counts FPS.
+- **`setNavigationMode(mode)`**: Switches between `"orbit"`, `"fly"`, `"earth"`. Orbit = full-sphere OrbitControls. Fly = FlyControls (WASD + drag-to-look), orbit disabled. Earth = OrbitControls with `screenSpacePanning=true` and `maxPolarAngle=π/2.05` (camera stays above horizon, map-like panning).
+- **`addFrameCallback(cb)` / `removeFrameCallback(cb)`**: Register arbitrary callbacks run every frame before render. Used by MinimapRenderer.
+- **`fitToBox(box)`**: Positions camera to frame a bounding box.
+- **`raycast(nx, ny, objects)`**: Screen-space raycast returning `THREE.Intersection[]`.
+- **`dispose()`**: Cancels animation, disconnects ResizeObserver, disposes renderer.
+- **Key fields**: `scene`, `camera`, `renderer`, `controls`, `potree` (set after lazy import), `pointClouds[]`, `flySpeed`.
+- **Provider state written**: `fps` via `onFpsUpdate` callback.
+
+### `PointCloudLoader` (`core/point-cloud-loader.ts`)
+Loads Potree 2.0 point clouds via `potree-core`.
+
+- **`load(metadataPath, pointBudget)`**: Lazy-imports `potree-core`, calls `potree.loadPointCloud()` with a `requestManager` built from the `FileSourceAdapter`. Detects RGB attribute in `metadata.json` and sets appropriate `PointColorType`. Sets `outputColorEncoding=1` (see Color Rendering section). Fits camera to world box. Sets `flySpeed` on SceneManager proportional to cloud size.
+- **`setColorMode(mode)`**: Switches `PointColorType` on all loaded materials. Always re-applies `outputColorEncoding=1` after switching to preserve the gamma fix.
+- **`setPointBudget(budget)`**: Sets `potree.pointBudget`.
+- **`setPointSize(size)` / `setPointShape(shape)` / `setPointSizeType(type)`**: Direct material property setters.
+- **`readMetadata(path)`**: Returns `PointCloudMetadata | null`.
+- **`static calcOptimalBudget(totalPoints)`**: Heuristic budget calculation (30% / 15% / 8% of total depending on size, capped 500K–10M).
+- **`worldBox`**: `THREE.Box3` of the loaded cloud in world space, available post-load.
+- **`hasRgbData`**: `boolean` getter.
+- **`ColorMode` export**: `"rgb" | "height" | "intensity" | "intensity_gradient" | "classification" | "return_number" | "source"`
+
+### `CameraAnimator` (`core/camera-animator.ts`)
+Smooth camera fly-to animations, no external tween library.
+
+- **`flyTo({ position, target, duration? })`**: Animates camera position and OrbitControls target using quartic ease-out over `duration` ms (default 800). Cancels any in-progress animation. Returns `Promise<void>`.
+- **`flyToCamera(camPos, yawDeg, offset, duration)`**: Convenience method — positions camera `offset` units behind a panorama marker and looks at it.
+- **`cancel()`**: Cancels in-progress animation.
+
+### `ClipManager` (`core/clip-manager.ts`)
+Manages multiple named axis-aligned clip boxes with TransformControls support.
+
+- **`addBox(box, name?)`**: Adds a `ClipBoxEntry`, creates a yellow `Box3Helper` in the scene, applies clipping to all point clouds. Returns the entry.
+- **`selectBox(id)` / `setTransformMode(mode)`**: Lazy-initialises TransformControls, attaches an invisible pivot mesh. Disables OrbitControls while dragging.
+- **`removeBox(id)` / `setBoxMode(id, mode)` / `setBoxVisible(id, visible)` / `renameBox(id, name)`**: Mutate entries and call `applyAll()`.
+- **`setDraft(box)`**: Shows a live preview helper during drag (no clip applied).
+- **`clear()`**: Removes all boxes and disables clipping.
+- **`dispose()`**: Disposes TransformControls and scene objects.
+- **`onChange?: (boxes: ClipBoxEntry[]) => void`**: Called on every mutation; Viewport wires this to `setClipBoxEntries`.
+- **`onSelectChange?: (id: string | null) => void`**: Wired to `setSelectedClipBoxId`.
+- **`ClipMode`**: `"outside"` (keep inside box) → `clipMode=1`; `"inside"` (remove inside box) → `clipMode=2`.
+
+### `ExportManager` (`core/export-manager.ts`)
+Renders orthographic views to image files.
+
+- **`capture(options: ExportOptions)`**: Creates a temporary `OrthographicCamera` pointing in the requested direction, renders to a `WebGLRenderTarget` at `scale × viewport size`, reads back pixels, flips Y (WebGL is bottom-up), draws to a `<canvas>`, returns a data URL.
+- **`static download(dataUrl, filename)`**: Triggers browser download.
+- **View directions**: `top`, `front`, `side`, `back` (fixed directions), `custom` (uses top direction).
+
+### `MarkerManager` (`core/marker-manager.ts`)
+Renders 3D panorama camera markers as billboard sprites.
+
+- **`build(cameras, worldBox?)`**: Clears existing markers, auto-scales `baseScale` to ~2% of scene size, creates `THREE.Sprite` per camera using a `CanvasTexture` (glow + circle + camera icon + label). Sprites have `depthTest=false` so they are always visible through the point cloud.
+- **`getMeshes()`**: Returns sprites for raycasting.
+- **`setHovered(idx)` / `setSelected(idx)`**: Recolors the sprite texture (default=yellow, hover=white, selected=orange-red).
+- **`setVisible(visible)`**: Shows/hides the entire group.
+- **`dispose()`**: Disposes textures and materials, removes group from scene.
+
+### `MeasurementManager` (`core/measurement-manager.ts`)
+Interactive 3D measurement tool with visual scene objects.
+
+- **`start(type)`**: Creates a new `Measurement` object and sets it as `activeMeasurement`.
+- **`addPoint(point)`**: Appends a point to the active measurement. Auto-finishes for `point` (1 pt), `distance`/`height` (2 pts), `angle` (3 pts). Rebuilds preview line while drawing.
+- **`finish()`**: Computes value (distance, height, area via shoelace, angle, volume via bounding box), builds permanent 3D objects (spheres + lines + text sprite), stores in map, fires `onChange`.
+- **`remove(id)` / `clearAll()`**: Disposes geometry/materials, removes from scene.
+- **`onChange?: (measurements: Measurement[]) => void`**: Wired to `setMeasurementList` in Viewport.
+
+### `MinimapRenderer` (`core/minimap-renderer.ts`)
+Top-down orthographic minimap with overlay.
+
+- **`attach(container)`**: Creates two `<canvas>` elements inside container — one WebGL (3D scene rendering), one 2D overlay (camera frustum indicator, compass "N").
+- **`setBounds(bounds)`**: Calculates padded square world range, positions `OrthographicCamera` above center.
+- **`update()`**: Called every frame via `SceneManager.addFrameCallback`. Throttled: renders 3D every 6th frame (~10 fps), overlay every 2nd frame.
+- **`canvasToWorld(cx, cy)`**: Converts canvas pixel coordinates to world XY for click-to-navigate.
+- **`resize()`**: Syncs canvas dimensions to container.
+- **`dispose()`**: Removes canvases, disposes renderer.
+
+### `PresentationManager` (`core/presentation-manager.ts`)
+Persists named viewer scenes (camera position + clip boxes + display settings) in `localStorage`.
+
+- **Constructor `(sourceKey)`**: Storage key is `pcv_scenes_${sourceKey}` — one list per project.
+- **`addScene(scene)` / `removeScene(id)` / `renameScene(id, name)`**: Mutate and persist. Max 50 scenes.
+- **`getScenes()`**: Returns a shallow copy of the scenes array.
+- **`exportJSON()` / `importJSON(json)`**: Serialise / merge scenes for sharing.
+- **`clear()`**: Wipes all scenes.
+- **`onChange?: (scenes: ViewerScene[]) => void`**: Callback after every mutation.
+- **`captureScene(...)` (standalone function)**: Helper to assemble a `ViewerScene` object from current state without saving it.
+- **Note**: `PresentationManager` is *not* wired into `ViewerProvider` by default — the `ScenesPanel` component creates it ad-hoc.
+
+---
+
+## Component Tree
+
+```
+PanoCloudViewer             ← root drop-in (sets up all providers)
+  LocaleProvider
+  ThemeProvider
+  DataProvider              ← fetches cameras.json + metadata.json
+  ViewerProvider            ← holds all viewer state + manager refs
+    WorkspaceLayout         ← shell: toolbar + main content + status bar
+      MainToolbar           ← top bar (logo, view controls, toggles)
+      ToolRail              ← left icon rail (measure/section tools)
+      Viewport [lazy]       ← Three.js init, event handlers, minimap overlay
+      PanoViewer            ← 360° panorama overlay (conditionally rendered)
+      RenderingSettings     ← rendering settings panel overlay
+      Sidebar               ← right collapsible sidebar
+        PanoPanel
+        ScenePanel
+        MeasurementsPanel
+        ClassificationPanel
+        ScenesPanel
+```
+
+**`Viewport`** is lazy-imported inside `WorkspaceLayout` using `React.lazy()`:
+```ts
+const Viewport = lazy(() => import("./viewport").then(m => ({ default: m.Viewport })));
+```
+This prevents potree-core and Three.js from loading on the server.
+
+**All components** use `"use client"` — Three.js is browser-only.
+
+### Viewport responsibilities
+1. Creates all manager instances (SceneManager, PointCloudLoader, etc.) in a one-time `useEffect`.
+2. Registers a minimap frame callback with `SceneManager`.
+3. Wires manager callbacks to provider state setters (`onChange → setMeasurementList`, etc.).
+4. Passes manager instances up to `ViewerProvider` via `setSceneManager`, `setLoader`, etc.
+5. Handles pointer events: marker raycasting, measurement clicks, section-box drag, right-click to finish.
+6. Syncs provider state changes back to managers via secondary `useEffect`s (navigation mode, marker visibility, etc.).
+7. Renders minimap DOM overlay and tool hint bar.
+
+---
+
+## Provider Pattern
+
+### `ViewerProvider` + `useViewer()`
+Core state store. Exposes:
+- Manager refs: `sceneManager`, `loader`, `measurementManager`, `markerManager`, `cameraAnimator`, `exporter`, `minimap`, `clipManager` (all `null` until Viewport initialises)
+- Setter methods for each manager (called by Viewport)
+- UI state: `activeTool`, `pointBudget`, `pointSize`, `fps`, `pointCount`, `measurementList`, `showMarkers`, `showMinimap`, `selectedCamera`, `clipBoxEntries`, `selectedClipBoxId`, `colorMode`, `navigationMode`
+- `config: ViewerConfig`
+
+Managers are stored in React `useState` (not `useRef`) so that toolbar/sidebar components re-render when managers become available.
+
+### `DataProvider` + `useData()`
+Fetches `cameras.json` and `metadata.json` from the adapter on mount. Exposes: `cameras`, `metadata`, `loading`, `error`, `reload()`. Resolves image URLs via `adapter.resolveUrl()`.
+
+### `ThemeProvider` + `useTheme()`
+Dark/light/system theme. Persists to `localStorage` (`pcv-theme` key). Applies `dark`/`light` class and `data-theme` attribute to `document.documentElement`. Exposes: `theme`, `resolvedTheme`, `setTheme()`, `toggleTheme()`.
+
+### `LocaleProvider` + `useLocale()`
+Provides the active `ViewerLocale` dictionary to all components. Accepts an optional `locale` prop; falls back to `en`. Wrap at the root (already done by `PanoCloudViewer`). Components call `useLocale().toolbar.about` etc. for all UI strings.
+
+---
+
+## Source Adapter Pattern
+
+`FileSourceAdapter` interface (`data/file-source-adapter.ts`):
+```ts
+interface FileSourceAdapter {
+  resolveUrl(relativePath: string): string;
+  fetchJson<T>(relativePath: string): Promise<T>;
+  fetchBinary(relativePath: string): Promise<ArrayBuffer>;
+  fetchWithHeaders?(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  listDirectories?(path: string): Promise<string[]>;
+}
+```
+
+**`S3SourceAdapter`**: Uses `fetch()` with optional auth headers. Merges headers on `fetchWithHeaders`. Used for `s3` and `local` source types.
+
+**`ElectronSourceAdapter`**: Uses `window.electronFS` IPC bridge (exposed by preload script). Falls back gracefully if bridge unavailable. Resolves URLs as `file:///absolute/path`.
+
+**`createAdapter(source)`**: Factory function — switch on `source.type` → returns appropriate adapter. `local` type is treated as `S3SourceAdapter` (served by dev server).
+
+To add a new adapter: implement `FileSourceAdapter`, add a new source type to `PointCloudSource` in `types.ts`, and add a case in `createAdapter`.
+
+---
+
+## Key Design Decisions
+
+### `renderer.outputColorSpace = THREE.LinearSRGBColorSpace`
+potree-core's vertex shaders output sRGB-encoded color values directly (they do the conversion themselves). Using `THREE.SRGBColorSpace` would instruct Three.js to apply gamma encoding a second time during framebuffer write, causing the point cloud to appear washed-out/white. `LinearSRGBColorSpace` tells Three.js to write the values as-is, preserving the already-correct sRGB output from potree-core's shaders.
+
+### `mat.outputColorEncoding = 1` (ColorEncoding.SRGB) after loading
+potree-core's default material settings are `inputColorEncoding=SRGB, outputColorEncoding=LINEAR`. This triggers a `fromLinear(vColor)` call in the vertex shader which interprets the sRGB data as if it were linear and re-encodes it — causing extreme brightness on RGB point clouds. Setting `outputColorEncoding=1` (SRGB) disables this conversion path so sRGB data passes through untouched. This fix must be re-applied after every `setColorMode()` call as potree-core may reset the material.
+
+### Lazy-import of potree-core
+potree-core is a heavy, WebGL-only bundle. Importing it at module load time would break SSR (Next.js server renders) and slow initial bundle load. It is always imported inside `async` functions: `const { Potree, PointColorType } = await import("potree-core")`.
+
+### `"use client"` on all components
+Three.js uses `window`, `document`, `requestAnimationFrame`, `WebGLRenderingContext` — none of which exist in Node.js. All viewer components carry the `"use client"` directive to prevent Next.js from attempting server-side rendering of any part of the tree.
+
+### FlyControls delta capping at 100ms
+In `SceneManager.start()`, the fly controls update call is:
+```ts
+this._flyControls.update(Math.min(delta / 1000, 0.1)); // cap at 100ms
+```
+On the first animation frame after switching to fly mode, the `delta` since the last frame can be hundreds of milliseconds (tab was hidden, navigation mode just changed, etc.). Without the cap, FlyControls would compute a huge movement and the camera would jump. The 100ms cap limits the maximum first-frame movement to 10% of `movementSpeed`.
+
+### Managers stored in React state (not refs)
+Manager instances are stored via `useState` in `ViewerProvider`. If they were stored in `useRef`, toolbar and sidebar components would not re-render when managers become available after Viewport initialises, and conditional renders like `loader && <SomePanel />` would never show. State storage triggers the necessary re-render cascade.
+
+---
+
+## Navigation Modes
+
+| Mode | Implementation | Behaviour |
+|---|---|---|
+| `orbit` (default) | `OrbitControls`, `screenSpacePanning=false`, `maxPolarAngle=π` | Tumble around a target point; full sphere |
+| `fly` | `FlyControls`, `dragToLook=true`, OrbitControls disabled | WASD moves, mouse-drag looks; no target point; delta capped at 100ms |
+| `earth` | `OrbitControls`, `screenSpacePanning=true`, `maxPolarAngle=π/2.05` | Camera stays above horizon; left-drag pans (not tumbles); like Google Maps |
+
+Switch via `setNavigationMode(mode)` in `ViewerProvider` — Viewport syncs to `SceneManager` via `useEffect`.
+
+---
+
+## i18n System
+
+- **`ViewerLocale`** (`i18n/types.ts`): Full interface with sections `toolbar`, `exportPanel`, `toolRail`, `sidebar`, `scenePanel`, `panoPanel`, `classificationPanel`, `measurementsPanel`, `viewport`, `renderingSettings`, `scenesPanel`, `about`, `panoViewer`. Some values are functions: `statusPts: (millions: number) => string`.
+- **Built-in locales**: `en` (`i18n/en.ts`), `de` (`i18n/de.ts`).
+- **`createLocale(base, overrides)`**: Deep-merges `DeepPartial<ViewerLocale>` into a base locale. Use for partial overrides without writing a full locale object.
+- **`LocaleProvider`** (`i18n/locale-context.tsx`): Wraps the component tree. Accepts `locale?: ViewerLocale` prop.
+- **`useLocale()`**: Returns the active `ViewerLocale`. Components access individual sections: `const t = useLocale().toolbar`.
+- **Adding a locale**: Copy `en.ts`, translate all strings, export and pass to `<PanoCloudViewer locale={myLocale} />`.
+
+---
 
 ## Conventions
 
-- TypeScript strict mode throughout
-- UI primitives: Radix UI (accessible, unstyled)
-- Styling: Tailwind CSS + CSS custom properties (`hsl(var(--brand))`, etc.)
-- Icons: lucide-react
-- Theming: CSS custom properties defined in `packages/viewer/src/themes/` — `smart-agile.css` is the default brand theme (yellow/purple on dark)
-- All components use `"use client"` directive for Next.js compatibility
-- potree-core must be lazy-imported (heavy, client-only)
+- **TypeScript strict mode** throughout — no `any` except where potree-core's untyped API forces it (always `eslint-disable` commented).
+- **UI primitives**: Radix UI (accessible, unstyled) for dialogs, dropdowns, sliders, tabs.
+- **Styling**: Tailwind CSS + CSS custom properties. Colors always via `hsl(var(--brand))` pattern — never hardcoded hex in JSX.
+- **Icons**: `lucide-react`.
+- **`cn()` utility** (`lib/utils.ts`): `clsx` + `tailwind-merge` for conditional class names.
+- **Format utilities**: `formatLength`, `formatArea`, `formatVolume`, `formatAngle`, `formatCoord` in `lib/utils.ts`.
 
-## Data format
+---
 
-Potree 2.0 octree structure:
+## Theming
+
+CSS custom properties defined in `packages/viewer/src/themes/`. Default is `smart-agile.css` (yellow brand `#DCD546`, purple secondary, dark background).
+
+```css
+/* Usage pattern — all color references in components */
+color: hsl(var(--brand));
+background: hsl(var(--background));
+border-color: hsl(var(--border));
+```
+
+Key variables: `--brand`, `--background`, `--foreground`, `--border`, `--muted`, `--card`, `--font-sans`, `--font-mono`, `--radius`.
+
+---
+
+## Data Format
+
+Potree 2.0 octree folder (output of PanoCloudConverter):
 ```
 project/
-├── metadata.json    # Octree structure, bounds, point attributes
-├── hierarchy.bin    # Octree hierarchy
-├── octree.bin       # Point data
-└── cameras.json     # [optional] Panorama camera positions
+├── metadata.json    # Octree metadata, bounds, point attributes (detects RGB attr)
+├── hierarchy.bin    # Octree node hierarchy
+├── octree.bin       # Binary point data
+└── cameras.json     # [optional] Panorama camera positions and image URLs
 ```
+
+---
+
+## Common Pitfalls
+
+- **Never import potree-core at the top level** — always `await import("potree-core")` inside async functions.
+- **Never add `"use server"` or remove `"use client"`** from viewer components — Three.js is browser-only.
+- **After any `setColorMode()`** — `outputColorEncoding=1` must be re-applied or RGB clouds will show incorrect brightness.
+- **`renderer.outputColorSpace`** — must stay `THREE.LinearSRGBColorSpace`. Changing to `SRGBColorSpace` whitewashes the cloud.
+- **`SceneManager.flySpeed`** is set proportionally to the cloud bounding box after `PointCloudLoader.load()` completes. Do not set it before load or it will be overwritten.
+- **`PresentationManager`** is not in `ViewerProvider` — it is instantiated directly by `ScenesPanel`. If you need it elsewhere, instantiate it yourself with the source key.
+- **`ClipManager.applyAll()`** uses `visible[0].mode` for the global `clipMode` — all boxes share one clip mode. Multiple boxes with different modes is not currently supported.
+- **FlyControls delta cap** — always pass `Math.min(delta/1000, 0.1)` to `_flyControls.update()`, not the raw delta.
+- **Marker sprites** use `depthTest=false` — they always render on top. Do not change this or they will disappear behind the point cloud.
+- **`DataProvider`** resolves image URLs via `adapter.resolveUrl()` at fetch time. The `CameraData.image` field in context is always a full URL, not a relative path.

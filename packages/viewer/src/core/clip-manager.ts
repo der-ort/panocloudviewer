@@ -21,6 +21,7 @@ export class ClipManager {
   private sm: SceneManager;
   private entries: ClipBoxEntry[] = [];
   private helpers: Map<string, THREE.Box3Helper> = new Map();
+  private fills: Map<string, THREE.Mesh> = new Map();
   private draftHelper: THREE.Box3Helper | null = null;
   private selectedId: string | null = null;
   private transformControls: unknown = null;
@@ -67,6 +68,9 @@ export class ClipManager {
   }
 
   async selectBox(id: string | null): Promise<void> {
+    // Unhighlight previous
+    this._highlightHelper(this.selectedId, false);
+
     // Detach previous pivot
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tc = this.transformControls as any;
@@ -104,9 +108,12 @@ export class ClipManager {
 
     controls.attach(this.pivot);
     controls.setMode("translate");
+
+    // Highlight the selected box
+    this._highlightHelper(id, true);
   }
 
-  setTransformMode(mode: "translate" | "scale"): void {
+  setTransformMode(mode: "translate" | "scale" | "rotate"): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (this.transformControls as any)?.setMode(mode);
   }
@@ -123,8 +130,15 @@ export class ClipManager {
       this.helpers.delete(id);
     }
 
+    const fill = this.fills.get(id);
+    if (fill) {
+      this.sm.scene.remove(fill);
+      fill.geometry.dispose();
+      (fill.material as THREE.MeshBasicMaterial).dispose();
+      this.fills.delete(id);
+    }
+
     if (this.selectedId === id) {
-      // Detach controls
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this.transformControls as any)?.detach();
       if (this.pivot) {
@@ -154,6 +168,8 @@ export class ClipManager {
     entry.visible = visible;
     const helper = this.helpers.get(id);
     if (helper) helper.visible = visible;
+    const fill = this.fills.get(id);
+    if (fill) fill.visible = visible;
     this.applyAll();
     this.onChange?.(this.getBoxes());
   }
@@ -208,6 +224,14 @@ export class ClipManager {
       helper.geometry.dispose();
     }
     this.helpers.clear();
+
+    for (const [, fill] of this.fills) {
+      this.sm.scene.remove(fill);
+      fill.geometry.dispose();
+      (fill.material as THREE.MeshBasicMaterial).dispose();
+    }
+    this.fills.clear();
+
     this.entries = [];
     this.selectedId = null;
 
@@ -252,18 +276,58 @@ export class ClipManager {
     this.onChange?.(this.getBoxes());
   }
 
-  private updateHelper(entry: ClipBoxEntry): void {
-    const existing = this.helpers.get(entry.id);
-    if (existing) {
-      this.sm.scene.remove(existing);
-      existing.geometry.dispose();
+  /** Set wireframe color for selected/default state */
+  private _highlightHelper(id: string | null, selected: boolean): void {
+    if (!id) return;
+    const helper = this.helpers.get(id);
+    if (helper) {
+      (helper.material as THREE.LineBasicMaterial).color.setHex(
+        selected ? 0xffff44 : 0xdcd546
+      );
     }
-    const helper = new THREE.Box3Helper(entry.box, new THREE.Color(0xdcd546));
-    (helper.material as THREE.LineBasicMaterial).linewidth = 1;
-    helper.renderOrder = 3;
-    helper.visible = entry.visible;
-    this.sm.scene.add(helper);
-    this.helpers.set(entry.id, helper);
+  }
+
+  private updateHelper(entry: ClipBoxEntry): void {
+    // ── Wireframe (Box3Helper) ──────────────────────────────────────────────
+    // Box3Helper reads entry.box.min/max directly in updateMatrixWorld so it
+    // updates in-place each frame — only create it if it doesn't exist yet.
+    if (!this.helpers.has(entry.id)) {
+      const helper = new THREE.Box3Helper(entry.box, new THREE.Color(0xdcd546));
+      (helper.material as THREE.LineBasicMaterial).linewidth = 1;
+      helper.renderOrder = 3;
+      helper.visible = entry.visible;
+      this.sm.scene.add(helper);
+      this.helpers.set(entry.id, helper);
+    }
+
+    // ── Semi-transparent fill ───────────────────────────────────────────────
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    entry.box.getCenter(center);
+    entry.box.getSize(size);
+
+    const existingFill = this.fills.get(entry.id);
+    if (existingFill) {
+      // Update in-place — avoids per-frame geometry allocation during drag
+      existingFill.position.copy(center);
+      existingFill.scale.copy(size);
+    } else {
+      const fillGeo = new THREE.BoxGeometry(1, 1, 1);
+      const fillMat = new THREE.MeshBasicMaterial({
+        color: 0xdcd546,
+        opacity: 0.08,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.FrontSide,
+      });
+      const fillMesh = new THREE.Mesh(fillGeo, fillMat);
+      fillMesh.position.copy(center);
+      fillMesh.scale.copy(size);
+      fillMesh.renderOrder = 2; // behind the wireframe (renderOrder 3)
+      fillMesh.visible = entry.visible;
+      this.sm.scene.add(fillMesh);
+      this.fills.set(entry.id, fillMesh);
+    }
   }
 
   private applyAll(): void {
@@ -298,8 +362,7 @@ export class ClipManager {
       });
 
       mat.setClipBoxes(clipBoxes);
-      // Use first visible entry's mode for global clipMode
-      // outside → 1 (keep inside box), inside → 2 (remove inside box)
+      // potree-core clipMode is global: outside → 1 (keep inside), inside → 2 (remove inside)
       mat.clipMode = visible[0].mode === "outside" ? 1 : 2;
     }
   }

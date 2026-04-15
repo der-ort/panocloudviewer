@@ -4,7 +4,7 @@ export type { PanoCloudViewerProps } from "./components/pano-cloud-viewer";
 
 // ─── Providers ────────────────────────────────────────────────────────────────
 export { ViewerProvider, useViewer } from "./providers/viewer-provider";
-export type { ColorMode } from "./providers/viewer-provider";
+export type { ColorMode } from "./core/point-cloud-loader";
 export { ThemeProvider, useTheme } from "./providers/theme-provider";
 export { DataProvider, useData } from "./providers/data-provider";
 
@@ -34,6 +34,7 @@ export { ToolRail } from "./components/toolbar/tool-rail";
 // ─── Overlays ─────────────────────────────────────────────────────────────────
 export { PanoViewer } from "./components/overlays/pano-viewer";
 export { AboutDialog } from "./components/overlays/about-dialog";
+export { RenderingSettings } from "./components/overlays/rendering-settings";
 
 // ─── Core managers (for advanced / headless use) ──────────────────────────────
 export { SceneManager } from "./core/scene-manager";
@@ -44,6 +45,7 @@ export { MeasurementManager } from "./core/measurement-manager";
 export { ExportManager } from "./core/export-manager";
 export { MinimapRenderer } from "./core/minimap-renderer";
 export { ClipManager } from "./core/clip-manager";
+export { AxisWidget } from "./core/axis-widget";
 export type { ClipMode, ClipBoxEntry } from "./core/clip-manager";
 export { PresentationManager, captureScene } from "./core/presentation-manager";
 export type { ViewerScene } from "./core/presentation-manager";
@@ -61,6 +63,8 @@ export type {
   Measurement,
   MeasurementType,
   ActiveTool,
+  NavigationMode,
+  CameraProjection,
   ExportOptions,
   ExportView,
   ExportFormat,

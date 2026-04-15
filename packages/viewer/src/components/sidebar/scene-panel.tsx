@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { CloudCog, Ruler, BoxSelect, Eye, EyeOff, Trash2, Scissors, Move, Maximize2 } from "lucide-react";
+import { CloudCog, Ruler, BoxSelect, Eye, EyeOff, Trash2, Scissors, Move, Maximize2, RotateCcw } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
 
@@ -131,7 +131,16 @@ export function ScenePanel() {
             >
               <Maximize2 size={10} /> Scale
             </button>
+            <button
+              onClick={() => clipManager?.setTransformMode("rotate")}
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono bg-muted/40 text-foreground hover:bg-muted/70 transition-colors"
+            >
+              <RotateCcw size={10} /> Rotate
+            </button>
           </div>
+        )}
+        {clipBoxEntries.length > 1 && (
+          <p className="text-[9px] text-muted-foreground mt-1 italic">{t.clipModeNote}</p>
         )}
       </div>
     </div>

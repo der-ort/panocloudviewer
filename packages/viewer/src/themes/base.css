@@ -111,3 +111,42 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
+/* ── Slider: thin track with vertical-line thumb ─────────────────────────── */
+.pcv-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: hsl(var(--border));
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.pcv-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 2px;
+  height: 12px;
+  background: hsl(var(--brand));
+  border: none;
+  border-radius: 1px;
+  cursor: pointer;
+}
+.pcv-slider::-moz-range-thumb {
+  width: 2px;
+  height: 12px;
+  background: hsl(var(--brand));
+  border: none;
+  border-radius: 1px;
+  cursor: pointer;
+}
+.pcv-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: hsl(var(--border));
+  border-radius: 2px;
+}
+.pcv-slider::-moz-range-track {
+  height: 4px;
+  background: hsl(var(--border));
+  border-radius: 2px;
+}

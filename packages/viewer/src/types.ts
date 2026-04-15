@@ -150,3 +150,6 @@ export type ActiveTool =
   | "section-box"
   | "section-plane"
   | "annotate";
+
+export type NavigationMode = "orbit" | "fly" | "earth";
+export type CameraProjection = "perspective" | "orthographic";

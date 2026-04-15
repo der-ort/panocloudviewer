@@ -6,6 +6,7 @@
     "build": "pnpm -r build",
     "build:viewer": "pnpm --filter @der-ort/pano-cloud-viewer build",
     "build:web": "pnpm --filter @der-ort/web build",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "dev:example": "pnpm --filter @der-ort/pano-cloud-viewer build && pnpm --filter pano-cloud-viewer-example dev"
   }
 }

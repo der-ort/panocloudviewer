@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { FpsControls } from "./fps-controls";
+import type { NavigationMode, CameraProjection } from "../types";
 
 export interface SceneManagerOptions {
   canvas: HTMLElement;
@@ -13,6 +15,12 @@ export class SceneManager {
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
   controls: OrbitControls;
+  private _fpsControls: FpsControls | null = null;
+  private _navMode: NavigationMode = "orbit";
+  private _projection: CameraProjection = "perspective";
+  private _orthoCamera: THREE.OrthographicCamera | null = null;
+  /** Movement speed for fly mode — auto-scaled when point cloud loads */
+  flySpeed = 10;
   private animationId: number | null = null;
   private lastTime = 0;
   private frameCount = 0;
@@ -21,6 +29,7 @@ export class SceneManager {
   private onPointsUpdate?: (loaded: number) => void;
   private resizeObserver: ResizeObserver;
   private frameCallbacks: Array<() => void> = [];
+  private postRenderCallbacks: Array<() => void> = [];
   // potree-core Potree instance (set after lazy import)
   potree: unknown = null;
   pointClouds: unknown[] = [];
@@ -43,18 +52,29 @@ export class SceneManager {
       antialias: true,
       logarithmicDepthBuffer: true,
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Cap pixel ratio — 2x is heavy for point clouds, 1.5x is a good balance
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(w, h);
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // Use LinearSRGBColorSpace — potree-core handles sRGB conversion
+    // internally in its shaders. SRGBColorSpace would double-apply gamma.
+    this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+    // Disable autoClear — we call renderer.clear() explicitly at the top of
+    // each frame so that post-render callbacks (AxisWidget scissor pass) can
+    // render overlays without wiping the main scene.
+    this.renderer.autoClear = false;
     canvas.appendChild(this.renderer.domElement);
 
-    // Controls
+    // Controls — orbit mode is the default
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.08;
+    this.controls.dampingFactor = 0.06;
     this.controls.screenSpacePanning = false;
     this.controls.maxPolarAngle = Math.PI;
     this.controls.zoomSpeed = 1.5;
+    // Invert orbit drag direction — in a Z-up scene, the default orbit
+    // direction feels backwards. Negative rotateSpeed makes dragging feel
+    // natural: drag up = camera moves up (like grabbing the scene).
+    this.controls.rotateSpeed = -1;
 
     // Lights
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.5));
@@ -81,12 +101,21 @@ export class SceneManager {
   start() {
     const loop = (now: number) => {
       this.animationId = requestAnimationFrame(loop);
-      const delta = now - this.lastTime;
+      const delta = this.lastTime === 0 ? 16 : now - this.lastTime;
       this.lastTime = now;
 
-      this.controls.update();
+      // Explicit clear — disable scissor test first so the clear covers the
+      // entire framebuffer (the axis widget may have left scissorTest on).
+      this.renderer.setScissorTest(false);
+      this.renderer.clear();
 
-      // potree-core update
+      if (this._navMode === "fly" && this._fpsControls) {
+        this._fpsControls.update(Math.min(delta / 1000, 0.1)); // cap at 100ms
+      } else {
+        this.controls.update();
+      }
+
+      // potree-core update — always use PerspectiveCamera for correct LOD
       if (this.potree && this.pointClouds.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (this.potree as any).updatePointClouds(
@@ -96,10 +125,22 @@ export class SceneManager {
         );
       }
 
-      // Frame callbacks (minimap, etc.)
+      // Pre-render frame callbacks (minimap, etc.)
       this.frameCallbacks.forEach(cb => cb());
 
-      this.renderer.render(this.scene, this.camera);
+      // Main render — use ortho camera when projection is orthographic
+      if (this._projection === "orthographic") {
+        this.renderer.render(this.scene, this._syncOrthoCamera());
+      } else {
+        this.renderer.render(this.scene, this.camera);
+      }
+
+      // Reset scissor/viewport state before post-render passes — potree-core
+      // may leave scissorTest enabled or modify the viewport during its render.
+      this.renderer.setScissorTest(false);
+
+      // Post-render callbacks (AxisWidget scissor pass, etc.)
+      this.postRenderCallbacks.forEach(cb => cb());
 
       // FPS counter
       this.frameCount++;
@@ -108,20 +149,120 @@ export class SceneManager {
         this.frameCount = 0;
         this.fpsInterval = now;
       }
-
-      void delta;
     };
     this.animationId = requestAnimationFrame(loop);
   }
 
-  /** Register a callback to be called every animation frame before render */
+  /** Register a callback run every frame before render */
   addFrameCallback(cb: () => void): void {
     this.frameCallbacks.push(cb);
   }
 
-  /** Remove a previously registered frame callback */
+  /** Remove a previously registered pre-render frame callback */
   removeFrameCallback(cb: () => void): void {
     this.frameCallbacks = this.frameCallbacks.filter(fn => fn !== cb);
+  }
+
+  /** Register a callback run every frame AFTER the main render (for overlays) */
+  addPostRenderCallback(cb: () => void): void {
+    this.postRenderCallbacks.push(cb);
+  }
+
+  /** Remove a previously registered post-render callback */
+  removePostRenderCallback(cb: () => void): void {
+    this.postRenderCallbacks = this.postRenderCallbacks.filter(fn => fn !== cb);
+  }
+
+  /** Current navigation mode */
+  get navigationMode(): NavigationMode {
+    return this._navMode;
+  }
+
+  /** Current camera projection */
+  get projection(): CameraProjection {
+    return this._projection;
+  }
+
+  /**
+   * Switch between perspective and orthographic projection.
+   * PerspectiveCamera always drives OrbitControls and potree LOD — the ortho
+   * camera is synced from it each frame and used only for rendering.
+   */
+  setProjection(mode: CameraProjection): void {
+    if (mode === this._projection) return;
+    this._projection = mode;
+    if (mode === "orthographic" && !this._orthoCamera) {
+      this._orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100000);
+    }
+  }
+
+  /**
+   * Sync the ortho camera to the perspective camera's view each frame.
+   * Frustum is derived from the perspective camera's FOV and current distance
+   * to the orbit target so the visual scale matches.
+   */
+  private _syncOrthoCamera(): THREE.OrthographicCamera {
+    const cam = this._orthoCamera!;
+    cam.position.copy(this.camera.position);
+    cam.quaternion.copy(this.camera.quaternion);
+    const dist = this.camera.position.distanceTo(this.controls.target);
+    const h = 2 * dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const w = h * this.camera.aspect;
+    cam.left   = -w / 2;
+    cam.right  =  w / 2;
+    cam.top    =  h / 2;
+    cam.bottom = -h / 2;
+    cam.near   = 0.01;
+    cam.far    = 100000;
+    cam.updateProjectionMatrix();
+    return cam;
+  }
+
+  /**
+   * Switch between navigation modes.
+   * - orbit: standard orbit / tumble around a target point
+   * - fly:   free-flight (WASD + mouse-drag to look), no camera roll
+   * - earth: pan-primary mode (like Google Earth / map view)
+   */
+  setNavigationMode(mode: NavigationMode): void {
+    if (mode === this._navMode) return;
+    this._navMode = mode;
+
+    if (mode === "fly") {
+      // Disable orbit, activate FPS-style fly controls
+      this.controls.enabled = false;
+      if (!this._fpsControls) {
+        this._fpsControls = new FpsControls(this.camera, this.renderer.domElement);
+      }
+      this._fpsControls.syncFromCamera();
+      this._fpsControls.movementSpeed = this.flySpeed;
+      this._fpsControls.enabled = true;
+    } else {
+      // Re-enable orbit controls
+      if (this._fpsControls) this._fpsControls.enabled = false;
+      this.controls.enabled = true;
+
+      if (mode === "orbit") {
+        // Standard orbit: full-sphere rotation, no screen-space panning
+        this.controls.screenSpacePanning = false;
+        this.controls.maxPolarAngle = Math.PI;
+        this.controls.enableRotate = true;
+      } else {
+        // Earth mode: camera stays above horizon, screen-space panning (like Google Maps)
+        this.controls.screenSpacePanning = true;
+        this.controls.maxPolarAngle = Math.PI / 2.05; // slightly above 90° to feel natural
+        this.controls.enableRotate = true;
+      }
+    }
+  }
+
+  /**
+   * Set fly movement speed. Propagates to active FlyControls if instantiated.
+   * Call this instead of setting flySpeed directly when fly mode is active.
+   */
+  setFlySpeed(speed: number): void {
+    this.flySpeed = speed;
+    if (this._fpsControls) this._fpsControls.movementSpeed = speed;
   }
 
   /** Stop animation loop and dispose resources */
@@ -129,6 +270,7 @@ export class SceneManager {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
     this.resizeObserver.disconnect();
     this.controls.dispose();
+    this._fpsControls?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
@@ -153,5 +295,28 @@ export class SceneManager {
     const pointer = new THREE.Vector2(normalizedX, normalizedY);
     raycaster.setFromCamera(pointer, this.camera);
     return raycaster.intersectObjects(objects, true);
+  }
+
+  /**
+   * Pick a point on the point cloud using potree-core's GPU picker.
+   * Returns the world-space position of the closest point under the cursor,
+   * or null if nothing was hit.
+   */
+  pickPoint(normalizedX: number, normalizedY: number): THREE.Vector3 | null {
+    if (this.pointClouds.length === 0) return null;
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(normalizedX, normalizedY), this.camera);
+    for (const pc of this.pointClouds) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const octree = pc as any;
+      if (typeof octree.pick !== "function") continue;
+      const result = octree.pick(this.renderer, this.camera, raycaster.ray, {
+        pickWindowSize: 17,
+      });
+      if (result?.position) {
+        return result.position.clone();
+      }
+    }
+    return null;
   }
 }

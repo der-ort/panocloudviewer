@@ -2,6 +2,8 @@ import * as THREE from "three";
 import type { FileSourceAdapter } from "../data/file-source-adapter";
 import type { SceneManager } from "./scene-manager";
 
+export type ColorMode = "rgb" | "height" | "intensity" | "intensity_gradient" | "classification" | "return_number" | "source";
+
 export interface PointCloudMetadata {
   name: string;
   points: number;
@@ -16,6 +18,8 @@ export class PointCloudLoader {
   private adapter: FileSourceAdapter;
   private currentClouds: THREE.Object3D[] = [];
   private hasRgb = false;
+  /** World-space bounding box of the loaded point cloud (available after load) */
+  worldBox: THREE.Box3 = new THREE.Box3();
 
   constructor(sceneManager: SceneManager, adapter: FileSourceAdapter) {
     this.sceneManager = sceneManager;
@@ -81,6 +85,11 @@ export class PointCloudLoader {
       pointCloud.material.newFormat = false;
       pointCloud.material.pointColorType = PointColorType.HEIGHT;
     }
+    // potree-core default: inputColorEncoding=SRGB, outputColorEncoding=LINEAR.
+    // This triggers `fromLinear(vColor)` in the vertex shader which double-encodes
+    // sRGB data and causes extreme brightness. Setting outputColorEncoding=SRGB (1)
+    // ensures neither conversion condition fires, so sRGB data passes through as-is.
+    pointCloud.material.outputColorEncoding = 1; // ColorEncoding.SRGB
     pointCloud.material.needsUpdate = true;
 
     this.sceneManager.scene.add(pointCloud);
@@ -104,35 +113,85 @@ export class PointCloudLoader {
       worldBox.setFromObject(pointCloud as THREE.Object3D);
     }
 
+    this.worldBox = worldBox.clone();
+
     if (!worldBox.isEmpty()) {
       this.sceneManager.fitToBox(worldBox);
+
+      // Set height range for elevation-based coloring
+      const zMin = worldBox.min.z;
+      const zMax = worldBox.max.z;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mat = (pointCloud as any).material;
+      if (mat) {
+        mat.heightMin = zMin;
+        mat.heightMax = zMax;
+        // Improve default RGB appearance
+        mat.rgbGamma = 1.0;
+        mat.rgbBrightness = 0;
+        mat.rgbContrast = 0;
+      }
     }
   }
 
   /** Set color mode on all loaded clouds */
-  async setColorMode(mode: "rgb" | "height" | "intensity"): Promise<void> {
+  async setColorMode(mode: ColorMode): Promise<void> {
     const { PointColorType } = await import("potree-core");
     for (const cloud of this.currentClouds) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const mat = (cloud as any).material;
       if (!mat) continue;
-      if (mode === "rgb") {
-        if (this.hasRgb) {
-          mat.newFormat = true;
-          mat.pointColorType = PointColorType.RGB;
-        } else {
+
+      // Ensure height range is always set
+      if (!this.worldBox.isEmpty()) {
+        mat.heightMin = this.worldBox.min.z;
+        mat.heightMax = this.worldBox.max.z;
+      }
+
+      switch (mode) {
+        case "rgb":
+          if (this.hasRgb) {
+            mat.newFormat = true;
+            mat.pointColorType = PointColorType.RGB;
+          } else {
+            mat.newFormat = false;
+            mat.pointColorType = PointColorType.HEIGHT;
+          }
+          break;
+        case "height":
           mat.newFormat = false;
           mat.pointColorType = PointColorType.HEIGHT;
-        }
-      } else if (mode === "height") {
-        mat.newFormat = false;
-        mat.pointColorType = PointColorType.HEIGHT;
-      } else if (mode === "intensity") {
-        mat.newFormat = false;
-        mat.pointColorType = PointColorType.INTENSITY;
+          break;
+        case "intensity":
+          mat.newFormat = false;
+          mat.pointColorType = PointColorType.INTENSITY;
+          break;
+        case "intensity_gradient":
+          mat.newFormat = false;
+          mat.pointColorType = PointColorType.INTENSITY_GRADIENT;
+          break;
+        case "classification":
+          mat.newFormat = false;
+          mat.pointColorType = PointColorType.CLASSIFICATION;
+          break;
+        case "return_number":
+          mat.newFormat = false;
+          mat.pointColorType = PointColorType.RETURN_NUMBER;
+          break;
+        case "source":
+          mat.newFormat = false;
+          mat.pointColorType = PointColorType.SOURCE;
+          break;
       }
+      // Preserve fix: prevent double-gamma encoding (see load() for explanation)
+      mat.outputColorEncoding = 1; // ColorEncoding.SRGB
       mat.needsUpdate = true;
     }
+  }
+
+  /** Whether the loaded cloud has RGB data */
+  get hasRgbData(): boolean {
+    return this.hasRgb;
   }
 
   /** Remove all loaded point clouds from scene */
@@ -156,6 +215,30 @@ export class PointCloudLoader {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const mat = (cloud as any).material;
       if (mat) mat.size = size;
+    }
+  }
+
+  /** Set point shape: 0=SQUARE, 1=CIRCLE, 2=PARABOLOID */
+  setPointShape(shape: number) {
+    for (const cloud of this.currentClouds) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mat = (cloud as any).material;
+      if (mat) {
+        mat.shape = shape;
+        mat.needsUpdate = true;
+      }
+    }
+  }
+
+  /** Set point size type: 0=FIXED, 1=ATTENUATED, 2=ADAPTIVE */
+  setPointSizeType(type: number) {
+    for (const cloud of this.currentClouds) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mat = (cloud as any).material;
+      if (mat) {
+        mat.pointSizeType = type;
+        mat.needsUpdate = true;
+      }
     }
   }
 

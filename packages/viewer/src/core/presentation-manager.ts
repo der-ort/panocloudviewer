@@ -16,7 +16,7 @@ export interface ViewerScene {
     mode: ClipMode;
     visible: boolean;
   }>;
-  colorMode: "rgb" | "height" | "intensity";
+  colorMode: string;
   pointSize: number;
   pointBudget: number;
 }
@@ -130,7 +130,7 @@ export function captureScene(
   cameraPos: { x: number; y: number; z: number },
   cameraTarget: { x: number; y: number; z: number },
   clipBoxes: ClipBoxEntry[],
-  colorMode: "rgb" | "height" | "intensity",
+  colorMode: string,
   pointSize: number,
   pointBudget: number,
 ): Omit<ViewerScene, "id" | "createdAt"> {

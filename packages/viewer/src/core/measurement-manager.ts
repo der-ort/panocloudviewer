@@ -26,6 +26,11 @@ export class MeasurementManager {
   activeMeasurement: Measurement | null = null;
   private previewLine: THREE.Line | null = null;
 
+  // Snap preview — cursor indicator + rubber-band line to show where the
+  // next point will land before the user clicks.
+  private _snapSphere: THREE.Mesh | null = null;
+  private _snapLine: THREE.Line | null = null;
+
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.group = new THREE.Group();
@@ -78,6 +83,7 @@ export class MeasurementManager {
     const m = this.activeMeasurement;
     this.activeMeasurement = null;
     this.clearPreview();
+    this.clearSnap();
 
     // Compute value
     m.value = this.compute(m);
@@ -88,6 +94,80 @@ export class MeasurementManager {
     this.onChange?.(this.getAll());
     return m;
   }
+
+  // ─── Snap Preview ───────────────────────────────────────────────────────────
+
+  /**
+   * Show a snap preview at the given world position. Call this on every
+   * mousemove while a measurement tool is active. Renders:
+   *  - A small sphere at the snap position (shows where the point will be placed)
+   *  - A rubber-band line from the last placed point to the snap position
+   */
+  updateSnap(worldPos: THREE.Vector3, color?: string): void {
+    const c = new THREE.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
+
+    // ── Snap sphere ──
+    if (!this._snapSphere) {
+      const geo = new THREE.SphereGeometry(0.12, 10, 8);
+      const mat = new THREE.MeshBasicMaterial({
+        color: c,
+        depthTest: false,
+        transparent: true,
+        opacity: 0.8,
+      });
+      this._snapSphere = new THREE.Mesh(geo, mat);
+      this._snapSphere.renderOrder = 4;
+      this.group.add(this._snapSphere);
+    }
+    this._snapSphere.position.copy(worldPos);
+    (this._snapSphere.material as THREE.MeshBasicMaterial).color.copy(c);
+
+    // ── Rubber-band line from last placed point → snap position ──
+    const lastPt = this.activeMeasurement?.points[this.activeMeasurement.points.length - 1];
+    if (lastPt) {
+      if (this._snapLine) {
+        // Update existing line geometry in-place
+        const positions = (this._snapLine.geometry as THREE.BufferGeometry).attributes.position;
+        positions.setXYZ(0, lastPt.x, lastPt.y, lastPt.z);
+        positions.setXYZ(1, worldPos.x, worldPos.y, worldPos.z);
+        positions.needsUpdate = true;
+      } else {
+        const geo = new THREE.BufferGeometry().setFromPoints([lastPt, worldPos]);
+        const mat = new THREE.LineDashedMaterial({
+          color: c,
+          depthTest: false,
+          transparent: true,
+          opacity: 0.5,
+          dashSize: 0.3,
+          gapSize: 0.15,
+        });
+        this._snapLine = new THREE.Line(geo, mat);
+        this._snapLine.computeLineDistances();
+        this._snapLine.renderOrder = 3;
+        this.group.add(this._snapLine);
+      }
+    } else if (!this.activeMeasurement && !lastPt) {
+      // No measurement started yet — just show the sphere (first click indicator)
+    }
+  }
+
+  /** Hide the snap preview (call on mouse leave or tool deactivation) */
+  clearSnap(): void {
+    if (this._snapSphere) {
+      this._snapSphere.geometry.dispose();
+      (this._snapSphere.material as THREE.Material).dispose();
+      this.group.remove(this._snapSphere);
+      this._snapSphere = null;
+    }
+    if (this._snapLine) {
+      this._snapLine.geometry.dispose();
+      (this._snapLine.material as THREE.Material).dispose();
+      this.group.remove(this._snapLine);
+      this._snapLine = null;
+    }
+  }
+
+  // ─── Internals ──────────────────────────────────────────────────────────────
 
   private compute(m: Measurement): number {
     const pts = m.points;
@@ -119,7 +199,6 @@ export class MeasurementManager {
   }
 
   private convexVolume(pts: THREE.Vector3[]): number {
-    // Approximate as bounding box volume
     const box = new THREE.Box3();
     pts.forEach(p => box.expandByPoint(p));
     const size = new THREE.Vector3();
@@ -147,7 +226,6 @@ export class MeasurementManager {
     if (pts.length >= 2) {
       const lineType = m.type === "height" ? "vertical" : "direct";
       if (lineType === "vertical" && m.type === "height") {
-        // Vertical line only on Z axis
         const geo = new THREE.BufferGeometry().setFromPoints([
           pts[0], new THREE.Vector3(pts[0].x, pts[0].y, pts[1].z),
         ]);
@@ -268,6 +346,7 @@ export class MeasurementManager {
   dispose() {
     this.clearAll();
     this.clearPreview();
+    this.clearSnap();
     this.scene.remove(this.group);
   }
 }

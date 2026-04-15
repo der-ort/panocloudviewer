@@ -15,6 +15,8 @@ export interface ViewerLocale {
     viewLeftLabel: string;
     viewRight: string;
     viewRightLabel: string;
+    viewBottom: string;
+    viewBottomLabel: string;
     // Display controls
     budget: string;
     pointBudgetTitle: (millions: number) => string;
@@ -33,6 +35,32 @@ export interface ViewerLocale {
     about: string;
     sidebar: string;
     toggleSidebar: string;
+    // Color mode
+    colorMode: string;
+    colorRgb: string;
+    colorElevation: string;
+    colorIntensity: string;
+    colorIntensityGradient: string;
+    colorClassification: string;
+    colorReturnNumber: string;
+    colorSource: string;
+    // Quality presets
+    quality: string;
+    qualityPerformance: string;
+    qualityBalanced: string;
+    qualityHigh: string;
+    // Navigation modes
+    navOrbit: string;
+    navFly: string;
+    navEarth: string;
+    navOrbitTitle: string;
+    navFlyTitle: string;
+    navEarthTitle: string;
+    // Camera projection
+    camPerspective: string;
+    camOrthographic: string;
+    camPerspectiveTitle: string;
+    camOrthographicTitle: string;
   };
   exportPanel: {
     exportImageTitle: string;
@@ -82,6 +110,7 @@ export interface ViewerLocale {
     none: string;
     sections: string;
     sectionHint: string;
+    clipModeNote: string;
   };
   panoPanel: {
     searchPlaceholder: string;
@@ -122,6 +151,21 @@ export interface ViewerLocale {
     statusPts: (millions: number) => string;
     statusBudget: (millions: number) => string;
     statusFps: (fps: number) => string;
+  };
+  renderingSettings: {
+    title: string;
+    rgbSection: string;
+    intensitySection: string;
+    elevationSection: string;
+    generalSection: string;
+    gamma: string;
+    brightness: string;
+    contrast: string;
+    range: string;
+    elevMin: string;
+    elevMax: string;
+    opacity: string;
+    reset: string;
   };
   scenesPanel: {
     saveScene: string;

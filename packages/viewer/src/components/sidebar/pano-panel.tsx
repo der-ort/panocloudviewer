@@ -22,11 +22,18 @@ export function PanoPanel() {
     const cam = cameras[idx];
     if (!cam || !cameraAnimator) return;
     setSelected(idx);
-    setSelectedCamera(cam);
     markerManager?.setSelected(idx);
     if (cam.position) {
       cameraAnimator.flyToCamera([cam.position.x, cam.position.y, cam.position.z], cam.yaw_deg ?? 0);
     }
+  };
+
+  const openPano = (idx: number) => {
+    const cam = cameras[idx];
+    if (!cam) return;
+    setSelected(idx);
+    setSelectedCamera(cam);
+    markerManager?.setSelected(idx);
   };
 
   return (
@@ -55,7 +62,7 @@ export function PanoPanel() {
               key={cam.index}
               className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer border-b border-[hsl(var(--border)/0.4)] hover:bg-muted transition-colors
                 ${selected === cam.index ? "bg-[hsl(var(--brand)/0.12)] border-l-2 border-l-[hsl(var(--brand))]" : ""}`}
-              onClick={() => flyTo(cam.index)}
+              onClick={() => openPano(cam.index)}
             >
               {/* Thumbnail or placeholder */}
               <div className="w-10 h-7 rounded shrink-0 bg-muted overflow-hidden">
