@@ -167,6 +167,130 @@ export class MeasurementManager {
     }
   }
 
+  // ─── Volume measurement (drag-to-create) ─────────────────────────────────
+
+  private _volumeDraft: THREE.Object3D | null = null;
+
+  /** Show/update a volume draft box preview during drag creation */
+  setVolumeDraft(box: THREE.Box3 | null): void {
+    // Clear existing draft
+    if (this._volumeDraft) {
+      this._volumeDraft.traverse(o => {
+        if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) {
+          o.geometry.dispose();
+          (o.material as THREE.Material).dispose();
+        }
+      });
+      this.group.remove(this._volumeDraft);
+      this._volumeDraft = null;
+    }
+    if (!box || box.isEmpty()) return;
+
+    const draftGroup = new THREE.Group();
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    box.getCenter(center);
+    box.getSize(size);
+    const c = new THREE.Color(COLORS.volume);
+
+    // Semi-transparent fill
+    const fillGeo = new THREE.BoxGeometry(1, 1, 1);
+    const fillMat = new THREE.MeshBasicMaterial({
+      color: c, opacity: 0.1, transparent: true, depthWrite: false, depthTest: false,
+    });
+    const fill = new THREE.Mesh(fillGeo, fillMat);
+    fill.position.copy(center);
+    fill.scale.copy(size);
+    fill.renderOrder = 1;
+    draftGroup.add(fill);
+
+    // Wireframe edges
+    const edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
+    const edgesMat = new THREE.LineBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: 0.6 });
+    const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+    edges.position.copy(center);
+    edges.scale.copy(size);
+    edges.renderOrder = 2;
+    draftGroup.add(edges);
+
+    this.group.add(draftGroup);
+    this._volumeDraft = draftGroup;
+  }
+
+  /** Create a volume measurement from a drag-defined box */
+  addVolumeMeasurement(box: THREE.Box3): Measurement | null {
+    this.setVolumeDraft(null); // clear draft
+    this.clearSnap();
+
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const volume = size.x * size.y * size.z;
+    if (volume <= 0) return null;
+
+    const id = nextId();
+    const m: Measurement = {
+      id,
+      type: "volume",
+      label: `Volume ${_idCounter}`,
+      points: [], // Not used for box-based volumes
+      value: volume,
+      box: {
+        min: [box.min.x, box.min.y, box.min.z],
+        max: [box.max.x, box.max.y, box.max.z],
+      },
+      color: COLORS.volume,
+      visible: true,
+      selected: false,
+    };
+
+    const objects = this.buildVolumeBoxObjects(m, box);
+    this.measurements.set(m.id, { data: m, objects });
+    this.onChange?.(this.getAll());
+    return m;
+  }
+
+  private buildVolumeBoxObjects(m: Measurement, box: THREE.Box3): THREE.Object3D[] {
+    const objects: THREE.Object3D[] = [];
+    const color = new THREE.Color(m.color);
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    box.getCenter(center);
+    box.getSize(size);
+
+    // Semi-transparent box fill
+    const fillGeo = new THREE.BoxGeometry(1, 1, 1);
+    const fillMat = new THREE.MeshBasicMaterial({
+      color, opacity: 0.12, transparent: true, depthWrite: false, depthTest: false,
+    });
+    const fill = new THREE.Mesh(fillGeo, fillMat);
+    fill.position.copy(center);
+    fill.scale.copy(size);
+    fill.renderOrder = 1;
+    this.group.add(fill);
+    objects.push(fill);
+
+    // Wireframe edges
+    const edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
+    const edgesMat = new THREE.LineBasicMaterial({ color, depthTest: false });
+    const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+    edges.position.copy(center);
+    edges.scale.copy(size);
+    edges.renderOrder = 2;
+    this.group.add(edges);
+    objects.push(edges);
+
+    // Volume label
+    const text = `${m.value!.toFixed(3)} m³`;
+    const sprite = this.makeTextSprite(text, m.color);
+    sprite.position.copy(center).add(new THREE.Vector3(0, 0, size.z / 2 + 0.5));
+    sprite.scale.set(3.2, 0.8, 1);
+    sprite.renderOrder = 3;
+    this.group.add(sprite);
+    objects.push(sprite);
+
+    return objects;
+  }
+
   // ─── Internals ──────────────────────────────────────────────────────────────
 
   private compute(m: Measurement): number {
@@ -271,7 +395,7 @@ export class MeasurementManager {
         const sprite = this.makeTextSprite(text, m.color);
         const mid = pts.reduce((a, b) => a.clone().add(b), new THREE.Vector3()).divideScalar(pts.length);
         sprite.position.copy(mid).add(new THREE.Vector3(0, 0, 1));
-        sprite.scale.set(5, 1.2, 1);
+        sprite.scale.set(3.2, 0.8, 1);
         sprite.renderOrder = 3;
         this.group.add(sprite);
         objects.push(sprite);
@@ -283,16 +407,16 @@ export class MeasurementManager {
 
   private makeTextSprite(text: string, color: string): THREE.Sprite {
     const canvas = document.createElement("canvas");
-    canvas.width = 320; canvas.height = 64;
+    canvas.width = 256; canvas.height = 48;
     const ctx = canvas.getContext("2d")!;
-    ctx.fillStyle = "rgba(0,0,0,0.75)";
-    ctx.roundRect(2, 2, 316, 60, 8);
+    ctx.fillStyle = "rgba(0,0,0,0.78)";
+    ctx.roundRect(2, 2, 252, 44, 6);
     ctx.fill();
     ctx.fillStyle = color;
-    ctx.font = "bold 26px monospace";
+    ctx.font = "bold 28px -apple-system, 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, 160, 32);
+    ctx.fillText(text, 128, 24);
     const tex = new THREE.CanvasTexture(canvas);
     return new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
   }
@@ -320,6 +444,13 @@ export class MeasurementManager {
       this.group.remove(this.previewLine);
       this.previewLine = null;
     }
+  }
+
+  rename(id: string, name: string): void {
+    const entry = this.measurements.get(id);
+    if (!entry) return;
+    entry.data.label = name;
+    this.onChange?.(this.getAll());
   }
 
   remove(id: string) {

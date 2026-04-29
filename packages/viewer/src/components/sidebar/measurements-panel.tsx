@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Trash2, Download } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
@@ -20,6 +20,46 @@ function formatValue(m: Measurement): string {
       return "—";
     default: return m.value.toFixed(3);
   }
+}
+
+function InlineEditName({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  if (!editing) {
+    return (
+      <p
+        className="text-[10px] font-semibold text-foreground cursor-pointer hover:text-[hsl(var(--brand))] transition-colors truncate"
+        onClick={() => { setDraft(value); setEditing(true); }}
+        title="Click to rename"
+      >
+        {value}
+      </p>
+    );
+  }
+
+  const save = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== value) onSave(trimmed);
+    setEditing(false);
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+      onBlur={save}
+      className="text-[10px] font-semibold text-foreground bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
+    />
+  );
 }
 
 export function MeasurementsPanel() {
@@ -51,6 +91,11 @@ export function MeasurementsPanel() {
     URL.revokeObjectURL(url);
   };
 
+  const handleRename = (id: string, name: string) => {
+    measurementManager?.rename(id, name);
+    setMeasurementList(prev => prev.map(m => m.id === id ? { ...m, label: name } : m));
+  };
+
   if (measurementList.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-4 gap-2">
@@ -75,11 +120,11 @@ export function MeasurementsPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {measurementList.map((m, i) => (
+        {measurementList.map((m) => (
           <div key={m.id} className="flex items-center gap-2 px-2 py-2 border-b border-[hsl(var(--border)/0.4)] hover:bg-muted group transition-colors">
             <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: m.color ?? "hsl(var(--brand))" }} />
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-semibold text-foreground">{TYPE_LABELS[m.type] ?? m.type} #{i + 1}</p>
+              <InlineEditName value={m.label} onSave={(name) => handleRename(m.id, name)} />
               <p className="text-[10px] font-mono text-[hsl(var(--brand))]">{formatValue(m)}</p>
             </div>
             <button

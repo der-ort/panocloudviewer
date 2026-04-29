@@ -7,6 +7,9 @@
 @import "./base.css";
 
 /* ── Fonts ──────────────────────────────────────────────────── */
+/* Font files not bundled — falls back to system fonts via --font-sans/--font-mono.
+   To enable custom fonts, place CabinetGrotesk-Variable.woff2 and
+   AzeretMono-Variable.woff2 into ../assets/fonts/ and uncomment below.
 @font-face {
   font-family: "Cabinet Grotesk";
   src: url("../assets/fonts/CabinetGrotesk-Variable.woff2") format("woff2");
@@ -14,7 +17,6 @@
   font-style: normal;
   font-display: swap;
 }
-
 @font-face {
   font-family: "Azeret Mono";
   src: url("../assets/fonts/AzeretMono-Variable.woff2") format("woff2");
@@ -22,6 +24,7 @@
   font-style: normal;
   font-display: swap;
 }
+*/
 
 /* ── Light theme overrides ──────────────────────────────────── */
 :root {

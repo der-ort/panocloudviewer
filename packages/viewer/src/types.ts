@@ -43,6 +43,8 @@ export interface CameraData {
   name: string;
   index: number;
   image: string | null;
+  /** Low-res thumbnail URL for sidebar lists (falls back to image if absent) */
+  thumbnail?: string | null;
   representation?: "sphericalRepresentation" | "pinholeRepresentation" | "cylindricalRepresentation";
   position?: CameraPosition;
   rotation?: CameraRotation;
@@ -70,6 +72,8 @@ export interface Measurement {
   points: THREE.Vector3[];
   /** Computed result value (meters, m², m³, radians depending on type) */
   value?: number;
+  /** For volume measurements: the defining box (serializable) */
+  box?: { min: [number, number, number]; max: [number, number, number] };
   color: string;
   visible: boolean;
   selected: boolean;

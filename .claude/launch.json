@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "example-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "pano-cloud-viewer-example", "dev"],
+      "port": 3000
+    }
+  ]
+}

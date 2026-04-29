@@ -66,9 +66,9 @@ export function PanoPanel() {
             >
               {/* Thumbnail or placeholder */}
               <div className="w-10 h-7 rounded shrink-0 bg-muted overflow-hidden">
-                {cam.image ? (
+                {(cam.thumbnail || cam.image) ? (
                   <img
-                    src={cam.image}
+                    src={cam.thumbnail ?? cam.image ?? undefined}
                     alt={cam.name}
                     className="w-full h-full object-cover"
                     loading="lazy"

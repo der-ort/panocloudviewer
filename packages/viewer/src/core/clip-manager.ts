@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { SceneManager } from "./scene-manager";
+import { FaceHandleController } from "./face-handles";
 
 export type ClipMode = "outside" | "inside";
 
@@ -26,6 +27,8 @@ export class ClipManager {
   private selectedId: string | null = null;
   private transformControls: unknown = null;
   private pivot: THREE.Mesh | null = null;
+  private _faceHandles: FaceHandleController | null = null;
+  private _transformMode: "translate" | "scale" | "rotate" = "translate";
 
   onChange?: (boxes: ClipBoxEntry[]) => void;
   onSelectChange?: (id: string | null) => void;
@@ -71,7 +74,7 @@ export class ClipManager {
     // Unhighlight previous
     this._highlightHelper(this.selectedId, false);
 
-    // Detach previous pivot
+    // Detach previous pivot and face handles
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tc = this.transformControls as any;
     if (tc) tc.detach();
@@ -80,6 +83,7 @@ export class ClipManager {
       this.pivot.geometry.dispose();
       this.pivot = null;
     }
+    this._faceHandles?.detach();
 
     this.selectedId = id;
     this.onSelectChange?.(id);
@@ -109,13 +113,77 @@ export class ClipManager {
     controls.attach(this.pivot);
     controls.setMode("translate");
 
+    // Create / attach face handles
+    if (!this._faceHandles) {
+      this._faceHandles = new FaceHandleController(
+        this.sm.scene, this.sm.camera, this.sm.renderer.domElement,
+      );
+    }
+    this._faceHandles.attach(entry.box, () => {
+      this.updateHelper(entry);
+      this.applyAll();
+      // Sync pivot to match the updated box
+      if (this.pivot) {
+        const c = new THREE.Vector3();
+        const s = new THREE.Vector3();
+        entry.box.getCenter(c);
+        entry.box.getSize(s);
+        this.pivot.position.copy(c);
+        this.pivot.scale.copy(s);
+      }
+      this.onChange?.(this.getBoxes());
+    });
+    // Show/hide face handles based on current mode
+    this._applyTransformMode();
+
     // Highlight the selected box
     this._highlightHelper(id, true);
   }
 
   setTransformMode(mode: "translate" | "scale" | "rotate"): void {
+    this._transformMode = mode;
+    this._applyTransformMode();
+  }
+
+  /** Get the face handle controller (for viewport event forwarding) */
+  get faceHandles(): FaceHandleController | null {
+    return this._faceHandles;
+  }
+
+  private _applyTransformMode(): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this.transformControls as any)?.setMode(mode);
+    const tc = this.transformControls as any;
+    if (this._transformMode === "scale") {
+      // Scale mode → use face handles instead of TransformControls
+      if (tc) tc.detach();
+      // Re-attach face handles to the selected box
+      if (this._faceHandles && this.selectedId) {
+        const entry = this.entries.find(e => e.id === this.selectedId);
+        if (entry && !this._faceHandles.isAttached()) {
+          this._faceHandles.attach(entry.box, () => {
+            this.updateHelper(entry);
+            this.applyAll();
+            if (this.pivot) {
+              const c = new THREE.Vector3();
+              const s = new THREE.Vector3();
+              entry.box.getCenter(c);
+              entry.box.getSize(s);
+              this.pivot.position.copy(c);
+              this.pivot.scale.copy(s);
+            }
+            this.onChange?.(this.getBoxes());
+          });
+        }
+        this._faceHandles.updatePositions();
+      }
+    } else {
+      // Translate/Rotate → use TransformControls, hide face handles
+      if (tc && this.pivot) {
+        tc.attach(this.pivot);
+        tc.setMode(this._transformMode);
+      }
+      this._faceHandles?.detach();
+    }
   }
 
   removeBox(id: string): void {
@@ -254,6 +322,10 @@ export class ClipManager {
       this.sm.scene.remove(tc);
       tc.dispose();
       this.transformControls = null;
+    }
+    if (this._faceHandles) {
+      this._faceHandles.dispose();
+      this._faceHandles = null;
     }
   }
 

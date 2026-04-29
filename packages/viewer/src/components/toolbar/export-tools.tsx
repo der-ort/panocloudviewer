@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Download } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
@@ -17,6 +18,34 @@ export function ExportTools() {
   const [bg, setBg] = useState<"white" | "black" | "transparent">("white");
   const [fmt, setFmt] = useState<ExportFormat>("png");
   const [exporting, setExporting] = useState(false);
+  const btnRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
+
+  // Update position when popover opens
+  useEffect(() => {
+    if (open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+  }, [open]);
+
+  // Close on click outside
+  const handleClickOutside = useCallback((e: MouseEvent) => {
+    if (
+      popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
+      btnRef.current && !btnRef.current.contains(e.target as Node)
+    ) {
+      setOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [open, handleClickOutside]);
 
   const doExport = async () => {
     if (!exporter) return;
@@ -45,15 +74,19 @@ export function ExportTools() {
   };
 
   return (
-    <div className="relative">
+    <div ref={btnRef}>
       <ToolbarIconBtn
         icon={<Download size={14} />}
         title={t.exportImageTitle}
         active={open}
         onClick={() => setOpen(!open)}
       />
-      {open && (
-        <div className="absolute right-0 top-full mt-1 bg-[hsl(var(--popover))] border border-[hsl(var(--border))] rounded-lg shadow-xl z-50 p-3 w-52 text-xs text-foreground">
+      {open && createPortal(
+        <div
+          ref={popoverRef}
+          style={{ position: "fixed", top: pos.top, right: pos.right, zIndex: 9999 }}
+          className="bg-[hsl(var(--popover))] border border-[hsl(var(--border))] rounded-lg shadow-xl p-3 w-52 text-xs text-foreground"
+        >
           <p className="font-semibold mb-2 text-[hsl(var(--brand))]">{t.title}</p>
 
           <label className="block mb-1 text-muted-foreground">{t.view}</label>
@@ -98,7 +131,8 @@ export function ExportTools() {
             className="w-full py-1.5 bg-[hsl(var(--brand))] text-[hsl(var(--brand-foreground))] rounded font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity">
             {exporting ? t.exporting : t.download}
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

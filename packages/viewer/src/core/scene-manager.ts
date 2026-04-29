@@ -68,7 +68,7 @@ export class SceneManager {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
-    this.controls.screenSpacePanning = false;
+    this.controls.screenSpacePanning = true;
     this.controls.maxPolarAngle = Math.PI;
     this.controls.zoomSpeed = 1.5;
     // Invert orbit drag direction — in a Z-up scene, the default orbit
@@ -243,8 +243,8 @@ export class SceneManager {
       this.controls.enabled = true;
 
       if (mode === "orbit") {
-        // Standard orbit: full-sphere rotation, no screen-space panning
-        this.controls.screenSpacePanning = false;
+        // Standard orbit: screen-space panning (matches CAD conventions)
+        this.controls.screenSpacePanning = true;
         this.controls.maxPolarAngle = Math.PI;
         this.controls.enableRotate = true;
       } else {

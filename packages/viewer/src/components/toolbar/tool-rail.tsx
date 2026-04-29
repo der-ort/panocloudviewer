@@ -179,7 +179,7 @@ export function ToolRail() {
             />
             <RailBtn
               icon={<Maximize2 size={12} />}
-              title="Scale clip box"
+              title="Resize clip box faces"
               onClick={() => {
                 const id = clipManager?.getSelectedId();
                 if (id) clipManager?.setTransformMode("scale");

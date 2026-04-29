@@ -52,6 +52,7 @@ export function DataProvider({ adapter, children }: DataProviderProps) {
           const resolved = (cams.value ?? []).map(cam => ({
             ...cam,
             image: cam.image ? adapter.resolveUrl(cam.image) : null,
+            thumbnail: cam.thumbnail ? adapter.resolveUrl(cam.thumbnail) : null,
           }));
           setCameras(resolved);
         }

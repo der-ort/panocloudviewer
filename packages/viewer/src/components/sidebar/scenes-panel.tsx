@@ -8,6 +8,46 @@ import { PresentationManager, captureScene } from "../../core/presentation-manag
 import type { ViewerScene } from "../../core/presentation-manager";
 import * as THREE from "three";
 
+function InlineEditSceneName({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  if (!editing) {
+    return (
+      <p
+        className="font-mono text-foreground truncate text-[11px] cursor-pointer hover:text-[hsl(var(--brand))] transition-colors"
+        onDoubleClick={() => { setDraft(value); setEditing(true); }}
+        title="Double-click to rename"
+      >
+        {value}
+      </p>
+    );
+  }
+
+  const save = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== value) onSave(trimmed);
+    setEditing(false);
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+      onBlur={save}
+      className="font-mono text-foreground text-[11px] bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
+    />
+  );
+}
+
 export function ScenesPanel() {
   const {
     sceneManager, cameraAnimator, clipManager, loader,
@@ -166,7 +206,7 @@ export function ScenesPanel() {
             <div key={scene.id} className="flex items-center gap-1.5 py-1 group border-b border-[hsl(var(--border)/0.3)] last:border-0">
               <Bookmark size={11} className="text-[hsl(var(--brand))] shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="font-mono text-foreground truncate text-[11px]">{scene.name}</p>
+                <InlineEditSceneName value={scene.name} onSave={(name) => pmRef.current?.renameScene(scene.id, name)} />
                 <p className="text-[8px] text-muted-foreground font-mono">
                   {new Date(scene.createdAt).toLocaleDateString()}
                   {scene.clipBoxes.length > 0 && ` \u00b7 ${scene.clipBoxes.length} clip`}

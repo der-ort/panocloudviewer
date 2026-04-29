@@ -62,6 +62,17 @@ export function Viewport({ className }: ViewportProps) {
   // Clip-box drag state
   const clipDragRef = useRef<{ startWorld: THREE.Vector3; planeZ: number } | null>(null);
 
+  // Volume measurement drag state (two-phase: footprint → height)
+  const volumeDragRef = useRef<{
+    phase: "footprint" | "height";
+    startWorld: THREE.Vector3;
+    planeZ: number;
+    footprintBox?: THREE.Box3;
+    startClientY?: number;
+    baseZMin?: number;
+    baseZMax?: number;
+  } | null>(null);
+
   // Init Three.js scene once
   useEffect(() => {
     if (!containerRef.current || initialized.current) return;
@@ -233,10 +244,14 @@ export function Viewport({ className }: ViewportProps) {
     markerRef.current?.setVisible(showMarkers);
   }, [showMarkers]);
 
-  // Clear snap preview when switching away from a measurement tool
+  // Clear snap/draft preview when switching away from a measurement tool
   useEffect(() => {
     if (!activeTool.startsWith("measure-")) {
       measureRef.current?.clearSnap();
+    }
+    if (activeTool !== "measure-volume") {
+      volumeDragRef.current = null;
+      measureRef.current?.setVolumeDraft(null);
     }
   }, [activeTool]);
 
@@ -285,9 +300,44 @@ export function Viewport({ className }: ViewportProps) {
   }, [projectToPlaneZ]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (activeTool !== "section-box" || e.button !== 0) return;
     const sm = smRef.current;
     if (!sm) return;
+
+    // Face handle drag — check before other interactions
+    const fh = clipRef.current?.faceHandles;
+    if (fh && fh.isAttached() && e.button === 0) {
+      if (fh.onPointerDown(e.clientX, e.clientY)) {
+        e.preventDefault();
+        sm.controls.enabled = false;
+        return;
+      }
+    }
+
+    // Volume measurement drag — phase 1 (footprint) or phase 2 (height confirm)
+    if (activeTool === "measure-volume" && e.button === 0) {
+      const vd = volumeDragRef.current;
+      if (vd && vd.phase === "height") {
+        // Phase 2 click: finalize the volume
+        if (vd.footprintBox) {
+          measureRef.current?.addVolumeMeasurement(vd.footprintBox);
+        }
+        volumeDragRef.current = null;
+        sm.controls.enabled = true;
+        return;
+      }
+      // Start phase 1: footprint drag
+      e.preventDefault();
+      sm.controls.enabled = false;
+      const { nx, ny } = getNDC(e);
+      const planeZ = sm.controls.target.z;
+      const startWorld = projectToPlaneZ(nx, ny, planeZ);
+      if (startWorld) {
+        volumeDragRef.current = { phase: "footprint", startWorld, planeZ };
+      }
+      return;
+    }
+
+    if (activeTool !== "section-box" || e.button !== 0) return;
     e.preventDefault();
     sm.controls.enabled = false;
     const { nx, ny } = getNDC(e);
@@ -299,6 +349,47 @@ export function Viewport({ className }: ViewportProps) {
   }, [activeTool, projectToPlaneZ]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // Face handle drag
+    const fh = clipRef.current?.faceHandles;
+    if (fh && fh.isDragging()) {
+      fh.onPointerMove(e.clientX, e.clientY);
+      return;
+    }
+    // Face handle hover
+    if (fh && fh.isAttached()) {
+      fh.updateHover(e.clientX, e.clientY);
+    }
+
+    // Volume measurement drag preview
+    const vd = volumeDragRef.current;
+    if (vd && activeTool === "measure-volume") {
+      if (vd.phase === "footprint") {
+        const { nx, ny } = getNDC(e);
+        const endWorld = projectToPlaneZ(nx, ny, vd.planeZ);
+        if (!endWorld) return;
+        const { startWorld } = vd;
+        const zMin = metaZRef.current?.min ?? (vd.planeZ - 10);
+        const zMax = metaZRef.current?.max ?? (vd.planeZ + 10);
+        const box = new THREE.Box3(
+          new THREE.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
+          new THREE.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax),
+        );
+        measureRef.current?.setVolumeDraft(box);
+      } else if (vd.phase === "height" && vd.footprintBox && vd.startClientY !== undefined) {
+        // Map vertical mouse movement to box Z range
+        const deltaY = vd.startClientY! - e.clientY; // up = positive
+        const sensitivity = 0.1; // world units per pixel
+        const zExtent = Math.max(0.1, Math.abs(deltaY) * sensitivity);
+        const midZ = (vd.baseZMin! + vd.baseZMax!) / 2;
+        const box = vd.footprintBox.clone();
+        box.min.z = midZ - zExtent / 2;
+        box.max.z = midZ + zExtent / 2;
+        vd.footprintBox.copy(box);
+        measureRef.current?.setVolumeDraft(box);
+      }
+      return;
+    }
+
     // Clip-box drag preview
     if (clipDragRef.current && activeTool === "section-box") {
       const { nx, ny } = getNDC(e);
@@ -331,6 +422,49 @@ export function Viewport({ className }: ViewportProps) {
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const sm = smRef.current;
+
+    // Face handle drag end
+    const fh = clipRef.current?.faceHandles;
+    if (fh && fh.isDragging()) {
+      fh.onPointerUp();
+      if (sm) sm.controls.enabled = true;
+      return;
+    }
+
+    // Volume measurement: transition from footprint → height phase
+    const vdUp = volumeDragRef.current;
+    if (vdUp && vdUp.phase === "footprint" && activeTool === "measure-volume") {
+      const { nx, ny } = getNDC(e);
+      const endWorld = projectToPlaneZ(nx, ny, vdUp.planeZ);
+      if (endWorld) {
+        const { startWorld } = vdUp;
+        const zMin = metaZRef.current?.min ?? (vdUp.planeZ - 10);
+        const zMax = metaZRef.current?.max ?? (vdUp.planeZ + 10);
+        const box = new THREE.Box3(
+          new THREE.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
+          new THREE.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax),
+        );
+        if (!box.isEmpty()) {
+          volumeDragRef.current = {
+            phase: "height",
+            startWorld: vdUp.startWorld,
+            planeZ: vdUp.planeZ,
+            footprintBox: box,
+            startClientY: e.clientY,
+            baseZMin: zMin,
+            baseZMax: zMax,
+          };
+          // Keep controls disabled during height phase
+          return;
+        }
+      }
+      // Invalid footprint — cancel
+      volumeDragRef.current = null;
+      measureRef.current?.setVolumeDraft(null);
+      if (sm) sm.controls.enabled = true;
+      return;
+    }
+
     if (sm) sm.controls.enabled = true;
 
     if (!clipDragRef.current || activeTool !== "section-box") {
@@ -371,8 +505,8 @@ export function Viewport({ className }: ViewportProps) {
       }
     }
 
-    // Measurement clicks — snap to point cloud via GPU picking
-    if (activeTool.startsWith("measure-") && measureRef.current) {
+    // Measurement clicks — snap to point cloud via GPU picking (volume uses drag, not clicks)
+    if (activeTool.startsWith("measure-") && activeTool !== "measure-volume" && measureRef.current) {
       const type = activeTool.replace("measure-", "") as import("../types").MeasurementType;
       // Try potree GPU pick first, fall back to plane projection
       const hit = sm.pickPoint(nx, ny) ?? projectToPlaneZ(nx, ny, sm.controls.target.z);
@@ -383,9 +517,17 @@ export function Viewport({ className }: ViewportProps) {
     }
   }, [activeTool, cameras, config, projectToPlaneZ, showMarkers]);
 
-  // Right-click to finish measurement or clear clip box
+  // Right-click to finish measurement, cancel volume drag, or clear clip box
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    // Cancel volume drag
+    if (volumeDragRef.current) {
+      volumeDragRef.current = null;
+      measureRef.current?.setVolumeDraft(null);
+      const sm = smRef.current;
+      if (sm) sm.controls.enabled = true;
+      return;
+    }
     if (activeTool.startsWith("measure-") && measureRef.current?.activeMeasurement) {
       measureRef.current.finish();
     }
@@ -444,6 +586,7 @@ export function Viewport({ className }: ViewportProps) {
           {activeTool === "measure-height" && t.hintHeight}
           {activeTool === "measure-area" && t.hintArea}
           {activeTool === "measure-angle" && t.hintAngle}
+          {activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? "Move mouse up/down to set height, click to confirm" : "Drag to draw volume footprint")}
           {activeTool === "section-box" && t.hintSectionBox}
         </div>
       )}
