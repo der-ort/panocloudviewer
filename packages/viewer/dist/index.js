@@ -1,0 +1,5415 @@
+import React14, { createContext, lazy, useContext, useState, useCallback, useEffect, useRef, useMemo, Suspense } from 'react';
+import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
+import { clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import * as THREE6 from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { Download, Sliders, Camera, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, X, BoxSelect, Scissors, Move, Maximize2, RotateCcw, Search, Navigation, CloudCog, Trash2, Ruler, Eye, EyeOff, Plus, Upload, Bookmark, Play, Tag, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints } from 'lucide-react';
+import { createPortal } from 'react-dom';
+
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+function useViewer() {
+  const ctx = useContext(ViewerContext);
+  if (!ctx) throw new Error("useViewer must be used inside <ViewerProvider>");
+  return ctx;
+}
+function ViewerProvider({ config, children }) {
+  const [sceneManager, _setSceneManager] = useState(null);
+  const [loader, _setLoader] = useState(null);
+  const [measurementManager, _setMeasurementManager] = useState(null);
+  const [markerManager, _setMarkerManager] = useState(null);
+  const [cameraAnimator, _setCameraAnimator] = useState(null);
+  const [exporter, _setExporter] = useState(null);
+  const [minimap, _setMinimap] = useState(null);
+  const [clipManager, _setClipManager] = useState(null);
+  const [activeTool, setActiveTool] = useState("none");
+  const [pointBudget, setPointBudget] = useState(config.pointBudget ?? 2e6);
+  const [pointSize, setPointSize] = useState(1.5);
+  const [fps, setFps] = useState(0);
+  const [pointCount, setPointCount] = useState(0);
+  const [measurementList, setMeasurementList] = useState([]);
+  const [showMarkers, setShowMarkers] = useState(true);
+  const [showMinimap, setShowMinimap] = useState(config.showMinimap ?? true);
+  const [selectedCamera, setSelectedCamera] = useState(null);
+  const [clipBoxEntries, setClipBoxEntries] = useState([]);
+  const [selectedClipBoxId, setSelectedClipBoxId] = useState(null);
+  const [colorMode, setColorMode] = useState("rgb");
+  const [navigationMode, _setNavigationMode] = useState("orbit");
+  const [projection, _setProjection] = useState("perspective");
+  const setNavigationMode = useCallback((mode) => {
+    _setNavigationMode(mode);
+  }, []);
+  const setProjection = useCallback((mode) => {
+    _setProjection(mode);
+  }, []);
+  const setSceneManager = useCallback((sm) => _setSceneManager(sm), []);
+  const setLoader = useCallback((l) => _setLoader(l), []);
+  const setMeasurementManager = useCallback((m) => _setMeasurementManager(m), []);
+  const setMarkerManager = useCallback((m) => _setMarkerManager(m), []);
+  const setCameraAnimator = useCallback((a) => _setCameraAnimator(a), []);
+  const setExporter = useCallback((e) => _setExporter(e), []);
+  const setMinimap = useCallback((r) => _setMinimap(r), []);
+  const setClipManager = useCallback((c) => _setClipManager(c), []);
+  const value = {
+    sceneManager,
+    loader,
+    measurementManager,
+    markerManager,
+    cameraAnimator,
+    exporter,
+    minimap,
+    clipManager,
+    setSceneManager,
+    setLoader,
+    setMeasurementManager,
+    setMarkerManager,
+    setCameraAnimator,
+    setExporter,
+    setMinimap,
+    setClipManager,
+    activeTool,
+    setActiveTool,
+    pointBudget,
+    setPointBudget,
+    pointSize,
+    setPointSize,
+    fps,
+    setFps,
+    pointCount,
+    setPointCount,
+    measurementList,
+    setMeasurementList,
+    showMarkers,
+    setShowMarkers,
+    showMinimap,
+    setShowMinimap,
+    selectedCamera,
+    setSelectedCamera,
+    clipBoxEntries,
+    setClipBoxEntries,
+    selectedClipBoxId,
+    setSelectedClipBoxId,
+    colorMode,
+    setColorMode,
+    navigationMode,
+    setNavigationMode,
+    projection,
+    setProjection,
+    config
+  };
+  return /* @__PURE__ */ jsx(ViewerContext.Provider, { value, children });
+}
+var ViewerContext;
+var init_viewer_provider = __esm({
+  "src/providers/viewer-provider.tsx"() {
+    "use client";
+    ViewerContext = createContext(null);
+  }
+});
+function useData() {
+  const ctx = useContext(DataContext);
+  if (!ctx) throw new Error("useData must be used inside <DataProvider>");
+  return ctx;
+}
+function DataProvider({ adapter, children }) {
+  const [cameras, setCameras] = useState([]);
+  const [metadata, setMetadata] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [rev, setRev] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const load = async () => {
+      try {
+        const [cams, meta] = await Promise.allSettled([
+          adapter.fetchJson("cameras.json"),
+          adapter.fetchJson("metadata.json")
+        ]);
+        if (cancelled) return;
+        if (cams.status === "fulfilled") {
+          const resolved = (cams.value ?? []).map((cam) => ({
+            ...cam,
+            image: cam.image ? adapter.resolveUrl(cam.image) : null,
+            thumbnail: cam.thumbnail ? adapter.resolveUrl(cam.thumbnail) : null
+          }));
+          setCameras(resolved);
+        }
+        if (meta.status === "fulfilled") setMetadata(meta.value);
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [adapter, rev]);
+  const reload = () => setRev((r) => r + 1);
+  return /* @__PURE__ */ jsx(DataContext.Provider, { value: { cameras, metadata, loading, error, reload }, children });
+}
+var DataContext;
+var init_data_provider = __esm({
+  "src/providers/data-provider.tsx"() {
+    "use client";
+    DataContext = createContext(null);
+  }
+});
+
+// src/i18n/en.ts
+var en;
+var init_en = __esm({
+  "src/i18n/en.ts"() {
+    en = {
+      toolbar: {
+        viewTop: "Top view",
+        viewTopLabel: "T",
+        viewFront: "Front view",
+        viewFrontLabel: "Fr",
+        viewBack: "Back view",
+        viewBackLabel: "Bk",
+        viewLeft: "Left view",
+        viewLeftLabel: "L",
+        viewRight: "Right view",
+        viewRightLabel: "R",
+        viewBottom: "Bottom view",
+        viewBottomLabel: "Bt",
+        budget: "Budget",
+        pointBudgetTitle: (m) => `Point budget: ${m.toFixed(1)}M`,
+        size: "Size",
+        pointSizeTitle: (s) => `Point size: ${s.toFixed(1)}`,
+        panoramas: "Panoramas",
+        togglePanoramas: "Toggle panorama markers",
+        minimap: "Minimap",
+        toggleMinimap: "Toggle minimap",
+        clouds: "Clouds",
+        cloudSelector: "Point cloud selector",
+        theme: "Theme",
+        switchToLight: "Switch to light",
+        switchToDark: "Switch to dark",
+        about: "About",
+        sidebar: "Sidebar",
+        toggleSidebar: "Toggle sidebar",
+        colorMode: "Color mode",
+        colorRgb: "RGB",
+        colorElevation: "Elevation",
+        colorIntensity: "Intensity",
+        colorIntensityGradient: "Intensity Gradient",
+        colorClassification: "Classification",
+        colorReturnNumber: "Return Number",
+        colorSource: "Source",
+        quality: "Quality",
+        qualityPerformance: "Performance",
+        qualityBalanced: "Balanced",
+        qualityHigh: "High Quality",
+        navOrbit: "Orbit",
+        navFly: "Fly",
+        navEarth: "Earth",
+        navOrbitTitle: "Orbit navigation \u2014 rotate around target",
+        navFlyTitle: "Fly navigation \u2014 WASD + drag to look",
+        navEarthTitle: "Earth navigation \u2014 pan-focused, horizon locked",
+        camPerspective: "Persp",
+        camOrthographic: "Ortho",
+        camPerspectiveTitle: "Perspective camera",
+        camOrthographicTitle: "Orthographic camera"
+      },
+      exportPanel: {
+        exportImageTitle: "Export orthographic image",
+        title: "Export Image",
+        view: "View",
+        viewTop: "Top (Plan)",
+        viewFront: "Front",
+        viewSide: "Side",
+        viewBack: "Back",
+        scale: "Scale",
+        background: "Background",
+        bgWhite: "white",
+        bgBlack: "black",
+        bgTransparent: "\u03B1",
+        format: "Format",
+        exporting: "Exporting\u2026",
+        download: "Download"
+      },
+      toolRail: {
+        measureGroup: "M",
+        sectionGroup: "S",
+        measurePoint: "Point coordinate",
+        measureDistance: "Distance",
+        measureHeight: "Height difference",
+        measureArea: "Area",
+        measureVolume: "Volume",
+        measureAngle: "Angle",
+        measureProfile: "Profile",
+        clearMeasurements: "Clear all measurements",
+        drawClipBox: "Draw clip box (drag in viewport)",
+        clipModeKeepInside: "Mode: keep inside (click to invert)",
+        clipModeKeepOutside: "Mode: keep outside (click to invert)",
+        removeClipBox: "Remove clip box"
+      },
+      sidebar: {
+        tabPanoramas: "Panoramas",
+        tabScene: "Scene",
+        tabMeasurements: "Measurements",
+        tabClassification: "Classification",
+        tabScenes: "Scenes"
+      },
+      scenePanel: {
+        pointClouds: "Point Clouds",
+        noCloudLoaded: "No cloud loaded",
+        measurements: "Measurements",
+        clearAll: "Clear all",
+        none: "None",
+        sections: "Sections",
+        sectionHint: "Use toolbar to add clipping volumes",
+        clipModeNote: "Clip mode applies to all boxes"
+      },
+      panoPanel: {
+        searchPlaceholder: "Search panoramas\u2026",
+        noResults: "No panoramas found",
+        flyTo: "Fly to"
+      },
+      classificationPanel: {
+        title: "LAS Classes",
+        all: "All",
+        none: "None",
+        classLabels: {
+          0: "Never classified",
+          1: "Unclassified",
+          2: "Ground",
+          3: "Low Vegetation",
+          4: "Medium Vegetation",
+          5: "High Vegetation",
+          6: "Building",
+          7: "Low Point (Noise)",
+          9: "Water",
+          17: "Bridge Deck",
+          18: "High Noise"
+        }
+      },
+      measurementsPanel: {
+        noMeasurements: "No measurements yet.",
+        useMeasureToolHint: "Use the toolbar to start measuring.",
+        measurementCount: (n) => `${n} measurement${n === 1 ? "" : "s"}`,
+        downloadCsv: "Download CSV",
+        csv: "CSV",
+        clearAll: "Clear all",
+        typePoint: "Point",
+        typeDistance: "Distance",
+        typeHeight: "Height",
+        typeArea: "Area",
+        typeVolume: "Volume",
+        typeAngle: "Angle",
+        typeProfile: "Profile"
+      },
+      viewport: {
+        overview: "OVERVIEW",
+        hintPoint: "Click to place point \u2022 Esc to cancel",
+        hintDistance: "Click 2 points \u2022 Right-click to finish",
+        hintHeight: "Click start then end point",
+        hintArea: "Click polygon vertices \u2022 Right-click to close",
+        hintAngle: "Click 3 points (vertex is middle)",
+        hintSectionBox: "Drag to define clipping box",
+        initialisingRenderer: "Initialising renderer\u2026",
+        statusPts: (m) => `${m.toFixed(1)}M pts`,
+        statusBudget: (m) => `Budget: ${m.toFixed(1)}M`,
+        statusFps: (fps) => `${fps} fps`
+      },
+      renderingSettings: {
+        title: "Rendering Settings",
+        rgbSection: "RGB Adjustments",
+        intensitySection: "Intensity Adjustments",
+        elevationSection: "Elevation Range",
+        generalSection: "General",
+        gamma: "Gamma",
+        brightness: "Brightness",
+        contrast: "Contrast",
+        range: "Range",
+        elevMin: "Min Z",
+        elevMax: "Max Z",
+        opacity: "Opacity",
+        reset: "Reset to defaults"
+      },
+      scenesPanel: {
+        saveScene: "Save Current View",
+        namePlaceholder: "Scene name\u2026",
+        save: "Save",
+        savedScenes: "Saved Scenes",
+        noScenes: "No saved scenes yet.",
+        restore: "Restore scene",
+        exportJson: "Export scenes as JSON",
+        importJson: "Import scenes from JSON"
+      },
+      about: {
+        title: "About",
+        productName: "PanoCloud Viewer",
+        description: "A modular point cloud and panorama viewer built with Next.js 15, potree-core, Three.js, and shadcn/ui.",
+        engineLabel: "Engine: potree-core + Three.js",
+        panoramasLabel: "Panoramas: Pannellum 2.5.6",
+        uiLabel: "UI: shadcn/ui + Tailwind CSS"
+      },
+      panoViewer: {
+        close: "Close panorama"
+      }
+    };
+  }
+});
+function useLocale() {
+  return useContext(LocaleContext);
+}
+function LocaleProvider({ locale = en, children }) {
+  return /* @__PURE__ */ jsx(LocaleContext.Provider, { value: locale, children });
+}
+var LocaleContext;
+var init_locale_context = __esm({
+  "src/i18n/locale-context.tsx"() {
+    "use client";
+    init_en();
+    LocaleContext = createContext(en);
+  }
+});
+function cn(...inputs) {
+  return twMerge(clsx(inputs));
+}
+function formatLength(meters) {
+  if (meters < 1) return `${(meters * 100).toFixed(1)} cm`;
+  if (meters < 100) return `${meters.toFixed(2)} m`;
+  return `${meters.toFixed(1)} m`;
+}
+function formatArea(m2) {
+  if (m2 < 1) return `${(m2 * 1e4).toFixed(1)} cm\xB2`;
+  return `${m2.toFixed(2)} m\xB2`;
+}
+function formatVolume(m3) {
+  return `${m3.toFixed(3)} m\xB3`;
+}
+function formatAngle(radians) {
+  return `${(radians * 180 / Math.PI).toFixed(1)}\xB0`;
+}
+function formatCoord(x, y, z, decimals = 2) {
+  const f = (v) => v.toFixed(decimals);
+  return `X: ${f(x)}, Y: ${f(y)}, Z: ${f(z)}`;
+}
+function measurementUnit(type) {
+  switch (type) {
+    case "distance":
+    case "height":
+      return "m";
+    case "area":
+      return "m\xB2";
+    case "volume":
+      return "m\xB3";
+    case "angle":
+      return "\xB0";
+    default:
+      return "";
+  }
+}
+function rawValue(m) {
+  if (m.value === void 0) return "";
+  switch (m.type) {
+    case "distance":
+    case "height":
+      return m.value.toFixed(4);
+    case "area":
+      return m.value.toFixed(4);
+    case "volume":
+      return m.value.toFixed(4);
+    case "angle":
+      return (m.value * 180 / Math.PI).toFixed(2);
+    case "point":
+      return "";
+    default:
+      return m.value.toFixed(4);
+  }
+}
+function csvField(val) {
+  if (val.includes(",") || val.includes('"') || val.includes("\n")) {
+    return `"${val.replace(/"/g, '""')}"`;
+  }
+  return val;
+}
+function exportMeasurementsCSV(measurements) {
+  const maxPoints = measurements.reduce((max, m) => Math.max(max, m.points.length), 0);
+  const header = ["#", "Type", "Label", "Value", "Unit"];
+  for (let i = 1; i <= maxPoints; i++) {
+    header.push(`Point ${i} X`, `Point ${i} Y`, `Point ${i} Z`);
+  }
+  const rows = [header.join(",")];
+  measurements.forEach((m, idx) => {
+    const fields = [
+      String(idx + 1),
+      csvField(m.type),
+      csvField(m.label),
+      rawValue(m),
+      measurementUnit(m.type)
+    ];
+    for (let i = 0; i < maxPoints; i++) {
+      const p = m.points[i];
+      if (p) {
+        fields.push(p.x.toFixed(4), p.y.toFixed(4), p.z.toFixed(4));
+      } else {
+        fields.push("", "", "");
+      }
+    }
+    rows.push(fields.join(","));
+  });
+  return rows.join("\n");
+}
+var init_utils = __esm({
+  "src/lib/utils.ts"() {
+  }
+});
+var VIEW_DIRECTIONS, ExportManager;
+var init_export_manager = __esm({
+  "src/core/export-manager.ts"() {
+    VIEW_DIRECTIONS = {
+      top: { pos: new THREE6.Vector3(0, 0, 1), up: new THREE6.Vector3(0, 1, 0) },
+      front: { pos: new THREE6.Vector3(0, -1, 0), up: new THREE6.Vector3(0, 0, 1) },
+      side: { pos: new THREE6.Vector3(1, 0, 0), up: new THREE6.Vector3(0, 0, 1) },
+      back: { pos: new THREE6.Vector3(0, 1, 0), up: new THREE6.Vector3(0, 0, 1) },
+      custom: { pos: new THREE6.Vector3(0, 0, 1), up: new THREE6.Vector3(0, 1, 0) }
+    };
+    ExportManager = class {
+      sceneManager;
+      constructor(sceneManager) {
+        this.sceneManager = sceneManager;
+      }
+      /** Capture an orthographic view and return as data URL */
+      async capture(options) {
+        const { view, scale, background, format, quality = 0.95 } = options;
+        const { scene, renderer } = this.sceneManager;
+        const box = new THREE6.Box3();
+        scene.traverse((obj) => {
+          if (obj instanceof THREE6.Mesh || obj.name === "pointcloud") {
+            try {
+              box.expandByObject(obj);
+            } catch {
+            }
+          }
+        });
+        const size = new THREE6.Vector3();
+        const center = new THREE6.Vector3();
+        box.getSize(size);
+        box.getCenter(center);
+        const dir = VIEW_DIRECTIONS[view] ?? VIEW_DIRECTIONS.top;
+        const baseW = renderer.domElement.width;
+        const baseH = renderer.domElement.height;
+        const outW = baseW * scale;
+        const outH = baseH * scale;
+        const aspect = outW / outH;
+        const halfH = Math.max(size.x, size.y, size.z) * 0.6;
+        const halfW = halfH * aspect;
+        const orthoCamera = new THREE6.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 1e5);
+        orthoCamera.position.copy(center).addScaledVector(dir.pos, halfH * 3);
+        orthoCamera.up.copy(dir.up);
+        orthoCamera.lookAt(center);
+        orthoCamera.updateMatrixWorld();
+        const rt = new THREE6.WebGLRenderTarget(outW, outH, {
+          minFilter: THREE6.LinearFilter,
+          magFilter: THREE6.LinearFilter,
+          format: THREE6.RGBAFormat
+        });
+        const prevBg = scene.background;
+        if (background === "white") scene.background = new THREE6.Color(16777215);
+        else if (background === "black") scene.background = new THREE6.Color(0);
+        else scene.background = null;
+        renderer.setRenderTarget(rt);
+        renderer.setSize(outW, outH);
+        renderer.render(scene, orthoCamera);
+        renderer.setRenderTarget(null);
+        renderer.setSize(renderer.domElement.clientWidth, renderer.domElement.clientHeight);
+        scene.background = prevBg;
+        const pixels = new Uint8Array(outW * outH * 4);
+        renderer.readRenderTargetPixels(rt, 0, 0, outW, outH, pixels);
+        rt.dispose();
+        const flipped = new Uint8ClampedArray(outW * outH * 4);
+        for (let y = 0; y < outH; y++) {
+          const src = (outH - 1 - y) * outW * 4;
+          const dst = y * outW * 4;
+          flipped.set(pixels.subarray(src, src + outW * 4), dst);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = outW;
+        canvas.height = outH;
+        canvas.getContext("2d").putImageData(new ImageData(flipped, outW, outH), 0, 0);
+        const mime = format === "jpeg" ? "image/jpeg" : "image/png";
+        return canvas.toDataURL(mime, quality);
+      }
+      /** Download a data URL as a file */
+      static download(dataUrl, filename) {
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = filename;
+        a.click();
+      }
+    };
+  }
+});
+var FpsControls;
+var init_fps_controls = __esm({
+  "src/core/fps-controls.ts"() {
+    FpsControls = class {
+      camera;
+      domElement;
+      movementSpeed = 10;
+      lookSpeed = 2e-3;
+      enabled = true;
+      _euler = new THREE6.Euler(0, 0, 0, "YXZ");
+      _keys = /* @__PURE__ */ new Set();
+      _dragging = false;
+      _prevX = 0;
+      _prevY = 0;
+      _disposed = false;
+      // Bound listeners for cleanup
+      _onKeyDown;
+      _onKeyUp;
+      _onMouseDown;
+      _onMouseMove;
+      _onMouseUp;
+      _onContextMenu;
+      constructor(camera, domElement) {
+        this.camera = camera;
+        this.domElement = domElement;
+        this._euler.setFromQuaternion(camera.quaternion, "YXZ");
+        this._onKeyDown = (e) => this._handleKeyDown(e);
+        this._onKeyUp = (e) => this._handleKeyUp(e);
+        this._onMouseDown = (e) => this._handleMouseDown(e);
+        this._onMouseMove = (e) => this._handleMouseMove(e);
+        this._onMouseUp = () => this._handleMouseUp();
+        this._onContextMenu = (e) => e.preventDefault();
+        document.addEventListener("keydown", this._onKeyDown);
+        document.addEventListener("keyup", this._onKeyUp);
+        domElement.addEventListener("mousedown", this._onMouseDown);
+        document.addEventListener("mousemove", this._onMouseMove);
+        document.addEventListener("mouseup", this._onMouseUp);
+        domElement.addEventListener("contextmenu", this._onContextMenu);
+      }
+      /** Sync euler from current camera orientation (call when switching to fly mode) */
+      syncFromCamera() {
+        this._euler.setFromQuaternion(this.camera.quaternion, "YXZ");
+      }
+      _handleKeyDown(e) {
+        if (!this.enabled) return;
+        this._keys.add(e.code);
+      }
+      _handleKeyUp(e) {
+        this._keys.delete(e.code);
+      }
+      _handleMouseDown(e) {
+        if (!this.enabled) return;
+        if (e.button === 2 || e.button === 1) {
+          this._dragging = true;
+          this._prevX = e.clientX;
+          this._prevY = e.clientY;
+        }
+      }
+      _handleMouseMove(e) {
+        if (!this.enabled || !this._dragging) return;
+        const dx = e.clientX - this._prevX;
+        const dy = e.clientY - this._prevY;
+        this._prevX = e.clientX;
+        this._prevY = e.clientY;
+        this._euler.y -= dx * this.lookSpeed;
+        this._euler.x -= dy * this.lookSpeed;
+        this._euler.x = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this._euler.x));
+        this.camera.quaternion.setFromEuler(this._euler);
+      }
+      _handleMouseUp() {
+        this._dragging = false;
+      }
+      /**
+       * Update camera position based on held keys.
+       * @param delta Time in seconds since last frame
+       */
+      update(delta) {
+        if (!this.enabled) return;
+        const speed = this.movementSpeed * delta * (this._keys.has("ShiftLeft") || this._keys.has("ShiftRight") ? 2 : 1);
+        const forward = new THREE6.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+        const right = new THREE6.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+        const up = new THREE6.Vector3(0, 0, 1);
+        const move = new THREE6.Vector3();
+        if (this._keys.has("KeyW")) move.add(forward);
+        if (this._keys.has("KeyS")) move.sub(forward);
+        if (this._keys.has("KeyA")) move.sub(right);
+        if (this._keys.has("KeyD")) move.add(right);
+        if (this._keys.has("KeyE")) move.add(up);
+        if (this._keys.has("KeyQ")) move.sub(up);
+        if (move.lengthSq() > 0) {
+          move.normalize().multiplyScalar(speed);
+          this.camera.position.add(move);
+        }
+      }
+      dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        document.removeEventListener("keydown", this._onKeyDown);
+        document.removeEventListener("keyup", this._onKeyUp);
+        this.domElement.removeEventListener("mousedown", this._onMouseDown);
+        document.removeEventListener("mousemove", this._onMouseMove);
+        document.removeEventListener("mouseup", this._onMouseUp);
+        this.domElement.removeEventListener("contextmenu", this._onContextMenu);
+      }
+    };
+  }
+});
+var SceneManager;
+var init_scene_manager = __esm({
+  "src/core/scene-manager.ts"() {
+    init_fps_controls();
+    SceneManager = class {
+      scene;
+      camera;
+      renderer;
+      controls;
+      _fpsControls = null;
+      _navMode = "orbit";
+      _projection = "perspective";
+      _orthoCamera = null;
+      /** Movement speed for fly mode — auto-scaled when point cloud loads */
+      flySpeed = 10;
+      animationId = null;
+      lastTime = 0;
+      frameCount = 0;
+      fpsInterval = 0;
+      onFpsUpdate;
+      onPointsUpdate;
+      resizeObserver;
+      frameCallbacks = [];
+      postRenderCallbacks = [];
+      // potree-core Potree instance (set after lazy import)
+      potree = null;
+      pointClouds = [];
+      constructor({ canvas, onFpsUpdate, onPointsUpdate }) {
+        this.onFpsUpdate = onFpsUpdate;
+        this.onPointsUpdate = onPointsUpdate;
+        this.scene = new THREE6.Scene();
+        this.scene.background = new THREE6.Color(657930);
+        const { clientWidth: w, clientHeight: h } = canvas;
+        this.camera = new THREE6.PerspectiveCamera(60, w / h, 0.01, 1e5);
+        this.camera.position.set(0, 0, 50);
+        this.renderer = new THREE6.WebGLRenderer({
+          antialias: true,
+          logarithmicDepthBuffer: true
+        });
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        this.renderer.setSize(w, h);
+        this.renderer.outputColorSpace = THREE6.LinearSRGBColorSpace;
+        this.renderer.autoClear = false;
+        canvas.appendChild(this.renderer.domElement);
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.06;
+        this.controls.screenSpacePanning = true;
+        this.controls.maxPolarAngle = Math.PI;
+        this.controls.zoomSpeed = 1.5;
+        this.controls.rotateSpeed = -1;
+        this.scene.add(new THREE6.AmbientLight(16777215, 0.5));
+        const dir = new THREE6.DirectionalLight(16777215, 1);
+        dir.position.set(1, 2, 3);
+        this.scene.add(dir);
+        this.resizeObserver = new ResizeObserver(() => this.onResize(canvas));
+        this.resizeObserver.observe(canvas);
+        this.fpsInterval = performance.now();
+      }
+      onResize(canvas) {
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        this.camera.aspect = w / h;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(w, h);
+      }
+      /** Start the render loop */
+      start() {
+        const loop = (now) => {
+          this.animationId = requestAnimationFrame(loop);
+          const delta = this.lastTime === 0 ? 16 : now - this.lastTime;
+          this.lastTime = now;
+          this.renderer.setScissorTest(false);
+          this.renderer.clear();
+          if (this._navMode === "fly" && this._fpsControls) {
+            this._fpsControls.update(Math.min(delta / 1e3, 0.1));
+          } else {
+            this.controls.update();
+          }
+          if (this.potree && this.pointClouds.length > 0) {
+            this.potree.updatePointClouds(
+              this.pointClouds,
+              this.camera,
+              this.renderer
+            );
+          }
+          this.frameCallbacks.forEach((cb) => cb());
+          if (this._projection === "orthographic") {
+            this.renderer.render(this.scene, this._syncOrthoCamera());
+          } else {
+            this.renderer.render(this.scene, this.camera);
+          }
+          this.renderer.setScissorTest(false);
+          this.postRenderCallbacks.forEach((cb) => cb());
+          this.frameCount++;
+          if (now - this.fpsInterval >= 1e3) {
+            this.onFpsUpdate?.(this.frameCount);
+            this.frameCount = 0;
+            this.fpsInterval = now;
+          }
+        };
+        this.animationId = requestAnimationFrame(loop);
+      }
+      /** Register a callback run every frame before render */
+      addFrameCallback(cb) {
+        this.frameCallbacks.push(cb);
+      }
+      /** Remove a previously registered pre-render frame callback */
+      removeFrameCallback(cb) {
+        this.frameCallbacks = this.frameCallbacks.filter((fn) => fn !== cb);
+      }
+      /** Register a callback run every frame AFTER the main render (for overlays) */
+      addPostRenderCallback(cb) {
+        this.postRenderCallbacks.push(cb);
+      }
+      /** Remove a previously registered post-render callback */
+      removePostRenderCallback(cb) {
+        this.postRenderCallbacks = this.postRenderCallbacks.filter((fn) => fn !== cb);
+      }
+      /** Current navigation mode */
+      get navigationMode() {
+        return this._navMode;
+      }
+      /** Current camera projection */
+      get projection() {
+        return this._projection;
+      }
+      /**
+       * Switch between perspective and orthographic projection.
+       * PerspectiveCamera always drives OrbitControls and potree LOD — the ortho
+       * camera is synced from it each frame and used only for rendering.
+       */
+      setProjection(mode) {
+        if (mode === this._projection) return;
+        this._projection = mode;
+        if (mode === "orthographic" && !this._orthoCamera) {
+          this._orthoCamera = new THREE6.OrthographicCamera(-1, 1, 1, -1, 0.01, 1e5);
+        }
+      }
+      /**
+       * Sync the ortho camera to the perspective camera's view each frame.
+       * Frustum is derived from the perspective camera's FOV and current distance
+       * to the orbit target so the visual scale matches.
+       */
+      _syncOrthoCamera() {
+        const cam = this._orthoCamera;
+        cam.position.copy(this.camera.position);
+        cam.quaternion.copy(this.camera.quaternion);
+        const dist = this.camera.position.distanceTo(this.controls.target);
+        const h = 2 * dist * Math.tan(THREE6.MathUtils.degToRad(this.camera.fov / 2));
+        const w = h * this.camera.aspect;
+        cam.left = -w / 2;
+        cam.right = w / 2;
+        cam.top = h / 2;
+        cam.bottom = -h / 2;
+        cam.near = 0.01;
+        cam.far = 1e5;
+        cam.updateProjectionMatrix();
+        return cam;
+      }
+      /**
+       * Switch between navigation modes.
+       * - orbit: standard orbit / tumble around a target point
+       * - fly:   free-flight (WASD + mouse-drag to look), no camera roll
+       * - earth: pan-primary mode (like Google Earth / map view)
+       */
+      setNavigationMode(mode) {
+        if (mode === this._navMode) return;
+        this._navMode = mode;
+        if (mode === "fly") {
+          this.controls.enabled = false;
+          if (!this._fpsControls) {
+            this._fpsControls = new FpsControls(this.camera, this.renderer.domElement);
+          }
+          this._fpsControls.syncFromCamera();
+          this._fpsControls.movementSpeed = this.flySpeed;
+          this._fpsControls.enabled = true;
+        } else {
+          if (this._fpsControls) this._fpsControls.enabled = false;
+          this.controls.enabled = true;
+          if (mode === "orbit") {
+            this.controls.screenSpacePanning = true;
+            this.controls.maxPolarAngle = Math.PI;
+            this.controls.enableRotate = true;
+          } else {
+            this.controls.screenSpacePanning = true;
+            this.controls.maxPolarAngle = Math.PI / 2.05;
+            this.controls.enableRotate = true;
+          }
+        }
+      }
+      /**
+       * Set fly movement speed. Propagates to active FlyControls if instantiated.
+       * Call this instead of setting flySpeed directly when fly mode is active.
+       */
+      setFlySpeed(speed) {
+        this.flySpeed = speed;
+        if (this._fpsControls) this._fpsControls.movementSpeed = speed;
+      }
+      /** Stop animation loop and dispose resources */
+      dispose() {
+        if (this.animationId !== null) cancelAnimationFrame(this.animationId);
+        this.resizeObserver.disconnect();
+        this.controls.dispose();
+        this._fpsControls?.dispose();
+        this.renderer.dispose();
+        this.renderer.domElement.remove();
+      }
+      /** Fit camera to bounding box */
+      fitToBox(box) {
+        const center = new THREE6.Vector3();
+        const size = new THREE6.Vector3();
+        box.getCenter(center);
+        box.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = this.camera.fov * (Math.PI / 180);
+        const dist = maxDim / (2 * Math.tan(fov / 2)) * 1.5;
+        this.camera.position.copy(center).add(new THREE6.Vector3(0, 0, dist));
+        this.controls.target.copy(center);
+        this.controls.update();
+      }
+      /** Raycast against objects in scene */
+      raycast(normalizedX, normalizedY, objects) {
+        const raycaster = new THREE6.Raycaster();
+        const pointer = new THREE6.Vector2(normalizedX, normalizedY);
+        raycaster.setFromCamera(pointer, this.camera);
+        return raycaster.intersectObjects(objects, true);
+      }
+      /**
+       * Pick a point on the point cloud using potree-core's GPU picker.
+       * Returns the world-space position of the closest point under the cursor,
+       * or null if nothing was hit.
+       */
+      pickPoint(normalizedX, normalizedY) {
+        if (this.pointClouds.length === 0) return null;
+        const raycaster = new THREE6.Raycaster();
+        raycaster.setFromCamera(new THREE6.Vector2(normalizedX, normalizedY), this.camera);
+        for (const pc of this.pointClouds) {
+          const octree = pc;
+          if (typeof octree.pick !== "function") continue;
+          const result = octree.pick(this.renderer, this.camera, raycaster.ray, {
+            pickWindowSize: 17
+          });
+          if (result?.position) {
+            return result.position.clone();
+          }
+        }
+        return null;
+      }
+    };
+  }
+});
+var PointCloudLoader;
+var init_point_cloud_loader = __esm({
+  "src/core/point-cloud-loader.ts"() {
+    PointCloudLoader = class {
+      sceneManager;
+      adapter;
+      currentClouds = [];
+      hasRgb = false;
+      /** World-space bounding box of the loaded point cloud (available after load) */
+      worldBox = new THREE6.Box3();
+      constructor(sceneManager, adapter) {
+        this.sceneManager = sceneManager;
+        this.adapter = adapter;
+      }
+      /** Load a point cloud from the adapter's base URL */
+      async load(metadataPath = "metadata.json", pointBudget = 2e6) {
+        const { Potree, PointColorType } = await import('potree-core');
+        if (!this.sceneManager.potree) {
+          this.sceneManager.potree = new Potree();
+        }
+        this.clear();
+        const requestManager = {
+          fetch: (input, init) => this.adapter.fetchWithHeaders ? this.adapter.fetchWithHeaders(input, init) : fetch(input, init),
+          getUrl: (url) => Promise.resolve(this.adapter.resolveUrl(url))
+        };
+        const potree = this.sceneManager.potree;
+        potree.pointBudget = pointBudget;
+        const pointCloud = await potree.loadPointCloud(
+          metadataPath,
+          requestManager
+        );
+        pointCloud.material.size = 1.5;
+        pointCloud.material.pointSizeType = 2;
+        pointCloud.material.shape = 1;
+        let hasRgb = false;
+        try {
+          const meta = await this.adapter.fetchJson(metadataPath);
+          const attributes = meta?.attributes ?? [];
+          hasRgb = attributes.some((a) => {
+            const n = (a.name ?? "").toLowerCase();
+            return n === "rgb" || n === "rgba" || n === "color";
+          });
+        } catch {
+          hasRgb = false;
+        }
+        this.hasRgb = hasRgb;
+        if (hasRgb) {
+          pointCloud.material.pointColorType = PointColorType.RGB;
+        } else {
+          pointCloud.material.newFormat = false;
+          pointCloud.material.pointColorType = PointColorType.HEIGHT;
+        }
+        pointCloud.material.outputColorEncoding = 1;
+        pointCloud.material.needsUpdate = true;
+        this.sceneManager.scene.add(pointCloud);
+        this.sceneManager.pointClouds.push(pointCloud);
+        this.currentClouds.push(pointCloud);
+        const box = pointCloud.pcoGeometry?.boundingBox ?? pointCloud.boundingBox;
+        const tightBox = pointCloud.pcoGeometry?.tightBoundingBox ?? box;
+        const offset = pointCloud.pcoGeometry?.offset;
+        const worldBox = new THREE6.Box3();
+        if (tightBox && offset) {
+          worldBox.copy(tightBox);
+          worldBox.min.add(offset);
+          worldBox.max.add(offset);
+        } else if (box) {
+          worldBox.copy(box);
+        } else {
+          worldBox.setFromObject(pointCloud);
+        }
+        this.worldBox = worldBox.clone();
+        if (!worldBox.isEmpty()) {
+          this.sceneManager.fitToBox(worldBox);
+          const zMin = worldBox.min.z;
+          const zMax = worldBox.max.z;
+          const mat = pointCloud.material;
+          if (mat) {
+            mat.heightMin = zMin;
+            mat.heightMax = zMax;
+            mat.rgbGamma = 1;
+            mat.rgbBrightness = 0;
+            mat.rgbContrast = 0;
+          }
+        }
+      }
+      /** Set color mode on all loaded clouds */
+      async setColorMode(mode) {
+        const { PointColorType } = await import('potree-core');
+        for (const cloud of this.currentClouds) {
+          const mat = cloud.material;
+          if (!mat) continue;
+          if (!this.worldBox.isEmpty()) {
+            mat.heightMin = this.worldBox.min.z;
+            mat.heightMax = this.worldBox.max.z;
+          }
+          switch (mode) {
+            case "rgb":
+              if (this.hasRgb) {
+                mat.newFormat = true;
+                mat.pointColorType = PointColorType.RGB;
+              } else {
+                mat.newFormat = false;
+                mat.pointColorType = PointColorType.HEIGHT;
+              }
+              break;
+            case "height":
+              mat.newFormat = false;
+              mat.pointColorType = PointColorType.HEIGHT;
+              break;
+            case "intensity":
+              mat.newFormat = false;
+              mat.pointColorType = PointColorType.INTENSITY;
+              break;
+            case "intensity_gradient":
+              mat.newFormat = false;
+              mat.pointColorType = PointColorType.INTENSITY_GRADIENT;
+              break;
+            case "classification":
+              mat.newFormat = false;
+              mat.pointColorType = PointColorType.CLASSIFICATION;
+              break;
+            case "return_number":
+              mat.newFormat = false;
+              mat.pointColorType = PointColorType.RETURN_NUMBER;
+              break;
+            case "source":
+              mat.newFormat = false;
+              mat.pointColorType = PointColorType.SOURCE;
+              break;
+          }
+          mat.outputColorEncoding = 1;
+          mat.needsUpdate = true;
+        }
+      }
+      /** Whether the loaded cloud has RGB data */
+      get hasRgbData() {
+        return this.hasRgb;
+      }
+      /** Remove all loaded point clouds from scene */
+      clear() {
+        for (const cloud of this.currentClouds) {
+          this.sceneManager.scene.remove(cloud);
+        }
+        this.currentClouds = [];
+        this.sceneManager.pointClouds = [];
+      }
+      /** Set point budget on all loaded clouds */
+      setPointBudget(budget) {
+        if (this.sceneManager.potree) this.sceneManager.potree.pointBudget = budget;
+      }
+      /** Set point size on all loaded clouds */
+      setPointSize(size) {
+        for (const cloud of this.currentClouds) {
+          const mat = cloud.material;
+          if (mat) mat.size = size;
+        }
+      }
+      /** Set point shape: 0=SQUARE, 1=CIRCLE, 2=PARABOLOID */
+      setPointShape(shape) {
+        for (const cloud of this.currentClouds) {
+          const mat = cloud.material;
+          if (mat) {
+            mat.shape = shape;
+            mat.needsUpdate = true;
+          }
+        }
+      }
+      /** Set point size type: 0=FIXED, 1=ATTENUATED, 2=ADAPTIVE */
+      setPointSizeType(type) {
+        for (const cloud of this.currentClouds) {
+          const mat = cloud.material;
+          if (mat) {
+            mat.pointSizeType = type;
+            mat.needsUpdate = true;
+          }
+        }
+      }
+      /** Read metadata.json from adapter */
+      async readMetadata(path = "metadata.json") {
+        try {
+          return await this.adapter.fetchJson(path);
+        } catch {
+          return null;
+        }
+      }
+      /** Return the first loaded point cloud object, if any */
+      getPointCloud() {
+        return this.currentClouds[0] ?? null;
+      }
+      /** Calculate optimal point budget based on total point count */
+      static calcOptimalBudget(totalPoints) {
+        const ratio = totalPoints < 5e6 ? 0.3 : totalPoints < 5e7 ? 0.15 : 0.08;
+        const raw = Math.round(totalPoints * ratio);
+        return Math.min(Math.max(Math.round(raw / 1e5) * 1e5, 5e5), 1e7);
+      }
+    };
+  }
+});
+function nextId() {
+  return `m-${++_idCounter}`;
+}
+var _idCounter, COLORS, MeasurementManager;
+var init_measurement_manager = __esm({
+  "src/core/measurement-manager.ts"() {
+    init_utils();
+    _idCounter = 0;
+    COLORS = {
+      point: "#DCD546",
+      distance: "#DCD546",
+      height: "#9B94FF",
+      area: "#4ADE80",
+      volume: "#F97316",
+      angle: "#EC4899",
+      profile: "#22D3EE"
+    };
+    MeasurementManager = class {
+      scene;
+      group;
+      measurements = /* @__PURE__ */ new Map();
+      onChange;
+      // Active drawing state
+      activeMeasurement = null;
+      previewLine = null;
+      // Snap preview — cursor indicator + rubber-band line to show where the
+      // next point will land before the user clicks.
+      _snapSphere = null;
+      _snapLine = null;
+      constructor(scene) {
+        this.scene = scene;
+        this.group = new THREE6.Group();
+        this.group.name = "measurements";
+        this.scene.add(this.group);
+      }
+      getAll() {
+        return Array.from(this.measurements.values()).map((v) => v.data);
+      }
+      /** Start a new measurement (call addPoint for each click, finish() to complete) */
+      start(type) {
+        const m = {
+          id: nextId(),
+          type,
+          label: `${type.charAt(0).toUpperCase() + type.slice(1)} ${_idCounter}`,
+          points: [],
+          color: COLORS[type],
+          visible: true,
+          selected: false
+        };
+        this.activeMeasurement = m;
+        return m;
+      }
+      /** Add a 3D point to the active measurement */
+      addPoint(point) {
+        if (!this.activeMeasurement) return null;
+        this.activeMeasurement.points.push(point.clone());
+        const m = this.activeMeasurement;
+        if (m.type === "point") {
+          return this.finish();
+        }
+        if (m.type === "distance" && m.points.length === 2) return this.finish();
+        if (m.type === "height" && m.points.length === 2) return this.finish();
+        if (m.type === "angle" && m.points.length === 3) return this.finish();
+        this.rebuildPreview();
+        return null;
+      }
+      /** Finalize the active measurement */
+      finish() {
+        if (!this.activeMeasurement || this.activeMeasurement.points.length === 0) return null;
+        const m = this.activeMeasurement;
+        this.activeMeasurement = null;
+        this.clearPreview();
+        this.clearSnap();
+        m.value = this.compute(m);
+        const objects = this.buildObjects(m);
+        this.measurements.set(m.id, { data: m, objects });
+        this.onChange?.(this.getAll());
+        return m;
+      }
+      // ─── Snap Preview ───────────────────────────────────────────────────────────
+      /**
+       * Show a snap preview at the given world position. Call this on every
+       * mousemove while a measurement tool is active. Renders:
+       *  - A small sphere at the snap position (shows where the point will be placed)
+       *  - A rubber-band line from the last placed point to the snap position
+       */
+      updateSnap(worldPos, color) {
+        const c = new THREE6.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
+        if (!this._snapSphere) {
+          const geo = new THREE6.SphereGeometry(0.12, 10, 8);
+          const mat = new THREE6.MeshBasicMaterial({
+            color: c,
+            depthTest: false,
+            transparent: true,
+            opacity: 0.8
+          });
+          this._snapSphere = new THREE6.Mesh(geo, mat);
+          this._snapSphere.renderOrder = 4;
+          this.group.add(this._snapSphere);
+        }
+        this._snapSphere.position.copy(worldPos);
+        this._snapSphere.material.color.copy(c);
+        const lastPt = this.activeMeasurement?.points[this.activeMeasurement.points.length - 1];
+        if (lastPt) {
+          if (this._snapLine) {
+            const positions = this._snapLine.geometry.attributes.position;
+            positions.setXYZ(0, lastPt.x, lastPt.y, lastPt.z);
+            positions.setXYZ(1, worldPos.x, worldPos.y, worldPos.z);
+            positions.needsUpdate = true;
+          } else {
+            const geo = new THREE6.BufferGeometry().setFromPoints([lastPt, worldPos]);
+            const mat = new THREE6.LineDashedMaterial({
+              color: c,
+              depthTest: false,
+              transparent: true,
+              opacity: 0.5,
+              dashSize: 0.3,
+              gapSize: 0.15
+            });
+            this._snapLine = new THREE6.Line(geo, mat);
+            this._snapLine.computeLineDistances();
+            this._snapLine.renderOrder = 3;
+            this.group.add(this._snapLine);
+          }
+        } else if (!this.activeMeasurement && !lastPt) ;
+      }
+      /** Hide the snap preview (call on mouse leave or tool deactivation) */
+      clearSnap() {
+        if (this._snapSphere) {
+          this._snapSphere.geometry.dispose();
+          this._snapSphere.material.dispose();
+          this.group.remove(this._snapSphere);
+          this._snapSphere = null;
+        }
+        if (this._snapLine) {
+          this._snapLine.geometry.dispose();
+          this._snapLine.material.dispose();
+          this.group.remove(this._snapLine);
+          this._snapLine = null;
+        }
+      }
+      // ─── Volume measurement (drag-to-create) ─────────────────────────────────
+      _volumeDraft = null;
+      /** Show/update a volume draft box preview during drag creation */
+      setVolumeDraft(box) {
+        if (this._volumeDraft) {
+          this._volumeDraft.traverse((o) => {
+            if (o instanceof THREE6.Mesh || o instanceof THREE6.LineSegments) {
+              o.geometry.dispose();
+              o.material.dispose();
+            }
+          });
+          this.group.remove(this._volumeDraft);
+          this._volumeDraft = null;
+        }
+        if (!box || box.isEmpty()) return;
+        const draftGroup = new THREE6.Group();
+        const center = new THREE6.Vector3();
+        const size = new THREE6.Vector3();
+        box.getCenter(center);
+        box.getSize(size);
+        const c = new THREE6.Color(COLORS.volume);
+        const fillGeo = new THREE6.BoxGeometry(1, 1, 1);
+        const fillMat = new THREE6.MeshBasicMaterial({
+          color: c,
+          opacity: 0.1,
+          transparent: true,
+          depthWrite: false,
+          depthTest: false
+        });
+        const fill = new THREE6.Mesh(fillGeo, fillMat);
+        fill.position.copy(center);
+        fill.scale.copy(size);
+        fill.renderOrder = 1;
+        draftGroup.add(fill);
+        const edgesGeo = new THREE6.EdgesGeometry(new THREE6.BoxGeometry(1, 1, 1));
+        const edgesMat = new THREE6.LineBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: 0.6 });
+        const edges = new THREE6.LineSegments(edgesGeo, edgesMat);
+        edges.position.copy(center);
+        edges.scale.copy(size);
+        edges.renderOrder = 2;
+        draftGroup.add(edges);
+        this.group.add(draftGroup);
+        this._volumeDraft = draftGroup;
+      }
+      /** Create a volume measurement from a drag-defined box */
+      addVolumeMeasurement(box) {
+        this.setVolumeDraft(null);
+        this.clearSnap();
+        const size = new THREE6.Vector3();
+        box.getSize(size);
+        const volume = size.x * size.y * size.z;
+        if (volume <= 0) return null;
+        const id = nextId();
+        const m = {
+          id,
+          type: "volume",
+          label: `Volume ${_idCounter}`,
+          points: [],
+          // Not used for box-based volumes
+          value: volume,
+          box: {
+            min: [box.min.x, box.min.y, box.min.z],
+            max: [box.max.x, box.max.y, box.max.z]
+          },
+          color: COLORS.volume,
+          visible: true,
+          selected: false
+        };
+        const objects = this.buildVolumeBoxObjects(m, box);
+        this.measurements.set(m.id, { data: m, objects });
+        this.onChange?.(this.getAll());
+        return m;
+      }
+      buildVolumeBoxObjects(m, box) {
+        const objects = [];
+        const color = new THREE6.Color(m.color);
+        const center = new THREE6.Vector3();
+        const size = new THREE6.Vector3();
+        box.getCenter(center);
+        box.getSize(size);
+        const fillGeo = new THREE6.BoxGeometry(1, 1, 1);
+        const fillMat = new THREE6.MeshBasicMaterial({
+          color,
+          opacity: 0.12,
+          transparent: true,
+          depthWrite: false,
+          depthTest: false
+        });
+        const fill = new THREE6.Mesh(fillGeo, fillMat);
+        fill.position.copy(center);
+        fill.scale.copy(size);
+        fill.renderOrder = 1;
+        this.group.add(fill);
+        objects.push(fill);
+        const edgesGeo = new THREE6.EdgesGeometry(new THREE6.BoxGeometry(1, 1, 1));
+        const edgesMat = new THREE6.LineBasicMaterial({ color, depthTest: false });
+        const edges = new THREE6.LineSegments(edgesGeo, edgesMat);
+        edges.position.copy(center);
+        edges.scale.copy(size);
+        edges.renderOrder = 2;
+        this.group.add(edges);
+        objects.push(edges);
+        const text = `${m.value.toFixed(3)} m\xB3`;
+        const sprite = this.makeTextSprite(text, m.color);
+        sprite.position.copy(center).add(new THREE6.Vector3(0, 0, size.z / 2 + 0.5));
+        sprite.scale.set(3.2, 0.8, 1);
+        sprite.renderOrder = 3;
+        this.group.add(sprite);
+        objects.push(sprite);
+        return objects;
+      }
+      // ─── Internals ──────────────────────────────────────────────────────────────
+      compute(m) {
+        const pts = m.points;
+        switch (m.type) {
+          case "point":
+            return 0;
+          case "distance":
+            return pts.length >= 2 ? pts[0].distanceTo(pts[1]) : 0;
+          case "height":
+            return pts.length >= 2 ? Math.abs(pts[1].z - pts[0].z) : 0;
+          case "angle": {
+            if (pts.length < 3) return 0;
+            const a = pts[0].clone().sub(pts[1]).normalize();
+            const b = pts[2].clone().sub(pts[1]).normalize();
+            return Math.acos(Math.max(-1, Math.min(1, a.dot(b))));
+          }
+          case "area":
+            return this.polygonArea(pts);
+          case "volume":
+            return this.convexVolume(pts);
+          default:
+            return 0;
+        }
+      }
+      polygonArea(pts) {
+        if (pts.length < 3) return 0;
+        let area = 0;
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i];
+          const b = pts[(i + 1) % pts.length];
+          area += a.x * b.y - b.x * a.y;
+        }
+        return Math.abs(area) / 2;
+      }
+      convexVolume(pts) {
+        const box = new THREE6.Box3();
+        pts.forEach((p) => box.expandByPoint(p));
+        const size = new THREE6.Vector3();
+        box.getSize(size);
+        return size.x * size.y * size.z;
+      }
+      buildObjects(m) {
+        const objects = [];
+        const color = new THREE6.Color(m.color);
+        const pts = m.points;
+        pts.forEach((p) => {
+          const geo = new THREE6.SphereGeometry(0.15, 8, 6);
+          const mat = new THREE6.MeshBasicMaterial({ color, depthTest: false });
+          const mesh = new THREE6.Mesh(geo, mat);
+          mesh.position.copy(p);
+          mesh.renderOrder = 2;
+          this.group.add(mesh);
+          objects.push(mesh);
+        });
+        if (pts.length >= 2) {
+          const lineType = m.type === "height" ? "vertical" : "direct";
+          if (lineType === "vertical" && m.type === "height") {
+            const geo = new THREE6.BufferGeometry().setFromPoints([
+              pts[0],
+              new THREE6.Vector3(pts[0].x, pts[0].y, pts[1].z)
+            ]);
+            const mat = new THREE6.LineBasicMaterial({ color, depthTest: false });
+            const line = new THREE6.Line(geo, mat);
+            line.renderOrder = 1;
+            this.group.add(line);
+            objects.push(line);
+          } else {
+            for (let i = 0; i < pts.length - 1; i++) {
+              const geo = new THREE6.BufferGeometry().setFromPoints([pts[i], pts[i + 1]]);
+              const mat = new THREE6.LineBasicMaterial({ color, depthTest: false });
+              const line = new THREE6.Line(geo, mat);
+              line.renderOrder = 1;
+              this.group.add(line);
+              objects.push(line);
+            }
+            if (m.type === "area" && pts.length >= 3) {
+              const geo = new THREE6.BufferGeometry().setFromPoints([pts[pts.length - 1], pts[0]]);
+              const mat = new THREE6.LineBasicMaterial({ color, depthTest: false });
+              this.group.add(new THREE6.Line(geo, mat));
+            }
+          }
+        }
+        if (m.value !== void 0) {
+          let text = "";
+          switch (m.type) {
+            case "distance":
+              text = formatLength(m.value);
+              break;
+            case "height":
+              text = formatLength(m.value);
+              break;
+            case "area":
+              text = formatArea(m.value);
+              break;
+            case "angle":
+              text = formatAngle(m.value);
+              break;
+            case "volume":
+              text = `${m.value.toFixed(3)} m\xB3`;
+              break;
+            case "point": {
+              const p = pts[0];
+              text = `${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}`;
+              break;
+            }
+          }
+          if (text) {
+            const sprite = this.makeTextSprite(text, m.color);
+            const mid = pts.reduce((a, b) => a.clone().add(b), new THREE6.Vector3()).divideScalar(pts.length);
+            sprite.position.copy(mid).add(new THREE6.Vector3(0, 0, 1));
+            sprite.scale.set(3.2, 0.8, 1);
+            sprite.renderOrder = 3;
+            this.group.add(sprite);
+            objects.push(sprite);
+          }
+        }
+        return objects;
+      }
+      makeTextSprite(text, color) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 256;
+        canvas.height = 48;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "rgba(0,0,0,0.78)";
+        ctx.roundRect(2, 2, 252, 44, 6);
+        ctx.fill();
+        ctx.fillStyle = color;
+        ctx.font = "bold 28px -apple-system, 'Segoe UI', sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, 128, 24);
+        const tex = new THREE6.CanvasTexture(canvas);
+        return new THREE6.Sprite(new THREE6.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+      }
+      rebuildPreview() {
+        this.clearPreview();
+        if (!this.activeMeasurement || this.activeMeasurement.points.length < 1) return;
+        const pts = this.activeMeasurement.points;
+        const geo = new THREE6.BufferGeometry().setFromPoints(pts);
+        const mat = new THREE6.LineBasicMaterial({
+          color: new THREE6.Color(this.activeMeasurement.color),
+          depthTest: false,
+          transparent: true,
+          opacity: 0.7
+        });
+        this.previewLine = new THREE6.Line(geo, mat);
+        this.previewLine.renderOrder = 1;
+        this.group.add(this.previewLine);
+      }
+      clearPreview() {
+        if (this.previewLine) {
+          this.previewLine.geometry.dispose();
+          this.previewLine.material.dispose();
+          this.group.remove(this.previewLine);
+          this.previewLine = null;
+        }
+      }
+      rename(id, name) {
+        const entry = this.measurements.get(id);
+        if (!entry) return;
+        entry.data.label = name;
+        this.onChange?.(this.getAll());
+      }
+      remove(id) {
+        const entry = this.measurements.get(id);
+        if (!entry) return;
+        entry.objects.forEach((o) => {
+          if (o instanceof THREE6.Mesh || o instanceof THREE6.Line) {
+            o.geometry.dispose();
+            o.material.dispose();
+          } else if (o instanceof THREE6.Sprite) {
+            o.material.map?.dispose();
+            o.material.dispose();
+          }
+          this.group.remove(o);
+        });
+        this.measurements.delete(id);
+        this.onChange?.(this.getAll());
+      }
+      clearAll() {
+        for (const id of this.measurements.keys()) this.remove(id);
+      }
+      dispose() {
+        this.clearAll();
+        this.clearPreview();
+        this.clearSnap();
+        this.scene.remove(this.group);
+      }
+    };
+  }
+});
+var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, MarkerManager;
+var init_marker_manager = __esm({
+  "src/core/marker-manager.ts"() {
+    MARKER_COLOR_DEFAULT = 14472518;
+    MARKER_COLOR_HOVER = 16777215;
+    MARKER_COLOR_SELECTED = 16737860;
+    MarkerManager = class {
+      scene;
+      entries = [];
+      group;
+      hoveredIdx = -1;
+      selectedIdx = -1;
+      sphereRadius = 0.5;
+      constructor(scene) {
+        this.scene = scene;
+        this.group = new THREE6.Group();
+        this.group.name = "pano-markers";
+        this.scene.add(this.group);
+      }
+      /** Build markers from camera data. Pass worldBox for auto-scaling. */
+      build(cameras, worldBox) {
+        this.clear();
+        if (worldBox && !worldBox.isEmpty()) {
+          const size = new THREE6.Vector3();
+          worldBox.getSize(size);
+          const maxDim = Math.max(size.x, size.y, size.z);
+          this.sphereRadius = Math.max(0.25, Math.min(5, maxDim * 8e-3));
+        }
+        cameras.forEach((cam, i) => {
+          if (!cam.position) return;
+          const { x, y, z } = cam.position;
+          const mesh = this._makeSphere(MARKER_COLOR_DEFAULT);
+          mesh.position.set(x, y, z);
+          mesh.userData = { cameraIndex: i, cameraData: cam };
+          this.group.add(mesh);
+          const label = this._makeLabel(cam.name);
+          label.position.set(x, y, z + this.sphereRadius * 3);
+          this.group.add(label);
+          this.entries.push({ mesh, label });
+        });
+      }
+      _makeSphere(color) {
+        const geo = new THREE6.SphereGeometry(this.sphereRadius, 16, 16);
+        const mat = new THREE6.MeshBasicMaterial({
+          color,
+          depthTest: false,
+          // Always visible through the point cloud
+          depthWrite: false,
+          transparent: true,
+          opacity: 0.92
+        });
+        return new THREE6.Mesh(geo, mat);
+      }
+      _makeLabel(text) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 256;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "rgba(0,0,0,0.65)";
+        ctx.beginPath();
+        ctx.roundRect(0, 0, 256, 64, 8);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 20px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text.substring(0, 20), 128, 34);
+        const tex = new THREE6.CanvasTexture(canvas);
+        const mat = new THREE6.SpriteMaterial({
+          map: tex,
+          depthTest: false,
+          depthWrite: false,
+          transparent: true
+        });
+        const sprite = new THREE6.Sprite(mat);
+        sprite.scale.set(this.sphereRadius * 8, this.sphereRadius * 2, 1);
+        return sprite;
+      }
+      /** Update sphere color by index */
+      _recolor(idx, color) {
+        const entry = this.entries[idx];
+        if (!entry) return;
+        entry.mesh.material.color.setHex(color);
+      }
+      setVisible(visible) {
+        this.group.visible = visible;
+      }
+      /** Return sphere meshes for raycasting */
+      getMeshes() {
+        return this.entries.map((e) => e.mesh);
+      }
+      setHovered(idx) {
+        if (this.hoveredIdx === idx) return;
+        if (this.hoveredIdx >= 0 && this.hoveredIdx !== this.selectedIdx) {
+          this._recolor(this.hoveredIdx, MARKER_COLOR_DEFAULT);
+        }
+        this.hoveredIdx = idx;
+        if (idx >= 0 && idx !== this.selectedIdx) {
+          this._recolor(idx, MARKER_COLOR_HOVER);
+        }
+      }
+      setSelected(idx) {
+        if (this.selectedIdx >= 0) {
+          this._recolor(this.selectedIdx, MARKER_COLOR_DEFAULT);
+        }
+        this.selectedIdx = idx;
+        if (idx >= 0) {
+          this._recolor(idx, MARKER_COLOR_SELECTED);
+        }
+      }
+      clear() {
+        for (const { mesh, label } of this.entries) {
+          mesh.material.dispose();
+          mesh.geometry.dispose();
+          this.group.remove(mesh);
+          label.material.map?.dispose();
+          label.material.dispose();
+          this.group.remove(label);
+        }
+        this.entries = [];
+        this.hoveredIdx = -1;
+        this.selectedIdx = -1;
+      }
+      dispose() {
+        this.clear();
+        this.scene.remove(this.group);
+      }
+    };
+  }
+});
+function easeOutQuart(t) {
+  return 1 - Math.pow(1 - t, 4);
+}
+var CameraAnimator;
+var init_camera_animator = __esm({
+  "src/core/camera-animator.ts"() {
+    CameraAnimator = class {
+      camera;
+      controls;
+      animId = null;
+      constructor(camera, controls) {
+        this.camera = camera;
+        this.controls = controls;
+      }
+      flyTo({ position, target, duration = 800 }) {
+        return new Promise((resolve) => {
+          if (this.animId !== null) cancelAnimationFrame(this.animId);
+          const startPos = this.camera.position.clone();
+          const startTarget = this.controls.target.clone();
+          const startTime = performance.now();
+          const animate = (now) => {
+            const t = Math.min((now - startTime) / duration, 1);
+            const e = easeOutQuart(t);
+            this.camera.position.lerpVectors(startPos, position, e);
+            this.controls.target.lerpVectors(startTarget, target, e);
+            this.controls.update();
+            if (t < 1) {
+              this.animId = requestAnimationFrame(animate);
+            } else {
+              this.animId = null;
+              resolve();
+            }
+          };
+          this.animId = requestAnimationFrame(animate);
+        });
+      }
+      /** Fly to a camera marker position (offset behind the camera by `offset` units) */
+      flyToCamera(camPos, yawDeg = 0, offset = 5, duration = 800) {
+        const pos = Array.isArray(camPos) ? new THREE6.Vector3(camPos[0], camPos[1], camPos[2]) : camPos;
+        const yaw = yawDeg * Math.PI / 180;
+        const viewerPos = new THREE6.Vector3(
+          pos.x - Math.sin(yaw) * offset,
+          pos.y - Math.cos(yaw) * offset,
+          pos.z + 2
+        );
+        return this.flyTo({ position: viewerPos, target: pos, duration });
+      }
+      cancel() {
+        if (this.animId !== null) {
+          cancelAnimationFrame(this.animId);
+          this.animId = null;
+        }
+      }
+    };
+  }
+});
+var MinimapRenderer;
+var init_minimap_renderer = __esm({
+  "src/core/minimap-renderer.ts"() {
+    MinimapRenderer = class {
+      sceneManager;
+      bounds = null;
+      // Rendering elements
+      container = null;
+      glCanvas = null;
+      overlayCanvas = null;
+      miniRenderer = null;
+      orthoCamera;
+      // World range (square, padded)
+      worldLeft = -50;
+      worldRight = 50;
+      worldTop = 50;
+      worldBottom = -50;
+      frameCount = 0;
+      constructor(sceneManager) {
+        this.sceneManager = sceneManager;
+        this.orthoCamera = new THREE6.OrthographicCamera(-50, 50, 50, -50, -1e4, 1e4);
+        this.orthoCamera.position.set(0, 0, 1e3);
+        this.orthoCamera.up.set(0, 1, 0);
+        this.orthoCamera.lookAt(0, 0, 0);
+      }
+      /**
+       * Attach to a container element. Creates internal canvases.
+       * Container should have position:relative and defined size.
+       */
+      attach(container) {
+        this.dispose();
+        this.container = container;
+        const w = container.clientWidth || 176;
+        const h = container.clientHeight || 176;
+        this.glCanvas = document.createElement("canvas");
+        this.glCanvas.width = w;
+        this.glCanvas.height = h;
+        this.glCanvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;";
+        container.appendChild(this.glCanvas);
+        this.overlayCanvas = document.createElement("canvas");
+        this.overlayCanvas.width = w;
+        this.overlayCanvas.height = h;
+        this.overlayCanvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;";
+        container.appendChild(this.overlayCanvas);
+        try {
+          this.miniRenderer = new THREE6.WebGLRenderer({
+            canvas: this.glCanvas,
+            antialias: false,
+            alpha: false
+          });
+          this.miniRenderer.setPixelRatio(1);
+          this.miniRenderer.setSize(w, h, false);
+          this.miniRenderer.setClearColor(658970, 1);
+        } catch {
+          this.miniRenderer = null;
+        }
+      }
+      /** Set world-space bounds of the scene */
+      setBounds(bounds) {
+        this.bounds = bounds.clone();
+        if (bounds.isEmpty()) return;
+        const size = new THREE6.Vector3();
+        const center = new THREE6.Vector3();
+        bounds.getSize(size);
+        bounds.getCenter(center);
+        const half = Math.max(size.x, size.y) * 0.55;
+        this.worldLeft = center.x - half;
+        this.worldRight = center.x + half;
+        this.worldTop = center.y + half;
+        this.worldBottom = center.y - half;
+        this.orthoCamera.left = this.worldLeft;
+        this.orthoCamera.right = this.worldRight;
+        this.orthoCamera.top = this.worldTop;
+        this.orthoCamera.bottom = this.worldBottom;
+        this.orthoCamera.near = -1e4;
+        this.orthoCamera.far = 1e4;
+        this.orthoCamera.position.set(center.x, center.y, 1e3);
+        this.orthoCamera.lookAt(center.x, center.y, 0);
+        this.orthoCamera.updateProjectionMatrix();
+      }
+      /** Called every frame. Renders 3D scene top-down + overlay. */
+      update() {
+        this.frameCount++;
+        const render3D = this.frameCount % 6 === 0;
+        if (render3D) this._render3D();
+        if (this.frameCount % 2 === 0) this._drawOverlay();
+      }
+      _render3D() {
+        if (!this.miniRenderer || !this.bounds) return;
+        const c = this.container;
+        if (c && this.glCanvas) {
+          const w = c.clientWidth;
+          const h = c.clientHeight;
+          if (this.glCanvas.width !== w || this.glCanvas.height !== h) {
+            this.glCanvas.width = w;
+            this.glCanvas.height = h;
+            this.miniRenderer.setSize(w, h, false);
+            if (this.overlayCanvas) {
+              this.overlayCanvas.width = w;
+              this.overlayCanvas.height = h;
+            }
+          }
+        }
+        this.miniRenderer.render(this.sceneManager.scene, this.orthoCamera);
+      }
+      _drawOverlay() {
+        if (!this.overlayCanvas) return;
+        const ctx = this.overlayCanvas.getContext("2d");
+        if (!ctx) return;
+        const W = this.overlayCanvas.width;
+        const H = this.overlayCanvas.height;
+        ctx.clearRect(0, 0, W, H);
+        this._drawCamera(ctx, W, H);
+        ctx.fillStyle = "rgba(255,255,255,0.35)";
+        ctx.font = "bold 9px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("N", W / 2, 10);
+      }
+      _worldToCanvasX(wx) {
+        const W = this.overlayCanvas?.width ?? 176;
+        return (wx - this.worldLeft) / (this.worldRight - this.worldLeft) * W;
+      }
+      _worldToCanvasY(wy) {
+        const H = this.overlayCanvas?.height ?? 176;
+        return (1 - (wy - this.worldBottom) / (this.worldTop - this.worldBottom)) * H;
+      }
+      _drawCamera(ctx, _W, _H) {
+        const cam = this.sceneManager.camera;
+        const dir = new THREE6.Vector3();
+        cam.getWorldDirection(dir);
+        const cx = this._worldToCanvasX(cam.position.x);
+        const cy = this._worldToCanvasY(cam.position.y);
+        const angle = Math.atan2(-dir.y, dir.x);
+        const fovLen = 28;
+        const halfFov = THREE6.MathUtils.degToRad(cam.fov * 0.5 * (1 / Math.max(cam.aspect, 0.1)));
+        const left = angle - halfFov;
+        const right = angle + halfFov;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(left) * fovLen, cy + Math.sin(left) * fovLen);
+        ctx.lineTo(cx + Math.cos(right) * fovLen, cy + Math.sin(right) * fovLen);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(220,213,70,0.18)";
+        ctx.strokeStyle = "rgba(220,213,70,0.55)";
+        ctx.lineWidth = 1;
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#dcd546";
+        ctx.fill();
+      }
+      /** Convert canvas pixel to world XY position */
+      canvasToWorld(cx, cy) {
+        const W = this.overlayCanvas?.width ?? 176;
+        const H = this.overlayCanvas?.height ?? 176;
+        const wx = this.worldLeft + cx / W * (this.worldRight - this.worldLeft);
+        const wy = this.worldBottom + (1 - cy / H) * (this.worldTop - this.worldBottom);
+        return new THREE6.Vector2(wx, wy);
+      }
+      /** Handle resize (called by parent when container size changes) */
+      resize() {
+        if (!this.container) return;
+        const w = this.container.clientWidth;
+        const h = this.container.clientHeight;
+        if (this.glCanvas) {
+          this.glCanvas.width = w;
+          this.glCanvas.height = h;
+        }
+        if (this.overlayCanvas) {
+          this.overlayCanvas.width = w;
+          this.overlayCanvas.height = h;
+        }
+        this.miniRenderer?.setSize(w, h, false);
+      }
+      dispose() {
+        this.miniRenderer?.dispose();
+        this.miniRenderer = null;
+        if (this.glCanvas?.parentElement) this.glCanvas.remove();
+        if (this.overlayCanvas?.parentElement) this.overlayCanvas.remove();
+        this.glCanvas = null;
+        this.overlayCanvas = null;
+        this.container = null;
+      }
+    };
+  }
+});
+var HANDLE_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController;
+var init_face_handles = __esm({
+  "src/core/face-handles.ts"() {
+    HANDLE_COLOR = 14472518;
+    HANDLE_HOVER_COLOR = 16777215;
+    HANDLE_DRAG_COLOR = 16347926;
+    FaceHandleController = class {
+      scene;
+      camera;
+      domElement;
+      handles = [];
+      box = null;
+      onChange = null;
+      drag = null;
+      hoveredHandle = null;
+      raycaster = new THREE6.Raycaster();
+      group;
+      disposed = false;
+      constructor(scene, camera, domElement) {
+        this.scene = scene;
+        this.camera = camera;
+        this.domElement = domElement;
+        this.group = new THREE6.Group();
+        this.group.name = "face-handles";
+        this.scene.add(this.group);
+        this.createHandles();
+      }
+      createHandles() {
+        const axes = ["x", "y", "z"];
+        const signs = [1, -1];
+        const geo = new THREE6.SphereGeometry(1, 12, 8);
+        for (const axis of axes) {
+          for (const sign of signs) {
+            const mat = new THREE6.MeshBasicMaterial({
+              color: HANDLE_COLOR,
+              transparent: true,
+              opacity: 0.7,
+              depthTest: false
+            });
+            const mesh = new THREE6.Mesh(geo, mat);
+            mesh.renderOrder = 10;
+            mesh.visible = false;
+            mesh.userData = { faceHandle: true, axis, sign };
+            this.group.add(mesh);
+            this.handles.push({ mesh, axis, sign });
+          }
+        }
+      }
+      attach(box, onChange) {
+        this.box = box;
+        this.onChange = onChange;
+        this.updatePositions();
+        for (const h of this.handles) h.mesh.visible = true;
+      }
+      detach() {
+        this.box = null;
+        this.onChange = null;
+        this.drag = null;
+        this.hoveredHandle = null;
+        for (const h of this.handles) h.mesh.visible = false;
+      }
+      isAttached() {
+        return this.box !== null;
+      }
+      isDragging() {
+        return this.drag !== null;
+      }
+      getHandleMeshes() {
+        return this.handles.map((h) => h.mesh);
+      }
+      /** Update handle positions and sizes to match the current box */
+      updatePositions() {
+        if (!this.box) return;
+        const center = new THREE6.Vector3();
+        const size = new THREE6.Vector3();
+        this.box.getCenter(center);
+        this.box.getSize(size);
+        const diag = size.length();
+        const radius = Math.max(0.05, Math.min(diag * 0.02, 2));
+        for (const h of this.handles) {
+          const pos = center.clone();
+          if (h.sign === 1) {
+            pos[h.axis] = this.box.max[h.axis];
+          } else {
+            pos[h.axis] = this.box.min[h.axis];
+          }
+          h.mesh.position.copy(pos);
+          h.mesh.scale.setScalar(radius);
+        }
+      }
+      /**
+       * Try to start a drag. Call on pointerdown.
+       * Returns true if a handle was grabbed (caller should disable orbit controls).
+       */
+      onPointerDown(clientX, clientY) {
+        if (!this.box) return false;
+        const handle = this.hitTest(clientX, clientY);
+        if (!handle) return false;
+        const cameraDir = new THREE6.Vector3();
+        this.camera.getWorldDirection(cameraDir);
+        const plane = new THREE6.Plane().setFromNormalAndCoplanarPoint(
+          cameraDir.negate(),
+          handle.mesh.position.clone()
+        );
+        this.setRaycasterFromClient(clientX, clientY);
+        const startIntersect = new THREE6.Vector3();
+        if (!this.raycaster.ray.intersectPlane(plane, startIntersect)) return false;
+        const startValue = handle.sign === 1 ? this.box.max[handle.axis] : this.box.min[handle.axis];
+        this.drag = { handle, plane, startIntersect, startValue };
+        this.setHandleColor(handle, HANDLE_DRAG_COLOR);
+        return true;
+      }
+      /** Update the box during a drag. Call on pointermove. */
+      onPointerMove(clientX, clientY) {
+        if (!this.drag || !this.box) return;
+        this.setRaycasterFromClient(clientX, clientY);
+        const currentIntersect = new THREE6.Vector3();
+        if (!this.raycaster.ray.intersectPlane(this.drag.plane, currentIntersect)) return;
+        const axis = this.drag.handle.axis;
+        const delta = currentIntersect[axis] - this.drag.startIntersect[axis];
+        const newValue = this.drag.startValue + delta;
+        const MIN_SIZE = 0.1;
+        if (this.drag.handle.sign === 1) {
+          this.box.max[axis] = Math.max(this.box.min[axis] + MIN_SIZE, newValue);
+        } else {
+          this.box.min[axis] = Math.min(this.box.max[axis] - MIN_SIZE, newValue);
+        }
+        this.updatePositions();
+        this.onChange?.(this.box);
+      }
+      /** End the drag. Call on pointerup. */
+      onPointerUp() {
+        if (this.drag) {
+          this.setHandleColor(this.drag.handle, HANDLE_COLOR);
+          this.drag = null;
+        }
+      }
+      /** Update hover highlight. Call on pointermove when not dragging. */
+      updateHover(clientX, clientY) {
+        if (this.drag || !this.box) return;
+        const hit = this.hitTest(clientX, clientY);
+        if (hit !== this.hoveredHandle) {
+          if (this.hoveredHandle) {
+            this.setHandleColor(this.hoveredHandle, HANDLE_COLOR);
+          }
+          this.hoveredHandle = hit;
+          if (hit) {
+            this.setHandleColor(hit, HANDLE_HOVER_COLOR);
+          }
+        }
+      }
+      dispose() {
+        if (this.disposed) return;
+        this.disposed = true;
+        for (const h of this.handles) {
+          h.mesh.geometry.dispose();
+          h.mesh.material.dispose();
+        }
+        this.scene.remove(this.group);
+      }
+      hitTest(clientX, clientY) {
+        if (!this.box) return null;
+        this.setRaycasterFromClient(clientX, clientY);
+        const meshes = this.handles.filter((h) => h.mesh.visible).map((h) => h.mesh);
+        const intersects = this.raycaster.intersectObjects(meshes);
+        if (intersects.length === 0) return null;
+        const hitMesh = intersects[0].object;
+        return this.handles.find((h) => h.mesh === hitMesh) ?? null;
+      }
+      setRaycasterFromClient(clientX, clientY) {
+        const rect = this.domElement.getBoundingClientRect();
+        const nx = (clientX - rect.left) / rect.width * 2 - 1;
+        const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
+        this.raycaster.setFromCamera(new THREE6.Vector2(nx, ny), this.camera);
+      }
+      setHandleColor(handle, color) {
+        handle.mesh.material.color.setHex(color);
+      }
+    };
+  }
+});
+function genId() {
+  return `clip_${_nextId2++}`;
+}
+var _nextId2, ClipManager;
+var init_clip_manager = __esm({
+  "src/core/clip-manager.ts"() {
+    init_face_handles();
+    _nextId2 = 1;
+    ClipManager = class {
+      sm;
+      entries = [];
+      helpers = /* @__PURE__ */ new Map();
+      fills = /* @__PURE__ */ new Map();
+      draftHelper = null;
+      selectedId = null;
+      transformControls = null;
+      pivot = null;
+      _faceHandles = null;
+      _transformMode = "translate";
+      onChange;
+      onSelectChange;
+      constructor(sm) {
+        this.sm = sm;
+      }
+      async initTransformControls() {
+        if (this.transformControls) return;
+        const { TransformControls } = await import('three/examples/jsm/controls/TransformControls.js');
+        const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement);
+        tc.setSpace("world");
+        tc.setSize(0.8);
+        tc.addEventListener("change", () => this.syncFromPivot());
+        tc.addEventListener("dragging-changed", (e) => {
+          this.sm.controls.enabled = !e.value;
+        });
+        this.sm.scene.add(tc);
+        this.transformControls = tc;
+      }
+      addBox(box, name) {
+        const id = genId();
+        const entry = {
+          id,
+          name: name ?? `Box ${this.entries.length + 1}`,
+          box: box.clone(),
+          mode: "outside",
+          visible: true
+        };
+        this.entries.push(entry);
+        this.updateHelper(entry);
+        this.applyAll();
+        this.onChange?.(this.getBoxes());
+        return entry;
+      }
+      async selectBox(id) {
+        this._highlightHelper(this.selectedId, false);
+        const tc = this.transformControls;
+        if (tc) tc.detach();
+        if (this.pivot) {
+          this.sm.scene.remove(this.pivot);
+          this.pivot.geometry.dispose();
+          this.pivot = null;
+        }
+        this._faceHandles?.detach();
+        this.selectedId = id;
+        this.onSelectChange?.(id);
+        if (!id) return;
+        const entry = this.entries.find((e) => e.id === id);
+        if (!entry) return;
+        await this.initTransformControls();
+        const controls = this.transformControls;
+        const center = new THREE6.Vector3();
+        const size = new THREE6.Vector3();
+        entry.box.getCenter(center);
+        entry.box.getSize(size);
+        const geo = new THREE6.BoxGeometry(1, 1, 1);
+        const mat = new THREE6.MeshBasicMaterial({ visible: false });
+        this.pivot = new THREE6.Mesh(geo, mat);
+        this.pivot.position.copy(center);
+        this.pivot.scale.copy(size);
+        this.pivot.userData.clipId = id;
+        this.sm.scene.add(this.pivot);
+        controls.attach(this.pivot);
+        controls.setMode("translate");
+        if (!this._faceHandles) {
+          this._faceHandles = new FaceHandleController(
+            this.sm.scene,
+            this.sm.camera,
+            this.sm.renderer.domElement
+          );
+        }
+        this._faceHandles.attach(entry.box, () => {
+          this.updateHelper(entry);
+          this.applyAll();
+          if (this.pivot) {
+            const c = new THREE6.Vector3();
+            const s = new THREE6.Vector3();
+            entry.box.getCenter(c);
+            entry.box.getSize(s);
+            this.pivot.position.copy(c);
+            this.pivot.scale.copy(s);
+          }
+          this.onChange?.(this.getBoxes());
+        });
+        this._applyTransformMode();
+        this._highlightHelper(id, true);
+      }
+      setTransformMode(mode) {
+        this._transformMode = mode;
+        this._applyTransformMode();
+      }
+      /** Get the face handle controller (for viewport event forwarding) */
+      get faceHandles() {
+        return this._faceHandles;
+      }
+      _applyTransformMode() {
+        const tc = this.transformControls;
+        if (this._transformMode === "scale") {
+          if (tc) tc.detach();
+          if (this._faceHandles && this.selectedId) {
+            const entry = this.entries.find((e) => e.id === this.selectedId);
+            if (entry && !this._faceHandles.isAttached()) {
+              this._faceHandles.attach(entry.box, () => {
+                this.updateHelper(entry);
+                this.applyAll();
+                if (this.pivot) {
+                  const c = new THREE6.Vector3();
+                  const s = new THREE6.Vector3();
+                  entry.box.getCenter(c);
+                  entry.box.getSize(s);
+                  this.pivot.position.copy(c);
+                  this.pivot.scale.copy(s);
+                }
+                this.onChange?.(this.getBoxes());
+              });
+            }
+            this._faceHandles.updatePositions();
+          }
+        } else {
+          if (tc && this.pivot) {
+            tc.attach(this.pivot);
+            tc.setMode(this._transformMode);
+          }
+          this._faceHandles?.detach();
+        }
+      }
+      removeBox(id) {
+        const idx = this.entries.findIndex((e) => e.id === id);
+        if (idx === -1) return;
+        this.entries.splice(idx, 1);
+        const helper = this.helpers.get(id);
+        if (helper) {
+          this.sm.scene.remove(helper);
+          helper.geometry.dispose();
+          this.helpers.delete(id);
+        }
+        const fill = this.fills.get(id);
+        if (fill) {
+          this.sm.scene.remove(fill);
+          fill.geometry.dispose();
+          fill.material.dispose();
+          this.fills.delete(id);
+        }
+        if (this.selectedId === id) {
+          this.transformControls?.detach();
+          if (this.pivot) {
+            this.sm.scene.remove(this.pivot);
+            this.pivot.geometry.dispose();
+            this.pivot = null;
+          }
+          this.selectedId = null;
+          this.onSelectChange?.(null);
+        }
+        this.applyAll();
+        this.onChange?.(this.getBoxes());
+      }
+      setBoxMode(id, mode) {
+        const entry = this.entries.find((e) => e.id === id);
+        if (!entry) return;
+        entry.mode = mode;
+        this.applyAll();
+        this.onChange?.(this.getBoxes());
+      }
+      setBoxVisible(id, visible) {
+        const entry = this.entries.find((e) => e.id === id);
+        if (!entry) return;
+        entry.visible = visible;
+        const helper = this.helpers.get(id);
+        if (helper) helper.visible = visible;
+        const fill = this.fills.get(id);
+        if (fill) fill.visible = visible;
+        this.applyAll();
+        this.onChange?.(this.getBoxes());
+      }
+      renameBox(id, name) {
+        const entry = this.entries.find((e) => e.id === id);
+        if (!entry) return;
+        entry.name = name;
+        this.onChange?.(this.getBoxes());
+      }
+      getBoxes() {
+        return this.entries.map((e) => ({ ...e, box: e.box.clone() }));
+      }
+      getSelectedId() {
+        return this.selectedId;
+      }
+      hasBox() {
+        return this.entries.length > 0;
+      }
+      /** Draft box — live drag preview, no clip applied */
+      setDraft(box) {
+        if (this.draftHelper) {
+          this.sm.scene.remove(this.draftHelper);
+          this.draftHelper.geometry.dispose();
+          this.draftHelper = null;
+        }
+        if (box && !box.isEmpty()) {
+          this.draftHelper = new THREE6.Box3Helper(box, new THREE6.Color(14472518));
+          this.draftHelper.material.transparent = true;
+          this.draftHelper.material.opacity = 0.6;
+          this.draftHelper.renderOrder = 3;
+          this.sm.scene.add(this.draftHelper);
+        }
+      }
+      clear() {
+        this.transformControls?.detach();
+        if (this.pivot) {
+          this.sm.scene.remove(this.pivot);
+          this.pivot.geometry.dispose();
+          this.pivot = null;
+        }
+        for (const [, helper] of this.helpers) {
+          this.sm.scene.remove(helper);
+          helper.geometry.dispose();
+        }
+        this.helpers.clear();
+        for (const [, fill] of this.fills) {
+          this.sm.scene.remove(fill);
+          fill.geometry.dispose();
+          fill.material.dispose();
+        }
+        this.fills.clear();
+        this.entries = [];
+        this.selectedId = null;
+        if (this.draftHelper) {
+          this.sm.scene.remove(this.draftHelper);
+          this.draftHelper.geometry.dispose();
+          this.draftHelper = null;
+        }
+        this.applyAll();
+        this.onChange?.([]);
+        this.onSelectChange?.(null);
+      }
+      dispose() {
+        this.clear();
+        const tc = this.transformControls;
+        if (tc) {
+          this.sm.scene.remove(tc);
+          tc.dispose();
+          this.transformControls = null;
+        }
+        if (this._faceHandles) {
+          this._faceHandles.dispose();
+          this._faceHandles = null;
+        }
+      }
+      syncFromPivot() {
+        if (!this.pivot || !this.selectedId) return;
+        const entry = this.entries.find((e) => e.id === this.selectedId);
+        if (!entry) return;
+        const center = this.pivot.position.clone();
+        const halfSize = new THREE6.Vector3(
+          Math.abs(this.pivot.scale.x) * 0.5,
+          Math.abs(this.pivot.scale.y) * 0.5,
+          Math.abs(this.pivot.scale.z) * 0.5
+        );
+        entry.box.min.copy(center).sub(halfSize);
+        entry.box.max.copy(center).add(halfSize);
+        this.updateHelper(entry);
+        this.applyAll();
+        this.onChange?.(this.getBoxes());
+      }
+      /** Set wireframe color for selected/default state */
+      _highlightHelper(id, selected) {
+        if (!id) return;
+        const helper = this.helpers.get(id);
+        if (helper) {
+          helper.material.color.setHex(
+            selected ? 16777028 : 14472518
+          );
+        }
+      }
+      updateHelper(entry) {
+        if (!this.helpers.has(entry.id)) {
+          const helper = new THREE6.Box3Helper(entry.box, new THREE6.Color(14472518));
+          helper.material.linewidth = 1;
+          helper.renderOrder = 3;
+          helper.visible = entry.visible;
+          this.sm.scene.add(helper);
+          this.helpers.set(entry.id, helper);
+        }
+        const center = new THREE6.Vector3();
+        const size = new THREE6.Vector3();
+        entry.box.getCenter(center);
+        entry.box.getSize(size);
+        const existingFill = this.fills.get(entry.id);
+        if (existingFill) {
+          existingFill.position.copy(center);
+          existingFill.scale.copy(size);
+        } else {
+          const fillGeo = new THREE6.BoxGeometry(1, 1, 1);
+          const fillMat = new THREE6.MeshBasicMaterial({
+            color: 14472518,
+            opacity: 0.08,
+            transparent: true,
+            depthWrite: false,
+            side: THREE6.FrontSide
+          });
+          const fillMesh = new THREE6.Mesh(fillGeo, fillMat);
+          fillMesh.position.copy(center);
+          fillMesh.scale.copy(size);
+          fillMesh.renderOrder = 2;
+          fillMesh.visible = entry.visible;
+          this.sm.scene.add(fillMesh);
+          this.fills.set(entry.id, fillMesh);
+        }
+      }
+      applyAll() {
+        const visible = this.entries.filter((e) => e.visible);
+        for (const pc of this.sm.pointClouds) {
+          const mat = pc.material;
+          if (!mat) continue;
+          if (visible.length === 0) {
+            mat.setClipBoxes([]);
+            mat.clipMode = 0;
+            continue;
+          }
+          const clipBoxes = visible.map((entry) => {
+            const size = new THREE6.Vector3();
+            const center = new THREE6.Vector3();
+            entry.box.getSize(size);
+            entry.box.getCenter(center);
+            const matrix = new THREE6.Matrix4().makeScale(size.x, size.y, size.z).setPosition(center);
+            const inverse = matrix.clone().invert();
+            return {
+              box: entry.box.clone(),
+              inverse,
+              matrix,
+              position: center.clone()
+            };
+          });
+          mat.setClipBoxes(clipBoxes);
+          mat.clipMode = visible[0].mode === "outside" ? 1 : 2;
+        }
+      }
+    };
+  }
+});
+var AxisWidget;
+var init_axis_widget = __esm({
+  "src/core/axis-widget.ts"() {
+    AxisWidget = class {
+      _scene;
+      _camera;
+      _disposables = [];
+      _materials = [];
+      sm;
+      constructor(sm) {
+        this.sm = sm;
+        this._scene = new THREE6.Scene();
+        this._scene.background = null;
+        this._camera = new THREE6.PerspectiveCamera(50, 1, 0.1, 100);
+        this._buildAxes();
+      }
+      _buildAxes() {
+        const axes = [
+          { dir: new THREE6.Vector3(1, 0, 0), color: 15087942, label: "X" },
+          // red
+          { dir: new THREE6.Vector3(0, 1, 0), color: 2792847, label: "Y" },
+          // teal
+          { dir: new THREE6.Vector3(0, 0, 1), color: 4553629, label: "Z" }
+          // blue
+        ];
+        for (const axis of axes) {
+          const mat = new THREE6.MeshBasicMaterial({ color: axis.color });
+          this._materials.push(mat);
+          const quat = new THREE6.Quaternion().setFromUnitVectors(
+            new THREE6.Vector3(0, 1, 0),
+            axis.dir
+          );
+          const shaftGeo = new THREE6.CylinderGeometry(0.03, 0.03, 0.65, 6);
+          shaftGeo.translate(0, 0.325, 0);
+          shaftGeo.applyQuaternion(quat);
+          this._scene.add(new THREE6.Mesh(shaftGeo, mat));
+          this._disposables.push(shaftGeo);
+          const coneGeo = new THREE6.ConeGeometry(0.08, 0.2, 8);
+          coneGeo.translate(0, 0.76, 0);
+          coneGeo.applyQuaternion(quat);
+          this._scene.add(new THREE6.Mesh(coneGeo, mat));
+          this._disposables.push(coneGeo);
+          const sprite = this._makeLabel(axis.label, axis.color);
+          const tipPos = axis.dir.clone().multiplyScalar(1.05);
+          sprite.position.copy(tipPos);
+          sprite.scale.set(0.28, 0.28, 1);
+          this._scene.add(sprite);
+        }
+        const sGeo = new THREE6.SphereGeometry(0.06, 8, 8);
+        const sMat = new THREE6.MeshBasicMaterial({ color: 10066329 });
+        this._scene.add(new THREE6.Mesh(sGeo, sMat));
+        this._disposables.push(sGeo);
+        this._materials.push(sMat);
+      }
+      /** Create a canvas-based sprite with the axis letter */
+      _makeLabel(letter, color) {
+        const res = 64;
+        const canvas = document.createElement("canvas");
+        canvas.width = res;
+        canvas.height = res;
+        const ctx = canvas.getContext("2d");
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = `bold ${res * 0.6}px "Inter", system-ui, sans-serif`;
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillText(letter, res / 2 + 1, res / 2 + 1);
+        const hex = "#" + color.toString(16).padStart(6, "0");
+        ctx.fillStyle = hex;
+        ctx.fillText(letter, res / 2, res / 2);
+        const tex = new THREE6.CanvasTexture(canvas);
+        tex.minFilter = THREE6.LinearFilter;
+        const mat = new THREE6.SpriteMaterial({
+          map: tex,
+          transparent: true,
+          depthTest: false
+        });
+        this._materials.push(mat);
+        return new THREE6.Sprite(mat);
+      }
+      /**
+       * Render the widget into a scissor region in the top-right corner.
+       * Must be called from a post-render callback after the main scene renders.
+       */
+      render() {
+        const renderer = this.sm.renderer;
+        const el = renderer.domElement;
+        const W = el.clientWidth;
+        const H = el.clientHeight;
+        if (W === 0 || H === 0) return;
+        const size = 100;
+        const margin = 10;
+        const savedVp = new THREE6.Vector4();
+        const savedSc = new THREE6.Vector4();
+        renderer.getViewport(savedVp);
+        renderer.getScissor(savedSc);
+        const savedScTest = renderer.getScissorTest();
+        const savedAutoClear = renderer.autoClear;
+        const dist = 3;
+        const offset = new THREE6.Vector3(0, 0, dist).applyQuaternion(
+          this.sm.camera.quaternion
+        );
+        this._camera.position.copy(offset);
+        this._camera.up.copy(this.sm.camera.up);
+        this._camera.lookAt(0, 0, 0);
+        const x = W - size - margin;
+        const y = H - size - margin;
+        renderer.autoClear = false;
+        renderer.setScissorTest(true);
+        renderer.setScissor(x, y, size, size);
+        renderer.setViewport(x, y, size, size);
+        renderer.clearDepth();
+        renderer.render(this._scene, this._camera);
+        renderer.setViewport(savedVp);
+        renderer.setScissor(savedSc);
+        renderer.setScissorTest(savedScTest);
+        renderer.autoClear = savedAutoClear;
+      }
+      dispose() {
+        for (const g of this._disposables) g.dispose();
+        for (const m of this._materials) {
+          if (m instanceof THREE6.SpriteMaterial) m.map?.dispose();
+          m.dispose();
+        }
+        this._disposables = [];
+        this._materials = [];
+      }
+    };
+  }
+});
+
+// src/data/file-source-adapter.ts
+function createAdapter(source) {
+  switch (source.type) {
+    case "s3":
+      return new S3SourceAdapter(source.baseUrl, source.headers);
+    case "electron":
+      return new ElectronSourceAdapter(source.basePath);
+    case "local":
+      return new S3SourceAdapter(source.basePath);
+  }
+}
+var S3SourceAdapter, ElectronSourceAdapter;
+var init_file_source_adapter = __esm({
+  "src/data/file-source-adapter.ts"() {
+    S3SourceAdapter = class {
+      baseUrl;
+      headers;
+      constructor(baseUrl, headers = {}) {
+        this.baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
+        this.headers = headers;
+      }
+      resolveUrl(relativePath) {
+        return this.baseUrl + relativePath;
+      }
+      async fetchJson(relativePath) {
+        const res = await fetch(this.resolveUrl(relativePath), { headers: this.headers });
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${relativePath}`);
+        return res.json();
+      }
+      async fetchBinary(relativePath) {
+        const res = await fetch(this.resolveUrl(relativePath), { headers: this.headers });
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${relativePath}`);
+        return res.arrayBuffer();
+      }
+      fetchWithHeaders(input, init) {
+        const mergedHeaders = { ...this.headers, ...init?.headers };
+        return fetch(input, { ...init, headers: mergedHeaders });
+      }
+    };
+    ElectronSourceAdapter = class {
+      basePath;
+      constructor(basePath) {
+        this.basePath = basePath.replace(/\\/g, "/");
+        if (!this.basePath.endsWith("/")) this.basePath += "/";
+      }
+      resolveUrl(relativePath) {
+        return "file:///" + this.basePath + relativePath;
+      }
+      async fetchJson(relativePath) {
+        const abs = this.basePath + relativePath;
+        const win = window;
+        if (!win.electronFS) throw new Error("electronFS not available - is preload loaded?");
+        const data = await win.electronFS.readFile(abs, "utf-8");
+        return JSON.parse(data);
+      }
+      async fetchBinary(relativePath) {
+        const abs = this.basePath + relativePath;
+        const win = window;
+        if (!win.electronFS) throw new Error("electronFS not available");
+        const buffer = await win.electronFS.readFileBinary(abs);
+        return buffer;
+      }
+      async listDirectories(path) {
+        const win = window;
+        if (!win.electronFS) return [];
+        return win.electronFS.readdir(this.basePath + path);
+      }
+    };
+  }
+});
+
+// src/components/viewport.tsx
+var viewport_exports = {};
+__export(viewport_exports, {
+  Viewport: () => Viewport
+});
+function Viewport({ className }) {
+  const containerRef = useRef(null);
+  const minimapContainerRef = useRef(null);
+  const initialized = useRef(false);
+  const [minimapSize, setMinimapSize] = React14.useState(176);
+  const t = useLocale().viewport;
+  const {
+    config,
+    setSceneManager,
+    setLoader,
+    setMeasurementManager,
+    setMarkerManager,
+    setCameraAnimator,
+    setExporter,
+    setMinimap,
+    setClipManager,
+    setFps,
+    activeTool,
+    pointBudget,
+    showMarkers,
+    showMinimap,
+    setMeasurementList,
+    setSelectedCamera,
+    setClipBoxEntries,
+    setSelectedClipBoxId,
+    navigationMode,
+    projection
+  } = useViewer();
+  const { cameras, metadata } = useData();
+  const metaZRef = useRef(null);
+  useEffect(() => {
+    if (metadata) {
+      metaZRef.current = {
+        min: metadata.boundingBox.min[2],
+        max: metadata.boundingBox.max[2]
+      };
+    }
+  }, [metadata]);
+  const smRef = useRef(null);
+  const loaderRef = useRef(null);
+  const markerRef = useRef(null);
+  const measureRef = useRef(null);
+  const minimapRef = useRef(null);
+  const clipRef = useRef(null);
+  const animRef = useRef(null);
+  const axisRef = useRef(null);
+  const clipDragRef = useRef(null);
+  const volumeDragRef = useRef(null);
+  useEffect(() => {
+    if (!containerRef.current || initialized.current) return;
+    initialized.current = true;
+    const adapter = createAdapter(config.source);
+    const sm = new SceneManager({
+      canvas: containerRef.current,
+      onFpsUpdate: setFps
+    });
+    const loader = new PointCloudLoader(sm, adapter);
+    const measureMgr = new MeasurementManager(sm.scene);
+    measureMgr.onChange = (list) => setMeasurementList(list);
+    const markerMgr = new MarkerManager(sm.scene);
+    const anim = new CameraAnimator(sm.camera, sm.controls);
+    const exporter = new ExportManager(sm);
+    const minimapRdr = new MinimapRenderer(sm);
+    const clipMgr = new ClipManager(sm);
+    clipMgr.onChange = (boxes) => setClipBoxEntries(boxes);
+    clipMgr.onSelectChange = (id) => setSelectedClipBoxId(id);
+    smRef.current = sm;
+    loaderRef.current = loader;
+    markerRef.current = markerMgr;
+    measureRef.current = measureMgr;
+    minimapRef.current = minimapRdr;
+    clipRef.current = clipMgr;
+    animRef.current = anim;
+    setSceneManager(sm);
+    setLoader(loader);
+    setMeasurementManager(measureMgr);
+    setMarkerManager(markerMgr);
+    setCameraAnimator(anim);
+    setExporter(exporter);
+    setMinimap(minimapRdr);
+    setClipManager(clipMgr);
+    const minimapFrame = () => minimapRdr.update();
+    sm.addFrameCallback(minimapFrame);
+    const axisWidget = new AxisWidget(sm);
+    axisRef.current = axisWidget;
+    const axisFrame = () => axisWidget.render();
+    sm.addPostRenderCallback(axisFrame);
+    sm.start();
+    const canvas = containerRef.current;
+    const onWheel = (e) => {
+      if (smRef.current?.navigationMode !== "fly") return;
+      const next = Math.max(0.5, smRef.current.flySpeed * (e.deltaY > 0 ? 0.9 : 1.1));
+      smRef.current.setFlySpeed(next);
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: true });
+    loader.load("metadata.json", pointBudget).then(() => {
+      const pc = loader.getPointCloud();
+      if (pc && !loader.worldBox.isEmpty()) {
+        const size = new THREE6.Vector3();
+        loader.worldBox.getSize(size);
+        sm.flySpeed = Math.max(size.x, size.y, size.z) / 20;
+      }
+      if (pc) {
+        const pca = pc;
+        const box = pca.pcoGeometry?.boundingBox ?? pca.boundingBox;
+        const tightBox = pca.pcoGeometry?.tightBoundingBox ?? box;
+        const offset = pca.pcoGeometry?.offset;
+        const worldBox = new THREE6.Box3();
+        if (tightBox && offset) {
+          worldBox.copy(tightBox);
+          worldBox.min.add(offset);
+          worldBox.max.add(offset);
+        } else if (box) {
+          worldBox.copy(box);
+        } else {
+          worldBox.setFromObject(pc);
+        }
+        if (!worldBox.isEmpty()) {
+          minimapRdr.setBounds(worldBox);
+        }
+      }
+    }).catch(console.error);
+    return () => {
+      canvas.removeEventListener("wheel", onWheel);
+      sm.removeFrameCallback(minimapFrame);
+      sm.removePostRenderCallback(axisFrame);
+      sm.dispose();
+      measureMgr.dispose();
+      markerMgr.dispose();
+      minimapRdr.dispose();
+      clipMgr.dispose();
+      axisWidget.dispose();
+      initialized.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (minimapRef.current && minimapContainerRef.current) {
+      minimapRef.current.attach(minimapContainerRef.current);
+    }
+  }, [showMinimap]);
+  const handleMinimapClick = useCallback((e) => {
+    const sm = smRef.current;
+    const minimap = minimapRef.current;
+    if (!sm || !minimap) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const world = minimap.canvasToWorld(cx, cy);
+    const cam = sm.camera;
+    const offset = new THREE6.Vector3().subVectors(cam.position, sm.controls.target);
+    sm.controls.target.set(world.x, world.y, sm.controls.target.z);
+    cam.position.set(world.x + offset.x, world.y + offset.y, cam.position.z);
+    sm.controls.update();
+  }, []);
+  const minimapResizeRef = useRef(false);
+  const handleMinimapResizeStart = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    minimapResizeRef.current = true;
+    const startY = e.clientY;
+    const startSize = minimapSize;
+    const onMove = (ev) => {
+      if (!minimapResizeRef.current) return;
+      const delta = startY - ev.clientY;
+      setMinimapSize(Math.max(120, Math.min(400, startSize + delta)));
+      minimapRef.current?.resize();
+    };
+    const onUp = () => {
+      minimapResizeRef.current = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      setTimeout(() => minimapRef.current?.resize(), 0);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [minimapSize]);
+  useEffect(() => {
+    if (markerRef.current && cameras.length > 0) {
+      const wb = loaderRef.current?.worldBox;
+      markerRef.current.build(cameras, wb && !wb.isEmpty() ? wb : void 0);
+      markerRef.current.setVisible(showMarkers);
+    }
+  }, [cameras, showMarkers]);
+  useEffect(() => {
+    markerRef.current?.setVisible(showMarkers);
+  }, [showMarkers]);
+  useEffect(() => {
+    if (!activeTool.startsWith("measure-")) {
+      measureRef.current?.clearSnap();
+    }
+    if (activeTool !== "measure-volume") {
+      volumeDragRef.current = null;
+      measureRef.current?.setVolumeDraft(null);
+    }
+  }, [activeTool]);
+  useEffect(() => {
+    smRef.current?.setNavigationMode(navigationMode);
+  }, [navigationMode]);
+  useEffect(() => {
+    smRef.current?.setProjection(projection);
+  }, [projection]);
+  const projectToPlaneZ = useCallback((nx, ny, planeZ) => {
+    const sm = smRef.current;
+    if (!sm) return null;
+    const raycaster = new THREE6.Raycaster();
+    raycaster.setFromCamera(new THREE6.Vector2(nx, ny), sm.camera);
+    const plane = new THREE6.Plane(new THREE6.Vector3(0, 0, 1), -planeZ);
+    const hit = new THREE6.Vector3();
+    return raycaster.ray.intersectPlane(plane, hit) ? hit : null;
+  }, []);
+  const getNDC = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return {
+      nx: (e.clientX - rect.left) / rect.width * 2 - 1,
+      ny: -((e.clientY - rect.top) / rect.height) * 2 + 1
+    };
+  };
+  const handleDblClick = useCallback((e) => {
+    const sm = smRef.current;
+    const anim = animRef.current;
+    if (!sm || !anim) return;
+    const mode = sm.navigationMode;
+    if (mode !== "orbit" && mode !== "earth") return;
+    const { nx, ny } = getNDC(e);
+    const hit = sm.pickPoint(nx, ny) ?? projectToPlaneZ(nx, ny, sm.controls.target.z);
+    if (!hit) return;
+    anim.flyTo({ position: sm.camera.position.clone(), target: hit, duration: 600 });
+  }, [projectToPlaneZ]);
+  const handleMouseDown = useCallback((e) => {
+    const sm = smRef.current;
+    if (!sm) return;
+    const fh = clipRef.current?.faceHandles;
+    if (fh && fh.isAttached() && e.button === 0) {
+      if (fh.onPointerDown(e.clientX, e.clientY)) {
+        e.preventDefault();
+        sm.controls.enabled = false;
+        return;
+      }
+    }
+    if (activeTool === "measure-volume" && e.button === 0) {
+      const vd = volumeDragRef.current;
+      if (vd && vd.phase === "height") {
+        if (vd.footprintBox) {
+          measureRef.current?.addVolumeMeasurement(vd.footprintBox);
+        }
+        volumeDragRef.current = null;
+        sm.controls.enabled = true;
+        return;
+      }
+      e.preventDefault();
+      sm.controls.enabled = false;
+      const { nx: nx2, ny: ny2 } = getNDC(e);
+      const planeZ2 = sm.controls.target.z;
+      const startWorld2 = projectToPlaneZ(nx2, ny2, planeZ2);
+      if (startWorld2) {
+        volumeDragRef.current = { phase: "footprint", startWorld: startWorld2, planeZ: planeZ2 };
+      }
+      return;
+    }
+    if (activeTool !== "section-box" || e.button !== 0) return;
+    e.preventDefault();
+    sm.controls.enabled = false;
+    const { nx, ny } = getNDC(e);
+    const planeZ = sm.controls.target.z;
+    const startWorld = projectToPlaneZ(nx, ny, planeZ);
+    if (startWorld) {
+      clipDragRef.current = { startWorld, planeZ };
+    }
+  }, [activeTool, projectToPlaneZ]);
+  const handleMouseMove = useCallback((e) => {
+    const fh = clipRef.current?.faceHandles;
+    if (fh && fh.isDragging()) {
+      fh.onPointerMove(e.clientX, e.clientY);
+      return;
+    }
+    if (fh && fh.isAttached()) {
+      fh.updateHover(e.clientX, e.clientY);
+    }
+    const vd = volumeDragRef.current;
+    if (vd && activeTool === "measure-volume") {
+      if (vd.phase === "footprint") {
+        const { nx, ny } = getNDC(e);
+        const endWorld = projectToPlaneZ(nx, ny, vd.planeZ);
+        if (!endWorld) return;
+        const { startWorld } = vd;
+        const zMin = metaZRef.current?.min ?? vd.planeZ - 10;
+        const zMax = metaZRef.current?.max ?? vd.planeZ + 10;
+        const box = new THREE6.Box3(
+          new THREE6.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
+          new THREE6.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
+        );
+        measureRef.current?.setVolumeDraft(box);
+      } else if (vd.phase === "height" && vd.footprintBox && vd.startClientY !== void 0) {
+        const deltaY = vd.startClientY - e.clientY;
+        const sensitivity = 0.1;
+        const zExtent = Math.max(0.1, Math.abs(deltaY) * sensitivity);
+        const midZ = (vd.baseZMin + vd.baseZMax) / 2;
+        const box = vd.footprintBox.clone();
+        box.min.z = midZ - zExtent / 2;
+        box.max.z = midZ + zExtent / 2;
+        vd.footprintBox.copy(box);
+        measureRef.current?.setVolumeDraft(box);
+      }
+      return;
+    }
+    if (clipDragRef.current && activeTool === "section-box") {
+      const { nx, ny } = getNDC(e);
+      const endWorld = projectToPlaneZ(nx, ny, clipDragRef.current.planeZ);
+      if (!endWorld) return;
+      const { startWorld } = clipDragRef.current;
+      const sm = smRef.current;
+      if (!sm) return;
+      const zMin = metaZRef.current?.min ?? sm.controls.target.z - 50;
+      const zMax = metaZRef.current?.max ?? sm.controls.target.z + 50;
+      const box = new THREE6.Box3(
+        new THREE6.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
+        new THREE6.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
+      );
+      clipRef.current?.setDraft(box);
+      return;
+    }
+    if (activeTool.startsWith("measure-") && measureRef.current) {
+      const sm = smRef.current;
+      if (!sm) return;
+      const { nx, ny } = getNDC(e);
+      const hit = sm.pickPoint(nx, ny) ?? projectToPlaneZ(nx, ny, sm.controls.target.z);
+      if (hit) {
+        measureRef.current.updateSnap(hit);
+      }
+    }
+  }, [activeTool, projectToPlaneZ]);
+  const handleMouseUp = useCallback((e) => {
+    const sm = smRef.current;
+    const fh = clipRef.current?.faceHandles;
+    if (fh && fh.isDragging()) {
+      fh.onPointerUp();
+      if (sm) sm.controls.enabled = true;
+      return;
+    }
+    const vdUp = volumeDragRef.current;
+    if (vdUp && vdUp.phase === "footprint" && activeTool === "measure-volume") {
+      const { nx: nx2, ny: ny2 } = getNDC(e);
+      const endWorld2 = projectToPlaneZ(nx2, ny2, vdUp.planeZ);
+      if (endWorld2) {
+        const { startWorld } = vdUp;
+        const zMin = metaZRef.current?.min ?? vdUp.planeZ - 10;
+        const zMax = metaZRef.current?.max ?? vdUp.planeZ + 10;
+        const box = new THREE6.Box3(
+          new THREE6.Vector3(Math.min(startWorld.x, endWorld2.x), Math.min(startWorld.y, endWorld2.y), zMin),
+          new THREE6.Vector3(Math.max(startWorld.x, endWorld2.x), Math.max(startWorld.y, endWorld2.y), zMax)
+        );
+        if (!box.isEmpty()) {
+          volumeDragRef.current = {
+            phase: "height",
+            startWorld: vdUp.startWorld,
+            planeZ: vdUp.planeZ,
+            footprintBox: box,
+            startClientY: e.clientY,
+            baseZMin: zMin,
+            baseZMax: zMax
+          };
+          return;
+        }
+      }
+      volumeDragRef.current = null;
+      measureRef.current?.setVolumeDraft(null);
+      if (sm) sm.controls.enabled = true;
+      return;
+    }
+    if (sm) sm.controls.enabled = true;
+    if (!clipDragRef.current || activeTool !== "section-box") {
+      clipDragRef.current = null;
+      return;
+    }
+    const { nx, ny } = getNDC(e);
+    const endWorld = projectToPlaneZ(nx, ny, clipDragRef.current.planeZ);
+    if (endWorld && sm) {
+      const { startWorld } = clipDragRef.current;
+      const zMin = sm.controls.target.z - 50;
+      const zMax = sm.controls.target.z + 50;
+      const box = new THREE6.Box3(
+        new THREE6.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
+        new THREE6.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
+      );
+      if (!box.isEmpty()) clipRef.current?.addBox(box);
+    }
+    clipDragRef.current = null;
+  }, [activeTool, projectToPlaneZ]);
+  const handleClick = useCallback((e) => {
+    if (activeTool === "section-box") return;
+    const sm = smRef.current;
+    if (!sm) return;
+    const { nx, ny } = getNDC(e);
+    if (activeTool === "none" && showMarkers && markerRef.current) {
+      const hits = sm.raycast(nx, ny, markerRef.current.getMeshes());
+      if (hits.length > 0) {
+        const idx = hits[0].object.userData.cameraIndex;
+        markerRef.current.setSelected(idx);
+        setSelectedCamera(cameras[idx]);
+        config.onCameraSelect?.(cameras[idx]);
+      }
+    }
+    if (activeTool.startsWith("measure-") && activeTool !== "measure-volume" && measureRef.current) {
+      const type = activeTool.replace("measure-", "");
+      const hit = sm.pickPoint(nx, ny) ?? projectToPlaneZ(nx, ny, sm.controls.target.z);
+      if (hit) {
+        if (!measureRef.current.activeMeasurement) measureRef.current.start(type);
+        measureRef.current.addPoint(hit);
+      }
+    }
+  }, [activeTool, cameras, config, projectToPlaneZ, showMarkers]);
+  const handleContextMenu = useCallback((e) => {
+    e.preventDefault();
+    if (volumeDragRef.current) {
+      volumeDragRef.current = null;
+      measureRef.current?.setVolumeDraft(null);
+      const sm = smRef.current;
+      if (sm) sm.controls.enabled = true;
+      return;
+    }
+    if (activeTool.startsWith("measure-") && measureRef.current?.activeMeasurement) {
+      measureRef.current.finish();
+    }
+    if (activeTool === "section-box") {
+      clipRef.current?.clear();
+    }
+  }, [activeTool]);
+  return /* @__PURE__ */ jsxs("div", { className: cn("relative w-full h-full overflow-hidden bg-[hsl(var(--viewport-bg))]", className), children: [
+    /* @__PURE__ */ jsx(
+      "div",
+      {
+        ref: containerRef,
+        className: "w-full h-full",
+        onClick: handleClick,
+        onDoubleClick: handleDblClick,
+        onMouseDown: handleMouseDown,
+        onMouseMove: handleMouseMove,
+        onMouseUp: handleMouseUp,
+        onContextMenu: handleContextMenu,
+        style: { cursor: activeTool === "section-box" ? "crosshair" : activeTool !== "none" ? "crosshair" : "default" }
+      }
+    ),
+    showMinimap && /* @__PURE__ */ jsxs(
+      "div",
+      {
+        className: "absolute bottom-10 left-3 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer",
+        style: { width: minimapSize, height: minimapSize },
+        onClick: handleMinimapClick,
+        children: [
+          /* @__PURE__ */ jsx(
+            "div",
+            {
+              ref: minimapContainerRef,
+              className: "relative w-full h-full"
+            }
+          ),
+          /* @__PURE__ */ jsx("div", { className: "absolute top-1 left-2 text-[9px] text-white/40 font-mono pointer-events-none", children: t.overview }),
+          /* @__PURE__ */ jsx(
+            "div",
+            {
+              onMouseDown: handleMinimapResizeStart,
+              className: "absolute top-0 right-0 w-4 h-4 cursor-nwse-resize flex items-center justify-center",
+              title: "Resize minimap",
+              children: /* @__PURE__ */ jsx("svg", { width: "8", height: "8", viewBox: "0 0 8 8", className: "text-white/30", children: /* @__PURE__ */ jsx("path", { d: "M0 8L8 0M3 8L8 3M6 8L8 6", stroke: "currentColor", strokeWidth: "1" }) })
+            }
+          )
+        ]
+      }
+    ),
+    activeTool !== "none" && /* @__PURE__ */ jsxs("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 bg-black/70 text-[hsl(var(--brand))] text-xs font-mono px-3 py-1 rounded-full pointer-events-none", children: [
+      activeTool === "measure-point" && t.hintPoint,
+      activeTool === "measure-distance" && t.hintDistance,
+      activeTool === "measure-height" && t.hintHeight,
+      activeTool === "measure-area" && t.hintArea,
+      activeTool === "measure-angle" && t.hintAngle,
+      activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? "Move mouse up/down to set height, click to confirm" : "Drag to draw volume footprint"),
+      activeTool === "section-box" && t.hintSectionBox
+    ] }),
+    metadata && /* @__PURE__ */ jsxs("div", { className: "absolute bottom-10 right-3 text-[10px] font-mono text-white/30 text-right pointer-events-none", children: [
+      (metadata.points / 1e6).toFixed(1),
+      "M pts"
+    ] })
+  ] });
+}
+var init_viewport = __esm({
+  "src/components/viewport.tsx"() {
+    "use client";
+    init_utils();
+    init_viewer_provider();
+    init_data_provider();
+    init_locale_context();
+    init_scene_manager();
+    init_point_cloud_loader();
+    init_measurement_manager();
+    init_marker_manager();
+    init_camera_animator();
+    init_export_manager();
+    init_minimap_renderer();
+    init_clip_manager();
+    init_axis_widget();
+    init_file_source_adapter();
+  }
+});
+var ThemeContext = createContext(null);
+function useTheme() {
+  const ctx = useContext(ThemeContext);
+  if (!ctx) throw new Error("useTheme must be used inside <ThemeProvider>");
+  return ctx;
+}
+function ThemeProvider({
+  defaultTheme = "dark",
+  storageKey = "pcv-theme",
+  children
+}) {
+  const [theme, setThemeState] = useState(() => {
+    if (typeof window === "undefined") return defaultTheme;
+    return localStorage.getItem(storageKey) ?? defaultTheme;
+  });
+  const resolvedTheme = theme === "system" ? typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light" : theme;
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove("dark", "light");
+    root.classList.add(resolvedTheme);
+    root.setAttribute("data-theme", resolvedTheme);
+  }, [resolvedTheme]);
+  const setTheme = (t) => {
+    setThemeState(t);
+    if (typeof window !== "undefined") localStorage.setItem(storageKey, t);
+  };
+  const toggleTheme = () => setTheme(resolvedTheme === "dark" ? "light" : "dark");
+  return /* @__PURE__ */ jsx(ThemeContext.Provider, { value: { theme, resolvedTheme, setTheme, toggleTheme }, children });
+}
+
+// src/components/pano-cloud-viewer.tsx
+init_viewer_provider();
+init_data_provider();
+init_locale_context();
+
+// src/components/workspace-layout.tsx
+init_utils();
+init_viewer_provider();
+init_data_provider();
+init_locale_context();
+
+// src/components/toolbar/main-toolbar.tsx
+init_utils();
+init_viewer_provider();
+init_locale_context();
+
+// src/components/toolbar/view-controls.tsx
+init_viewer_provider();
+init_locale_context();
+var CUBE_WIRE = /* @__PURE__ */ jsxs(Fragment, { children: [
+  /* @__PURE__ */ jsx("path", { d: "M12 2L22 8V16L12 22L2 16V8Z", stroke: "currentColor", strokeWidth: "1.2", strokeLinejoin: "round", fill: "none" }),
+  /* @__PURE__ */ jsx("path", { d: "M12 12L22 8", stroke: "currentColor", strokeWidth: "1.2" }),
+  /* @__PURE__ */ jsx("path", { d: "M12 12L2 8", stroke: "currentColor", strokeWidth: "1.2" }),
+  /* @__PURE__ */ jsx("path", { d: "M12 12V22", stroke: "currentColor", strokeWidth: "1.2" })
+] });
+function TopIcon() {
+  return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", width: "14", height: "14", children: [
+    CUBE_WIRE,
+    /* @__PURE__ */ jsx("path", { d: "M2 8L12 2L22 8L12 12Z", fill: "currentColor", fillOpacity: "0.35" })
+  ] });
+}
+function BottomIcon() {
+  return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", width: "14", height: "14", children: [
+    CUBE_WIRE,
+    /* @__PURE__ */ jsx("path", { d: "M2 16L12 22L22 16L12 12Z", fill: "currentColor", fillOpacity: "0.35" })
+  ] });
+}
+function FrontIcon() {
+  return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", width: "14", height: "14", children: [
+    CUBE_WIRE,
+    /* @__PURE__ */ jsx("path", { d: "M2 8L12 12V22L2 16Z", fill: "currentColor", fillOpacity: "0.35" })
+  ] });
+}
+function BackIcon() {
+  return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", width: "14", height: "14", children: [
+    CUBE_WIRE,
+    /* @__PURE__ */ jsx("path", { d: "M22 8L12 12V22L22 16Z", fill: "currentColor", fillOpacity: "0.35" })
+  ] });
+}
+function LeftIcon() {
+  return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", width: "14", height: "14", children: [
+    CUBE_WIRE,
+    /* @__PURE__ */ jsx("path", { d: "M2 8L12 2V12L2 16Z", fill: "currentColor", fillOpacity: "0.35" })
+  ] });
+}
+function RightIcon() {
+  return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", width: "14", height: "14", children: [
+    CUBE_WIRE,
+    /* @__PURE__ */ jsx("path", { d: "M22 8L12 2V12L22 16Z", fill: "currentColor", fillOpacity: "0.35" })
+  ] });
+}
+var VIEW_DEFS = [
+  { titleKey: "viewTop", pos: [0, 0, 1], up: [0, 1, 0], icon: TopIcon },
+  { titleKey: "viewBottom", pos: [0, 0, -1], up: [0, 1, 0], icon: BottomIcon },
+  { titleKey: "viewFront", pos: [0, -1, 0], up: [0, 0, 1], icon: FrontIcon },
+  { titleKey: "viewBack", pos: [0, 1, 0], up: [0, 0, 1], icon: BackIcon },
+  { titleKey: "viewLeft", pos: [-1, 0, 0], up: [0, 0, 1], icon: LeftIcon },
+  { titleKey: "viewRight", pos: [1, 0, 0], up: [0, 0, 1], icon: RightIcon }
+];
+function ViewControls() {
+  const { sceneManager } = useViewer();
+  const t = useLocale().toolbar;
+  const flyToView = (pos, up) => {
+    if (!sceneManager) return;
+    const { camera, controls } = sceneManager;
+    const target = controls.target.clone();
+    const dist = camera.position.distanceTo(target);
+    const newPos = target.clone().add(
+      { x: pos[0] * dist, y: pos[1] * dist, z: pos[2] * dist }
+    );
+    camera.position.set(newPos.x, newPos.y, newPos.z);
+    camera.up.set(up[0], up[1], up[2]);
+    controls.update();
+  };
+  return /* @__PURE__ */ jsx(Fragment, { children: VIEW_DEFS.map((v) => /* @__PURE__ */ jsx(
+    ToolbarIconBtn,
+    {
+      icon: /* @__PURE__ */ jsx(v.icon, {}),
+      title: t[v.titleKey] ?? v.titleKey,
+      active: false,
+      onClick: () => flyToView(v.pos, v.up)
+    },
+    v.titleKey
+  )) });
+}
+
+// src/components/toolbar/display-controls.tsx
+init_viewer_provider();
+init_locale_context();
+var COLOR_MODES = [
+  { value: "rgb", labelKey: "colorRgb" },
+  { value: "height", labelKey: "colorElevation" },
+  { value: "intensity", labelKey: "colorIntensity" },
+  { value: "intensity_gradient", labelKey: "colorIntensityGradient" },
+  { value: "classification", labelKey: "colorClassification" },
+  { value: "return_number", labelKey: "colorReturnNumber" },
+  { value: "source", labelKey: "colorSource" }
+];
+var QUALITY_PRESETS = [
+  { value: "performance", shape: 0, sizeType: 0, label: "qualityPerformance" },
+  // SQUARE + FIXED
+  { value: "balanced", shape: 1, sizeType: 2, label: "qualityBalanced" },
+  // CIRCLE + ADAPTIVE
+  { value: "high", shape: 2, sizeType: 2, label: "qualityHigh" }
+  // PARABOLOID + ADAPTIVE
+];
+function OrbitIcon({ className }) {
+  return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", fill: "none", className, width: "14", height: "14", children: [
+    /* @__PURE__ */ jsx("path", { d: "M5 8l7-4 7 4v8l-7 4-7-4V8z", stroke: "currentColor", strokeWidth: "1.3", strokeLinejoin: "round" }),
+    /* @__PURE__ */ jsx("path", { d: "M5 8l7 4 7-4", stroke: "currentColor", strokeWidth: "1.3", strokeLinejoin: "round" }),
+    /* @__PURE__ */ jsx("path", { d: "M12 12v8", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("path", { d: "M20 5a9.5 9.5 0 0 0-4-2.5", stroke: "currentColor", strokeWidth: "1.3", strokeLinecap: "round" }),
+    /* @__PURE__ */ jsx("path", { d: "M20 5l-1.5-2M20 5l2-1", stroke: "currentColor", strokeWidth: "1", strokeLinecap: "round" })
+  ] });
+}
+function FlyIcon({ className }) {
+  return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", fill: "none", className, width: "14", height: "14", children: [
+    /* @__PURE__ */ jsx("path", { d: "M7 9l5-3 5 3v6l-5 3-5-3V9z", stroke: "currentColor", strokeWidth: "1.3", strokeLinejoin: "round" }),
+    /* @__PURE__ */ jsx("path", { d: "M7 9l5 3 5-3", stroke: "currentColor", strokeWidth: "1.3", strokeLinejoin: "round" }),
+    /* @__PURE__ */ jsx("path", { d: "M12 12v6", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("path", { d: "M3 7l4 5-4 5", stroke: "currentColor", strokeWidth: "1.3", strokeLinecap: "round", strokeLinejoin: "round" })
+  ] });
+}
+function EarthIcon({ className }) {
+  return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", fill: "none", className, width: "14", height: "14", children: [
+    /* @__PURE__ */ jsx("path", { d: "M5 8l7-4 7 4v8l-7 4-7-4V8z", stroke: "currentColor", strokeWidth: "1.3", strokeLinejoin: "round" }),
+    /* @__PURE__ */ jsx("path", { d: "M5 8l7 4 7-4", stroke: "currentColor", strokeWidth: "1.3", strokeLinejoin: "round" }),
+    /* @__PURE__ */ jsx("path", { d: "M12 12v8", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("path", { d: "M5 8l7-4 7 4-7 4z", fill: "currentColor", fillOpacity: "0.25" })
+  ] });
+}
+function PerspectiveIcon({ className }) {
+  return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", fill: "none", className, width: "14", height: "14", children: [
+    /* @__PURE__ */ jsx("rect", { x: "3", y: "4", width: "12", height: "12", rx: "0.5", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("rect", { x: "9", y: "7", width: "12", height: "12", rx: "0.5", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("line", { x1: "3", y1: "4", x2: "9", y2: "7", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("line", { x1: "15", y1: "4", x2: "21", y2: "7", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("line", { x1: "3", y1: "16", x2: "9", y2: "19", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("line", { x1: "15", y1: "16", x2: "21", y2: "19", stroke: "currentColor", strokeWidth: "1.3" })
+  ] });
+}
+function OrthoIcon({ className }) {
+  return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", fill: "none", className, width: "14", height: "14", children: [
+    /* @__PURE__ */ jsx("rect", { x: "4", y: "4", width: "10", height: "10", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("rect", { x: "10", y: "10", width: "10", height: "10", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("line", { x1: "4", y1: "4", x2: "10", y2: "10", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("line", { x1: "14", y1: "4", x2: "20", y2: "10", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("line", { x1: "4", y1: "14", x2: "10", y2: "20", stroke: "currentColor", strokeWidth: "1.3" }),
+    /* @__PURE__ */ jsx("line", { x1: "14", y1: "14", x2: "20", y2: "20", stroke: "currentColor", strokeWidth: "1.3" })
+  ] });
+}
+var NAV_MODES = [
+  { value: "orbit", icon: OrbitIcon, titleKey: "navOrbitTitle" },
+  { value: "fly", icon: FlyIcon, titleKey: "navFlyTitle" },
+  { value: "earth", icon: EarthIcon, titleKey: "navEarthTitle" }
+];
+var PROJ_MODES = [
+  { value: "perspective", icon: PerspectiveIcon, titleKey: "camPerspectiveTitle" },
+  { value: "orthographic", icon: OrthoIcon, titleKey: "camOrthographicTitle" }
+];
+function DisplayControls() {
+  const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
+  const t = useLocale().toolbar;
+  const [quality, setQuality] = useState("balanced");
+  const handleBudget = (e) => {
+    const val = Number(e.target.value);
+    setPointBudget(val);
+    loader?.setPointBudget(val);
+  };
+  const handleSize = (e) => {
+    const val = Number(e.target.value);
+    setPointSize(val);
+    loader?.setPointSize(val);
+  };
+  const handleColorMode = async (e) => {
+    const mode = e.target.value;
+    setColorMode(mode);
+    await loader?.setColorMode(mode);
+  };
+  const handleQuality = (e) => {
+    const preset = QUALITY_PRESETS.find((p) => p.value === e.target.value);
+    if (!preset) return;
+    setQuality(preset.value);
+    loader?.setPointShape(preset.shape);
+    loader?.setPointSizeType(preset.sizeType);
+  };
+  const selectClass = "bg-[hsl(var(--toolbar-bg))] border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-[hsl(var(--brand))] cursor-pointer";
+  const iconBtnClass = (active) => `p-1 rounded transition-colors cursor-pointer border ${active ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] border-[hsl(var(--brand)/0.4)]" : "text-muted-foreground hover:text-foreground border-transparent hover:border-[hsl(var(--border))]"}`;
+  return /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 px-1", children: [
+    /* @__PURE__ */ jsx("div", { className: "flex items-center gap-0.5 border border-[hsl(var(--border))] rounded p-0.5", children: NAV_MODES.map((nm) => /* @__PURE__ */ jsx(
+      "button",
+      {
+        className: iconBtnClass(navigationMode === nm.value),
+        title: t[nm.titleKey],
+        onClick: () => setNavigationMode(nm.value),
+        children: /* @__PURE__ */ jsx(nm.icon, {})
+      },
+      nm.value
+    )) }),
+    /* @__PURE__ */ jsx("div", { className: "flex items-center gap-0.5 border border-[hsl(var(--border))] rounded p-0.5", children: PROJ_MODES.map((pm) => /* @__PURE__ */ jsx(
+      "button",
+      {
+        className: iconBtnClass(projection === pm.value),
+        title: t[pm.titleKey],
+        onClick: () => setProjection(pm.value),
+        children: /* @__PURE__ */ jsx(pm.icon, {})
+      },
+      pm.value
+    )) }),
+    /* @__PURE__ */ jsx(
+      "select",
+      {
+        value: colorMode,
+        onChange: handleColorMode,
+        className: selectClass,
+        title: t.colorMode,
+        children: COLOR_MODES.map((cm) => /* @__PURE__ */ jsx("option", { value: cm.value, children: t[cm.labelKey] ?? cm.value }, cm.value))
+      }
+    ),
+    /* @__PURE__ */ jsx(
+      "select",
+      {
+        value: quality,
+        onChange: handleQuality,
+        className: selectClass,
+        title: t.quality,
+        children: QUALITY_PRESETS.map((q) => /* @__PURE__ */ jsx("option", { value: q.value, children: t[q.label] ?? q.value }, q.value))
+      }
+    ),
+    /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono", children: [
+      /* @__PURE__ */ jsx("span", { className: "hidden lg:block", children: t.budget }),
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          type: "range",
+          min: 5e5,
+          max: 1e7,
+          step: 1e5,
+          value: pointBudget,
+          onChange: handleBudget,
+          className: "pcv-slider w-16",
+          title: t.pointBudgetTitle(pointBudget / 1e6)
+        }
+      ),
+      /* @__PURE__ */ jsxs("span", { className: "w-8 text-right tabular-nums", children: [
+        (pointBudget / 1e6).toFixed(0),
+        "M"
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono", children: [
+      /* @__PURE__ */ jsx("span", { className: "hidden lg:block", children: t.size }),
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          type: "range",
+          min: 0.5,
+          max: 5,
+          step: 0.1,
+          value: pointSize,
+          onChange: handleSize,
+          className: "pcv-slider w-12",
+          title: t.pointSizeTitle(pointSize)
+        }
+      )
+    ] })
+  ] });
+}
+
+// src/components/toolbar/export-tools.tsx
+init_viewer_provider();
+init_locale_context();
+init_export_manager();
+function ExportTools() {
+  const { exporter } = useViewer();
+  const t = useLocale().exportPanel;
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState("top");
+  const [scale, setScale] = useState(2);
+  const [bg, setBg] = useState("white");
+  const [fmt, setFmt] = useState("png");
+  const [exporting, setExporting] = useState(false);
+  const btnRef = useRef(null);
+  const popoverRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, right: 0 });
+  useEffect(() => {
+    if (open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+  }, [open]);
+  const handleClickOutside = useCallback((e) => {
+    if (popoverRef.current && !popoverRef.current.contains(e.target) && btnRef.current && !btnRef.current.contains(e.target)) {
+      setOpen(false);
+    }
+  }, []);
+  useEffect(() => {
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [open, handleClickOutside]);
+  const doExport = async () => {
+    if (!exporter) return;
+    setExporting(true);
+    try {
+      const url = await exporter.capture({ view, scale, background: bg, showScaleBar: false, format: fmt });
+      const date = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      ExportManager.download(url, `pointcloud_${view}_${date}.${fmt}`);
+    } finally {
+      setExporting(false);
+      setOpen(false);
+    }
+  };
+  const views = [
+    { value: "top", label: t.viewTop },
+    { value: "front", label: t.viewFront },
+    { value: "side", label: t.viewSide },
+    { value: "back", label: t.viewBack }
+  ];
+  const bgLabels = {
+    white: t.bgWhite,
+    black: t.bgBlack,
+    transparent: t.bgTransparent
+  };
+  return /* @__PURE__ */ jsxs("div", { ref: btnRef, children: [
+    /* @__PURE__ */ jsx(
+      ToolbarIconBtn,
+      {
+        icon: /* @__PURE__ */ jsx(Download, { size: 14 }),
+        title: t.exportImageTitle,
+        active: open,
+        onClick: () => setOpen(!open)
+      }
+    ),
+    open && createPortal(
+      /* @__PURE__ */ jsxs(
+        "div",
+        {
+          ref: popoverRef,
+          style: { position: "fixed", top: pos.top, right: pos.right, zIndex: 9999 },
+          className: "bg-[hsl(var(--popover))] border border-[hsl(var(--border))] rounded-lg shadow-xl p-3 w-52 text-xs text-foreground",
+          children: [
+            /* @__PURE__ */ jsx("p", { className: "font-semibold mb-2 text-[hsl(var(--brand))]", children: t.title }),
+            /* @__PURE__ */ jsx("label", { className: "block mb-1 text-muted-foreground", children: t.view }),
+            /* @__PURE__ */ jsx(
+              "select",
+              {
+                value: view,
+                onChange: (e) => setView(e.target.value),
+                className: "w-full mb-2 bg-muted text-foreground rounded px-1 py-0.5 text-xs border border-[hsl(var(--border))]",
+                children: views.map((v) => /* @__PURE__ */ jsx("option", { value: v.value, children: v.label }, v.value))
+              }
+            ),
+            /* @__PURE__ */ jsx("label", { className: "block mb-1 text-muted-foreground", children: t.scale }),
+            /* @__PURE__ */ jsx("div", { className: "flex gap-1 mb-2", children: [1, 2, 4].map((s) => /* @__PURE__ */ jsxs(
+              "button",
+              {
+                onClick: () => setScale(s),
+                className: `flex-1 py-0.5 rounded text-xs border transition-colors ${scale === s ? "border-[hsl(var(--brand))] text-[hsl(var(--brand))] bg-[hsl(var(--brand)/0.15)]" : "border-[hsl(var(--border))] text-muted-foreground hover:text-foreground"}`,
+                children: [
+                  s,
+                  "x"
+                ]
+              },
+              s
+            )) }),
+            /* @__PURE__ */ jsx("label", { className: "block mb-1 text-muted-foreground", children: t.background }),
+            /* @__PURE__ */ jsx("div", { className: "flex gap-1 mb-2", children: ["white", "black", "transparent"].map((b) => /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => setBg(b),
+                className: `flex-1 py-0.5 rounded text-xs border transition-colors ${bg === b ? "border-[hsl(var(--brand))] text-[hsl(var(--brand))] bg-[hsl(var(--brand)/0.15)]" : "border-[hsl(var(--border))] text-muted-foreground hover:text-foreground"}`,
+                children: bgLabels[b]
+              },
+              b
+            )) }),
+            /* @__PURE__ */ jsx("label", { className: "block mb-1 text-muted-foreground", children: t.format }),
+            /* @__PURE__ */ jsx("div", { className: "flex gap-1 mb-3", children: ["png", "jpeg"].map((f) => /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => setFmt(f),
+                className: `flex-1 py-0.5 rounded text-xs border transition-colors uppercase ${fmt === f ? "border-[hsl(var(--brand))] text-[hsl(var(--brand))] bg-[hsl(var(--brand)/0.15)]" : "border-[hsl(var(--border))] text-muted-foreground hover:text-foreground"}`,
+                children: f
+              },
+              f
+            )) }),
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: doExport,
+                disabled: exporting,
+                className: "w-full py-1.5 bg-[hsl(var(--brand))] text-[hsl(var(--brand-foreground))] rounded font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity",
+                children: exporting ? t.exporting : t.download
+              }
+            )
+          ]
+        }
+      ),
+      document.body
+    )
+  ] });
+}
+function ToolbarSection({ label, children, className }) {
+  return /* @__PURE__ */ jsxs("div", { className: cn("flex items-center gap-0.5 px-2 border-r border-[hsl(var(--toolbar-border))] last:border-r-0", className), children: [
+    children,
+    label && /* @__PURE__ */ jsx("span", { className: "text-[9px] text-muted-foreground/50 ml-1 hidden xl:block font-mono uppercase tracking-wider", children: label })
+  ] });
+}
+function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, sidebarOpen, renderSettingsOpen }) {
+  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap } = useViewer();
+  const { resolvedTheme, toggleTheme } = useTheme();
+  const t = useLocale().toolbar;
+  return /* @__PURE__ */ jsxs("div", { className: "flex items-center h-10 px-2 gap-0 select-none overflow-x-auto", children: [
+    /* @__PURE__ */ jsx(ToolbarSection, { label: "Views", children: /* @__PURE__ */ jsx(ViewControls, {}) }),
+    /* @__PURE__ */ jsxs(ToolbarSection, { label: "Display", children: [
+      /* @__PURE__ */ jsx(DisplayControls, {}),
+      /* @__PURE__ */ jsx(
+        ToolbarIconBtn,
+        {
+          icon: /* @__PURE__ */ jsx(Sliders, { size: 14 }),
+          active: renderSettingsOpen,
+          onClick: onToggleRenderSettings,
+          title: "Rendering settings"
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "flex-1" }),
+    /* @__PURE__ */ jsxs(ToolbarSection, { children: [
+      /* @__PURE__ */ jsx(
+        ToolbarIconBtn,
+        {
+          icon: /* @__PURE__ */ jsx(Camera, { size: 14 }),
+          label: t.panoramas,
+          active: showMarkers,
+          onClick: () => setShowMarkers(!showMarkers),
+          title: t.togglePanoramas
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        ToolbarIconBtn,
+        {
+          icon: /* @__PURE__ */ jsx(Map$1, { size: 14 }),
+          label: t.minimap,
+          active: showMinimap,
+          onClick: () => setShowMinimap(!showMinimap),
+          title: t.toggleMinimap
+        }
+      ),
+      /* @__PURE__ */ jsx(ExportTools, {}),
+      /* @__PURE__ */ jsx(
+        ToolbarIconBtn,
+        {
+          icon: /* @__PURE__ */ jsx(Layers, { size: 14 }),
+          label: t.clouds,
+          active: false,
+          onClick: onOpenCloudSelector,
+          title: t.cloudSelector
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        ToolbarIconBtn,
+        {
+          icon: resolvedTheme === "dark" ? /* @__PURE__ */ jsx(Sun, { size: 14 }) : /* @__PURE__ */ jsx(Moon, { size: 14 }),
+          label: t.theme,
+          active: false,
+          onClick: toggleTheme,
+          title: resolvedTheme === "dark" ? t.switchToLight : t.switchToDark
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        ToolbarIconBtn,
+        {
+          icon: /* @__PURE__ */ jsx(Info, { size: 14 }),
+          label: t.about,
+          active: false,
+          onClick: onOpenAbout,
+          title: t.about
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        ToolbarIconBtn,
+        {
+          icon: /* @__PURE__ */ jsx(PanelRight, { size: 14 }),
+          label: t.sidebar,
+          active: sidebarOpen,
+          onClick: onToggleSidebar,
+          title: t.toggleSidebar
+        }
+      )
+    ] })
+  ] });
+}
+function ToolbarIconBtn({ icon, label, active, onClick, title }) {
+  return /* @__PURE__ */ jsxs(
+    "button",
+    {
+      title,
+      onClick,
+      className: cn(
+        "flex items-center gap-1 px-1.5 py-1 rounded text-xs transition-colors",
+        active ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+      ),
+      children: [
+        icon,
+        label && /* @__PURE__ */ jsx("span", { className: "hidden xl:block", children: label })
+      ]
+    }
+  );
+}
+
+// src/components/toolbar/tool-rail.tsx
+init_utils();
+init_viewer_provider();
+init_locale_context();
+function RailBtn({ icon, title, active, onClick, disabled, compact }) {
+  return /* @__PURE__ */ jsx(
+    "button",
+    {
+      title,
+      onClick,
+      disabled,
+      className: cn(
+        "flex items-center justify-center rounded transition-colors",
+        compact ? "w-7 h-7" : "w-9 h-9",
+        active ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+        disabled && "opacity-30 cursor-not-allowed"
+      ),
+      children: icon
+    }
+  );
+}
+function Divider() {
+  return /* @__PURE__ */ jsx("div", { className: "h-px w-6 mx-auto bg-[hsl(var(--border))] my-0.5" });
+}
+function GroupLabel({ children }) {
+  return /* @__PURE__ */ jsx("span", { className: "text-[8px] font-mono uppercase tracking-widest text-muted-foreground/50 text-center leading-none mt-1", children });
+}
+function SubLabel({ children }) {
+  return /* @__PURE__ */ jsx("span", { className: "text-[7px] font-mono uppercase tracking-wider text-muted-foreground/30 text-center leading-none", children });
+}
+var BASIC_MEASURES = [
+  { type: "point", tool: "measure-point", icon: /* @__PURE__ */ jsx(MapPin, { size: 15 }), titleKey: "measurePoint" },
+  { type: "distance", tool: "measure-distance", icon: /* @__PURE__ */ jsx(Ruler, { size: 15 }), titleKey: "measureDistance" },
+  { type: "height", tool: "measure-height", icon: /* @__PURE__ */ jsx(ArrowUpDown, { size: 15 }), titleKey: "measureHeight" }
+];
+var ADVANCED_MEASURES = [
+  { type: "area", tool: "measure-area", icon: /* @__PURE__ */ jsx(Pentagon, { size: 15 }), titleKey: "measureArea" },
+  { type: "volume", tool: "measure-volume", icon: /* @__PURE__ */ jsx(Package, { size: 15 }), titleKey: "measureVolume" },
+  { type: "angle", tool: "measure-angle", icon: /* @__PURE__ */ jsx(Triangle, { size: 15 }), titleKey: "measureAngle" },
+  { type: "profile", tool: "measure-profile", icon: /* @__PURE__ */ jsx(Waypoints, { size: 15 }), titleKey: "measureProfile" }
+];
+function ToolRail() {
+  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList } = useViewer();
+  const t = useLocale().toolRail;
+  const toggle = (tool) => setActiveTool(activeTool === tool ? "none" : tool);
+  const boxes = clipManager?.getBoxes() ?? [];
+  const hasClipBox = boxes.length > 0;
+  const clipMode = boxes[0]?.mode ?? "outside";
+  const toggleClipMode = () => {
+    const next = clipMode === "outside" ? "inside" : "outside";
+    for (const b of boxes) {
+      clipManager?.setBoxMode(b.id, next);
+    }
+  };
+  const clearClipBox = () => {
+    clipManager?.clear();
+    if (activeTool === "section-box") setActiveTool("none");
+  };
+  const addClipBox = () => {
+    if (!clipManager || !loader) return;
+    const wb = loader.worldBox;
+    if (wb.isEmpty()) return;
+    const entry = clipManager.addBox(wb.clone());
+    clipManager.selectBox(entry.id);
+    clipManager.setTransformMode("scale");
+  };
+  const clearMeasurements = () => {
+    measurementManager?.clearAll();
+    setMeasurementList([]);
+  };
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-center gap-0.5 py-2 px-1 h-full bg-[hsl(var(--toolbar-bg,var(--card)))] border-r border-[hsl(var(--border))] w-10 shrink-0 overflow-y-auto", children: [
+    /* @__PURE__ */ jsx(GroupLabel, { children: t.measureGroup }),
+    /* @__PURE__ */ jsx(SubLabel, { children: "Basic" }),
+    BASIC_MEASURES.map((def) => /* @__PURE__ */ jsx(
+      RailBtn,
+      {
+        icon: def.icon,
+        title: t[def.titleKey] ?? def.type,
+        active: activeTool === def.tool,
+        onClick: () => toggle(def.tool)
+      },
+      def.tool
+    )),
+    /* @__PURE__ */ jsx(SubLabel, { children: "Advanced" }),
+    ADVANCED_MEASURES.map((def) => /* @__PURE__ */ jsx(
+      RailBtn,
+      {
+        icon: def.icon,
+        title: t[def.titleKey] ?? def.type,
+        active: activeTool === def.tool,
+        onClick: () => toggle(def.tool)
+      },
+      def.tool
+    )),
+    /* @__PURE__ */ jsx(
+      RailBtn,
+      {
+        icon: /* @__PURE__ */ jsx(X, { size: 13 }),
+        title: t.clearMeasurements,
+        onClick: clearMeasurements,
+        compact: true
+      }
+    ),
+    /* @__PURE__ */ jsx(Divider, {}),
+    /* @__PURE__ */ jsx(GroupLabel, { children: t.sectionGroup }),
+    /* @__PURE__ */ jsx(
+      RailBtn,
+      {
+        icon: /* @__PURE__ */ jsx(BoxSelect, { size: 15 }),
+        title: hasClipBox ? t.removeClipBox : t.drawClipBox,
+        active: hasClipBox,
+        onClick: hasClipBox ? clearClipBox : addClipBox
+      }
+    ),
+    hasClipBox && /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsx(
+        RailBtn,
+        {
+          icon: /* @__PURE__ */ jsx(Scissors, { size: 15 }),
+          title: clipMode === "outside" ? t.clipModeKeepInside : t.clipModeKeepOutside,
+          active: false,
+          onClick: toggleClipMode
+        }
+      ),
+      /* @__PURE__ */ jsx(SubLabel, { children: "Transform" }),
+      /* @__PURE__ */ jsxs("div", { className: "flex gap-0.5", children: [
+        /* @__PURE__ */ jsx(
+          RailBtn,
+          {
+            icon: /* @__PURE__ */ jsx(Move, { size: 12 }),
+            title: "Move clip box",
+            onClick: () => {
+              const id = clipManager?.getSelectedId();
+              if (id) clipManager?.setTransformMode("translate");
+              else {
+                const b = boxes[0];
+                if (b) {
+                  clipManager?.selectBox(b.id);
+                  clipManager?.setTransformMode("translate");
+                }
+              }
+            },
+            compact: true
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          RailBtn,
+          {
+            icon: /* @__PURE__ */ jsx(Maximize2, { size: 12 }),
+            title: "Resize clip box faces",
+            onClick: () => {
+              const id = clipManager?.getSelectedId();
+              if (id) clipManager?.setTransformMode("scale");
+              else {
+                const b = boxes[0];
+                if (b) {
+                  clipManager?.selectBox(b.id);
+                  clipManager?.setTransformMode("scale");
+                }
+              }
+            },
+            compact: true
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsx(
+        RailBtn,
+        {
+          icon: /* @__PURE__ */ jsx(RotateCcw, { size: 13 }),
+          title: t.removeClipBox,
+          onClick: clearClipBox,
+          compact: true
+        }
+      )
+    ] })
+  ] });
+}
+
+// src/components/sidebar/sidebar.tsx
+init_locale_context();
+
+// src/components/sidebar/pano-panel.tsx
+init_viewer_provider();
+init_data_provider();
+init_locale_context();
+function PanoPanel() {
+  const { cameraAnimator, markerManager, setSelectedCamera } = useViewer();
+  const { cameras } = useData();
+  const t = useLocale().panoPanel;
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState(null);
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase();
+    return cameras.filter((c) => !q || c.name.toLowerCase().includes(q) || String(c.index).includes(q));
+  }, [cameras, query]);
+  const flyTo = (idx) => {
+    const cam = cameras[idx];
+    if (!cam || !cameraAnimator) return;
+    setSelected(idx);
+    markerManager?.setSelected(idx);
+    if (cam.position) {
+      cameraAnimator.flyToCamera([cam.position.x, cam.position.y, cam.position.z], cam.yaw_deg ?? 0);
+    }
+  };
+  const openPano = (idx) => {
+    const cam = cameras[idx];
+    if (!cam) return;
+    setSelected(idx);
+    setSelectedCamera(cam);
+    markerManager?.setSelected(idx);
+  };
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full", children: [
+    /* @__PURE__ */ jsxs("div", { className: "p-2 border-b border-[hsl(var(--border))] shrink-0", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1.5 bg-muted rounded px-2 py-1", children: [
+        /* @__PURE__ */ jsx(Search, { size: 11, className: "text-muted-foreground shrink-0" }),
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            value: query,
+            onChange: (e) => setQuery(e.target.value),
+            placeholder: t.searchPlaceholder,
+            className: "flex-1 bg-transparent text-xs outline-none text-foreground placeholder:text-muted-foreground"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs("p", { className: "text-[10px] text-muted-foreground mt-1 font-mono", children: [
+        filtered.length,
+        " / ",
+        cameras.length
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "flex-1 overflow-y-auto", children: filtered.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-xs text-muted-foreground text-center mt-8 px-4", children: t.noResults }) : filtered.map((cam) => /* @__PURE__ */ jsxs(
+      "div",
+      {
+        className: `flex items-center gap-2 px-2 py-1.5 cursor-pointer border-b border-[hsl(var(--border)/0.4)] hover:bg-muted transition-colors
+                ${selected === cam.index ? "bg-[hsl(var(--brand)/0.12)] border-l-2 border-l-[hsl(var(--brand))]" : ""}`,
+        onClick: () => openPano(cam.index),
+        children: [
+          /* @__PURE__ */ jsx("div", { className: "w-10 h-7 rounded shrink-0 bg-muted overflow-hidden", children: cam.thumbnail || cam.image ? /* @__PURE__ */ jsx(
+            "img",
+            {
+              src: cam.thumbnail ?? cam.image ?? void 0,
+              alt: cam.name,
+              className: "w-full h-full object-cover",
+              loading: "lazy",
+              onError: (e) => {
+                e.target.style.display = "none";
+              }
+            }
+          ) : /* @__PURE__ */ jsx("div", { className: "w-full h-full flex items-center justify-center", children: /* @__PURE__ */ jsx(Navigation, { size: 10, className: "text-muted-foreground" }) }) }),
+          /* @__PURE__ */ jsxs("div", { className: "flex-1 min-w-0", children: [
+            /* @__PURE__ */ jsx("p", { className: "text-xs font-mono truncate text-foreground", children: cam.name }),
+            cam.position && /* @__PURE__ */ jsxs("p", { className: "text-[9px] text-muted-foreground font-mono", children: [
+              cam.position.x.toFixed(1),
+              ", ",
+              cam.position.y.toFixed(1),
+              ", ",
+              cam.position.z.toFixed(1)
+            ] })
+          ] }),
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: (e) => {
+                e.stopPropagation();
+                flyTo(cam.index);
+              },
+              title: t.flyTo,
+              className: "shrink-0 text-muted-foreground hover:text-[hsl(var(--brand))] transition-colors",
+              children: /* @__PURE__ */ jsx(Navigation, { size: 11 })
+            }
+          )
+        ]
+      },
+      cam.index
+    )) })
+  ] });
+}
+
+// src/components/sidebar/scene-panel.tsx
+init_viewer_provider();
+init_locale_context();
+function ScenePanel() {
+  const { measurementList, measurementManager, setMeasurementList, loader, clipManager, clipBoxEntries, selectedClipBoxId } = useViewer();
+  const t = useLocale().scenePanel;
+  const deleteMeasurement = (id) => {
+    measurementManager?.remove(id);
+    setMeasurementList((prev) => prev.filter((m) => m.id !== id));
+  };
+  const clearAll = () => {
+    measurementManager?.clearAll();
+    setMeasurementList([]);
+  };
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full overflow-y-auto text-xs", children: [
+    /* @__PURE__ */ jsxs("div", { className: "p-2 border-b border-[hsl(var(--border))]", children: [
+      /* @__PURE__ */ jsx("p", { className: "text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5", children: t.pointClouds }),
+      loader?.getPointCloud() ? /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 py-1", children: [
+        /* @__PURE__ */ jsx(CloudCog, { size: 12, className: "text-[hsl(var(--brand))] shrink-0" }),
+        /* @__PURE__ */ jsx("span", { className: "flex-1 truncate font-mono text-foreground", children: "pointcloud" })
+      ] }) : /* @__PURE__ */ jsx("p", { className: "text-muted-foreground text-[10px]", children: t.noCloudLoaded })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "p-2 border-b border-[hsl(var(--border))]", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-1.5", children: [
+        /* @__PURE__ */ jsx("p", { className: "text-[10px] font-semibold text-muted-foreground uppercase tracking-wide", children: t.measurements }),
+        measurementList.length > 0 && /* @__PURE__ */ jsx("button", { onClick: clearAll, title: t.clearAll, className: "text-muted-foreground hover:text-destructive transition-colors", children: /* @__PURE__ */ jsx(Trash2, { size: 11 }) })
+      ] }),
+      measurementList.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-[10px] text-muted-foreground", children: t.none }) : measurementList.map((m) => /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1.5 py-0.5 group", children: [
+        /* @__PURE__ */ jsx(Ruler, { size: 11, className: "text-muted-foreground shrink-0" }),
+        /* @__PURE__ */ jsx("span", { className: "flex-1 truncate font-mono text-foreground capitalize", children: m.type }),
+        m.value !== void 0 && /* @__PURE__ */ jsx("span", { className: "font-mono text-[10px] text-[hsl(var(--brand))]", children: m.value.toFixed(2) }),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => deleteMeasurement(m.id),
+            className: "opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all",
+            children: /* @__PURE__ */ jsx(Trash2, { size: 10 })
+          }
+        )
+      ] }, m.id))
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "p-2", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-1.5", children: [
+        /* @__PURE__ */ jsx("p", { className: "text-[10px] font-semibold text-muted-foreground uppercase tracking-wide", children: t.sections }),
+        clipBoxEntries.length > 0 && /* @__PURE__ */ jsx("button", { onClick: () => clipManager?.clear(), title: t.clearAll, className: "text-muted-foreground hover:text-destructive transition-colors", children: /* @__PURE__ */ jsx(Trash2, { size: 11 }) })
+      ] }),
+      clipBoxEntries.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-[10px] text-muted-foreground", children: t.sectionHint }) : clipBoxEntries.map((box) => /* @__PURE__ */ jsxs(
+        "div",
+        {
+          className: `flex items-center gap-1 py-0.5 group rounded px-0.5 ${selectedClipBoxId === box.id ? "bg-[hsl(var(--brand)/0.1)]" : ""}`,
+          children: [
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => clipManager?.setBoxVisible(box.id, !box.visible),
+                className: "text-muted-foreground hover:text-foreground transition-colors shrink-0",
+                title: box.visible ? "Hide" : "Show",
+                children: box.visible ? /* @__PURE__ */ jsx(Eye, { size: 11 }) : /* @__PURE__ */ jsx(EyeOff, { size: 11 })
+              }
+            ),
+            /* @__PURE__ */ jsx(BoxSelect, { size: 11, className: "text-[hsl(var(--brand))] shrink-0" }),
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => clipManager?.selectBox(selectedClipBoxId === box.id ? null : box.id),
+                className: "flex-1 truncate font-mono text-foreground text-left hover:text-[hsl(var(--brand))] transition-colors",
+                children: box.name
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => clipManager?.setBoxMode(box.id, box.mode === "outside" ? "inside" : "outside"),
+                title: box.mode === "outside" ? "Keep inside" : "Keep outside",
+                className: "text-muted-foreground hover:text-foreground transition-colors shrink-0",
+                children: /* @__PURE__ */ jsx(Scissors, { size: 10 })
+              }
+            ),
+            /* @__PURE__ */ jsx("span", { className: "text-[8px] text-muted-foreground font-mono w-6 text-center", children: box.mode === "outside" ? "OUT" : "IN" }),
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => clipManager?.removeBox(box.id),
+                className: "opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0",
+                children: /* @__PURE__ */ jsx(Trash2, { size: 10 })
+              }
+            )
+          ]
+        },
+        box.id
+      )),
+      selectedClipBoxId && /* @__PURE__ */ jsxs("div", { className: "flex gap-1 mt-1.5", children: [
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => clipManager?.setTransformMode("translate"),
+            className: "flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono bg-muted/40 text-foreground hover:bg-muted/70 transition-colors",
+            children: [
+              /* @__PURE__ */ jsx(Move, { size: 10 }),
+              " Move"
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => clipManager?.setTransformMode("scale"),
+            className: "flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono bg-muted/40 text-foreground hover:bg-muted/70 transition-colors",
+            children: [
+              /* @__PURE__ */ jsx(Maximize2, { size: 10 }),
+              " Scale"
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => clipManager?.setTransformMode("rotate"),
+            className: "flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono bg-muted/40 text-foreground hover:bg-muted/70 transition-colors",
+            children: [
+              /* @__PURE__ */ jsx(RotateCcw, { size: 10 }),
+              " Rotate"
+            ]
+          }
+        )
+      ] }),
+      clipBoxEntries.length > 1 && /* @__PURE__ */ jsx("p", { className: "text-[9px] text-muted-foreground mt-1 italic", children: t.clipModeNote })
+    ] })
+  ] });
+}
+
+// src/components/sidebar/measurements-panel.tsx
+init_viewer_provider();
+init_locale_context();
+init_utils();
+function formatValue(m) {
+  if (m.value === void 0) return "\u2014";
+  switch (m.type) {
+    case "distance":
+    case "height":
+      return formatLength(m.value);
+    case "area":
+      return formatArea(m.value);
+    case "volume":
+      return formatVolume(m.value);
+    case "angle":
+      return formatAngle(m.value);
+    case "point":
+      if (m.points[0]) return formatCoord(m.points[0].x, m.points[0].y, m.points[0].z);
+      return "\u2014";
+    default:
+      return m.value.toFixed(3);
+  }
+}
+function InlineEditName({ value, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef(null);
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+  if (!editing) {
+    return /* @__PURE__ */ jsx(
+      "p",
+      {
+        className: "text-[10px] font-semibold text-foreground cursor-pointer hover:text-[hsl(var(--brand))] transition-colors truncate",
+        onClick: () => {
+          setDraft(value);
+          setEditing(true);
+        },
+        title: "Click to rename",
+        children: value
+      }
+    );
+  }
+  const save = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== value) onSave(trimmed);
+    setEditing(false);
+  };
+  return /* @__PURE__ */ jsx(
+    "input",
+    {
+      ref: inputRef,
+      type: "text",
+      value: draft,
+      onChange: (e) => setDraft(e.target.value),
+      onKeyDown: (e) => {
+        if (e.key === "Enter") save();
+        if (e.key === "Escape") setEditing(false);
+      },
+      onBlur: save,
+      className: "text-[10px] font-semibold text-foreground bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
+    }
+  );
+}
+function MeasurementsPanel() {
+  const { measurementList, measurementManager, setMeasurementList } = useViewer();
+  const t = useLocale().measurementsPanel;
+  ({
+    point: t.typePoint,
+    distance: t.typeDistance,
+    height: t.typeHeight,
+    area: t.typeArea,
+    volume: t.typeVolume,
+    angle: t.typeAngle,
+    profile: t.typeProfile
+  });
+  const del = (id) => {
+    measurementManager?.remove(id);
+    setMeasurementList((prev) => prev.filter((m) => m.id !== id));
+  };
+  const clearAll = () => {
+    measurementManager?.clearAll();
+    setMeasurementList([]);
+  };
+  const downloadCSV = () => {
+    const csv = exportMeasurementsCSV(measurementList);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `measurements_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const handleRename = (id, name) => {
+    measurementManager?.rename(id, name);
+    setMeasurementList((prev) => prev.map((m) => m.id === id ? { ...m, label: name } : m));
+  };
+  if (measurementList.length === 0) {
+    return /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-center justify-center h-full text-center px-4 gap-2", children: [
+      /* @__PURE__ */ jsx("p", { className: "text-xs text-muted-foreground", children: t.noMeasurements }),
+      /* @__PURE__ */ jsx("p", { className: "text-[10px] text-muted-foreground", children: t.useMeasureToolHint })
+    ] });
+  }
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full", children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between px-2 py-1.5 border-b border-[hsl(var(--border))] shrink-0", children: [
+      /* @__PURE__ */ jsx("span", { className: "text-[10px] font-mono text-muted-foreground", children: t.measurementCount(measurementList.length) }),
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+        /* @__PURE__ */ jsxs("button", { onClick: downloadCSV, title: t.downloadCsv, className: "text-muted-foreground hover:text-[hsl(var(--brand))] text-[10px] flex items-center gap-1 transition-colors", children: [
+          /* @__PURE__ */ jsx(Download, { size: 10 }),
+          " ",
+          t.csv
+        ] }),
+        /* @__PURE__ */ jsxs("button", { onClick: clearAll, title: t.clearAll, className: "text-muted-foreground hover:text-destructive text-[10px] flex items-center gap-1 transition-colors", children: [
+          /* @__PURE__ */ jsx(Trash2, { size: 10 }),
+          " ",
+          t.clearAll
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "flex-1 overflow-y-auto", children: measurementList.map((m) => /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 px-2 py-2 border-b border-[hsl(var(--border)/0.4)] hover:bg-muted group transition-colors", children: [
+      /* @__PURE__ */ jsx("div", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: m.color ?? "hsl(var(--brand))" } }),
+      /* @__PURE__ */ jsxs("div", { className: "flex-1 min-w-0", children: [
+        /* @__PURE__ */ jsx(InlineEditName, { value: m.label, onSave: (name) => handleRename(m.id, name) }),
+        /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono text-[hsl(var(--brand))]", children: formatValue(m) })
+      ] }),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: () => del(m.id),
+          className: "opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all",
+          children: /* @__PURE__ */ jsx(Trash2, { size: 11 })
+        }
+      )
+    ] }, m.id)) })
+  ] });
+}
+
+// src/components/sidebar/classification-panel.tsx
+init_viewer_provider();
+init_locale_context();
+var CLASS_DEFS = [
+  { code: 0, color: "#aaaaaa" },
+  { code: 1, color: "#888888" },
+  { code: 2, color: "#c8a46e" },
+  { code: 3, color: "#5ec45e" },
+  { code: 4, color: "#2ea02e" },
+  { code: 5, color: "#006600" },
+  { code: 6, color: "#e07070" },
+  { code: 7, color: "#ff4444" },
+  { code: 9, color: "#4488ff" },
+  { code: 17, color: "#cc88ff" },
+  { code: 18, color: "#ff8800" }
+];
+function ClassificationPanel() {
+  const { loader } = useViewer();
+  const t = useLocale().classificationPanel;
+  const [visible, setVisible] = useState(
+    Object.fromEntries(CLASS_DEFS.map((c) => [c.code, true]))
+  );
+  const toggle = (code) => {
+    setVisible((prev) => {
+      const next = { ...prev, [code]: !prev[code] };
+      const cloud = loader?.getPointCloud();
+      if (cloud?.material) {
+        const mat = cloud.material;
+        if (mat.classification) {
+          const THREE14 = window.THREE;
+          const hexColor = CLASS_DEFS.find((c) => c.code === code)?.color ?? "#ffffff";
+          mat.classification[code] = { visible: next[code], color: THREE14 ? new THREE14.Color(hexColor) : hexColor };
+        }
+      }
+      return next;
+    });
+  };
+  const toggleAll = (on) => {
+    const next = Object.fromEntries(CLASS_DEFS.map((c) => [c.code, on]));
+    setVisible(next);
+  };
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full overflow-y-auto p-2", children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-2", children: [
+      /* @__PURE__ */ jsx("p", { className: "text-[10px] font-semibold text-muted-foreground uppercase tracking-wide", children: t.title }),
+      /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
+        /* @__PURE__ */ jsx("button", { onClick: () => toggleAll(true), className: "text-[9px] text-muted-foreground hover:text-foreground transition-colors", children: t.all }),
+        /* @__PURE__ */ jsx("span", { className: "text-muted-foreground text-[9px]", children: "/" }),
+        /* @__PURE__ */ jsx("button", { onClick: () => toggleAll(false), className: "text-[9px] text-muted-foreground hover:text-foreground transition-colors", children: t.none })
+      ] })
+    ] }),
+    CLASS_DEFS.map((cls) => /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-2 py-1 cursor-pointer group", children: [
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          type: "checkbox",
+          checked: visible[cls.code] ?? true,
+          onChange: () => toggle(cls.code),
+          className: "accent-[hsl(var(--brand))] w-3 h-3 shrink-0"
+        }
+      ),
+      /* @__PURE__ */ jsx("span", { className: "w-2.5 h-2.5 rounded-sm shrink-0", style: { background: cls.color } }),
+      /* @__PURE__ */ jsx("span", { className: "text-[10px] font-mono text-foreground", children: cls.code }),
+      /* @__PURE__ */ jsx("span", { className: "text-[10px] text-muted-foreground truncate", children: t.classLabels[cls.code] ?? String(cls.code) })
+    ] }, cls.code))
+  ] });
+}
+
+// src/components/sidebar/scenes-panel.tsx
+init_viewer_provider();
+init_locale_context();
+
+// src/core/presentation-manager.ts
+var MAX_SCENES = 50;
+var _nextId = 1;
+function genSceneId() {
+  return `scene_${Date.now()}_${_nextId++}`;
+}
+var PresentationManager = class {
+  storageKey;
+  scenes = [];
+  onChange;
+  constructor(sourceKey) {
+    this.storageKey = `pcv_scenes_${sourceKey}`;
+    this.load();
+  }
+  load() {
+    try {
+      const raw = localStorage.getItem(this.storageKey);
+      if (raw) this.scenes = JSON.parse(raw);
+    } catch {
+      this.scenes = [];
+    }
+  }
+  persist() {
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(this.scenes));
+    } catch {
+    }
+    this.onChange?.(this.getScenes());
+  }
+  getScenes() {
+    return [...this.scenes];
+  }
+  addScene(scene) {
+    const entry = {
+      ...scene,
+      id: genSceneId(),
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    this.scenes.unshift(entry);
+    if (this.scenes.length > MAX_SCENES) this.scenes.length = MAX_SCENES;
+    this.persist();
+    return entry;
+  }
+  removeScene(id) {
+    this.scenes = this.scenes.filter((s) => s.id !== id);
+    this.persist();
+  }
+  renameScene(id, name) {
+    const scene = this.scenes.find((s) => s.id === id);
+    if (scene) {
+      scene.name = name;
+      this.persist();
+    }
+  }
+  /** Export all scenes as a JSON string (for sharing / backup) */
+  exportJSON() {
+    return JSON.stringify(this.scenes, null, 2);
+  }
+  /** Import scenes from JSON string, merging with existing */
+  importJSON(json) {
+    try {
+      const imported = JSON.parse(json);
+      if (!Array.isArray(imported)) return 0;
+      const existingIds = new Set(this.scenes.map((s) => s.id));
+      let count = 0;
+      for (const scene of imported) {
+        if (!scene.id || !scene.name || !scene.camera) continue;
+        if (existingIds.has(scene.id)) {
+          scene.id = genSceneId();
+        }
+        this.scenes.push(scene);
+        count++;
+      }
+      if (this.scenes.length > MAX_SCENES) this.scenes.length = MAX_SCENES;
+      this.persist();
+      return count;
+    } catch {
+      return 0;
+    }
+  }
+  clear() {
+    this.scenes = [];
+    this.persist();
+  }
+};
+function captureScene(name, cameraPos, cameraTarget, clipBoxes, colorMode, pointSize, pointBudget) {
+  return {
+    name,
+    camera: {
+      position: [cameraPos.x, cameraPos.y, cameraPos.z],
+      target: [cameraTarget.x, cameraTarget.y, cameraTarget.z]
+    },
+    clipBoxes: clipBoxes.map((b) => ({
+      name: b.name,
+      min: [b.box.min.x, b.box.min.y, b.box.min.z],
+      max: [b.box.max.x, b.box.max.y, b.box.max.z],
+      mode: b.mode,
+      visible: b.visible
+    })),
+    colorMode,
+    pointSize,
+    pointBudget
+  };
+}
+function InlineEditSceneName({ value, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef(null);
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+  if (!editing) {
+    return /* @__PURE__ */ jsx(
+      "p",
+      {
+        className: "font-mono text-foreground truncate text-[11px] cursor-pointer hover:text-[hsl(var(--brand))] transition-colors",
+        onDoubleClick: () => {
+          setDraft(value);
+          setEditing(true);
+        },
+        title: "Double-click to rename",
+        children: value
+      }
+    );
+  }
+  const save = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== value) onSave(trimmed);
+    setEditing(false);
+  };
+  return /* @__PURE__ */ jsx(
+    "input",
+    {
+      ref: inputRef,
+      type: "text",
+      value: draft,
+      onChange: (e) => setDraft(e.target.value),
+      onKeyDown: (e) => {
+        if (e.key === "Enter") save();
+        if (e.key === "Escape") setEditing(false);
+      },
+      onBlur: save,
+      className: "font-mono text-foreground text-[11px] bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
+    }
+  );
+}
+function ScenesPanel() {
+  const {
+    sceneManager,
+    cameraAnimator,
+    clipManager,
+    loader,
+    clipBoxEntries,
+    colorMode,
+    pointSize,
+    pointBudget,
+    setColorMode,
+    setPointSize,
+    setPointBudget,
+    config
+  } = useViewer();
+  const t = useLocale().scenesPanel;
+  const [scenes, setScenes] = useState([]);
+  const [newName, setNewName] = useState("");
+  const pmRef = useRef(null);
+  const fileInputRef = useRef(null);
+  useEffect(() => {
+    const key = config.source.type === "s3" ? config.source.baseUrl : config.source.type === "electron" ? config.source.basePath : "local";
+    const pm = new PresentationManager(key);
+    pm.onChange = (s) => setScenes(s);
+    pmRef.current = pm;
+    setScenes(pm.getScenes());
+  }, [config.source]);
+  const handleSave = () => {
+    if (!sceneManager || !pmRef.current) return;
+    const name = newName.trim() || `Scene ${scenes.length + 1}`;
+    const scene = captureScene(
+      name,
+      sceneManager.camera.position,
+      sceneManager.controls.target,
+      clipBoxEntries,
+      colorMode,
+      pointSize,
+      pointBudget
+    );
+    pmRef.current.addScene(scene);
+    setNewName("");
+  };
+  const handleRestore = async (scene) => {
+    if (!sceneManager) return;
+    const pos = new THREE6.Vector3(...scene.camera.position);
+    const target = new THREE6.Vector3(...scene.camera.target);
+    if (cameraAnimator) {
+      await cameraAnimator.flyTo({ position: pos, target, duration: 600 });
+    } else {
+      sceneManager.camera.position.copy(pos);
+      sceneManager.controls.target.copy(target);
+      sceneManager.controls.update();
+    }
+    if (clipManager) {
+      clipManager.clear();
+      for (const cb of scene.clipBoxes) {
+        const box = new THREE6.Box3(
+          new THREE6.Vector3(...cb.min),
+          new THREE6.Vector3(...cb.max)
+        );
+        const entry = clipManager.addBox(box, cb.name);
+        if (cb.mode !== entry.mode) clipManager.setBoxMode(entry.id, cb.mode);
+        if (!cb.visible) clipManager.setBoxVisible(entry.id, false);
+      }
+    }
+    if (scene.colorMode && loader) {
+      const cm = scene.colorMode;
+      await loader.setColorMode(cm);
+      setColorMode(cm);
+    }
+    if (scene.pointSize) {
+      loader?.setPointSize(scene.pointSize);
+      setPointSize(scene.pointSize);
+    }
+    if (scene.pointBudget) {
+      loader?.setPointBudget(scene.pointBudget);
+      setPointBudget(scene.pointBudget);
+    }
+  };
+  const handleExport = () => {
+    if (!pmRef.current) return;
+    const json = pmRef.current.exportJSON();
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `scenes_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const handleImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !pmRef.current) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result;
+      pmRef.current?.importJSON(text);
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full overflow-y-auto text-xs", children: [
+    /* @__PURE__ */ jsxs("div", { className: "p-2 border-b border-[hsl(var(--border))]", children: [
+      /* @__PURE__ */ jsx("p", { className: "text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5", children: t.saveScene }),
+      /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "text",
+            value: newName,
+            onChange: (e) => setNewName(e.target.value),
+            onKeyDown: (e) => e.key === "Enter" && handleSave(),
+            placeholder: t.namePlaceholder,
+            className: "flex-1 bg-muted/40 border border-[hsl(var(--border))] rounded px-1.5 py-0.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: handleSave,
+            title: t.save,
+            className: "px-2 py-0.5 rounded bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] hover:bg-[hsl(var(--brand)/0.3)] transition-colors",
+            children: /* @__PURE__ */ jsx(Plus, { size: 13 })
+          }
+        )
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "p-2 flex-1", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-1.5", children: [
+        /* @__PURE__ */ jsx("p", { className: "text-[10px] font-semibold text-muted-foreground uppercase tracking-wide", children: t.savedScenes }),
+        /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
+          /* @__PURE__ */ jsx("button", { onClick: handleExport, title: t.exportJson, className: "text-muted-foreground hover:text-foreground transition-colors", children: /* @__PURE__ */ jsx(Download, { size: 11 }) }),
+          /* @__PURE__ */ jsx("button", { onClick: () => fileInputRef.current?.click(), title: t.importJson, className: "text-muted-foreground hover:text-foreground transition-colors", children: /* @__PURE__ */ jsx(Upload, { size: 11 }) }),
+          /* @__PURE__ */ jsx("input", { ref: fileInputRef, type: "file", accept: ".json", onChange: handleImport, className: "hidden" })
+        ] })
+      ] }),
+      scenes.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-[10px] text-muted-foreground", children: t.noScenes }) : scenes.map((scene) => /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1.5 py-1 group border-b border-[hsl(var(--border)/0.3)] last:border-0", children: [
+        /* @__PURE__ */ jsx(Bookmark, { size: 11, className: "text-[hsl(var(--brand))] shrink-0" }),
+        /* @__PURE__ */ jsxs("div", { className: "flex-1 min-w-0", children: [
+          /* @__PURE__ */ jsx(InlineEditSceneName, { value: scene.name, onSave: (name) => pmRef.current?.renameScene(scene.id, name) }),
+          /* @__PURE__ */ jsxs("p", { className: "text-[8px] text-muted-foreground font-mono", children: [
+            new Date(scene.createdAt).toLocaleDateString(),
+            scene.clipBoxes.length > 0 && ` \xB7 ${scene.clipBoxes.length} clip`
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => handleRestore(scene),
+            title: t.restore,
+            className: "text-[hsl(var(--brand))] hover:text-foreground transition-colors shrink-0",
+            children: /* @__PURE__ */ jsx(Play, { size: 12 })
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => pmRef.current?.removeScene(scene.id),
+            className: "opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0",
+            children: /* @__PURE__ */ jsx(Trash2, { size: 10 })
+          }
+        )
+      ] }, scene.id))
+    ] })
+  ] });
+}
+function Sidebar() {
+  const [tab, setTab] = useState("panoramas");
+  const t = useLocale().sidebar;
+  const TABS = [
+    { id: "panoramas", icon: /* @__PURE__ */ jsx(Camera, { size: 14 }), label: t.tabPanoramas },
+    { id: "scene", icon: /* @__PURE__ */ jsx(Layers, { size: 14 }), label: t.tabScene },
+    { id: "measurements", icon: /* @__PURE__ */ jsx(Ruler, { size: 14 }), label: t.tabMeasurements },
+    { id: "classification", icon: /* @__PURE__ */ jsx(Tag, { size: 14 }), label: t.tabClassification },
+    { id: "scenes", icon: /* @__PURE__ */ jsx(Bookmark, { size: 14 }), label: t.tabScenes }
+  ];
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full bg-[hsl(var(--sidebar-bg,var(--card)))] border-l border-[hsl(var(--border))]", children: [
+    /* @__PURE__ */ jsx("div", { className: "flex border-b border-[hsl(var(--border))] shrink-0", children: TABS.map((t2) => /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: () => setTab(t2.id),
+        title: t2.label,
+        className: `flex-1 flex flex-col items-center gap-0.5 py-2 text-[9px] font-mono transition-colors
+              ${tab === t2.id ? "text-[hsl(var(--brand))] border-b-2 border-[hsl(var(--brand))] -mb-px" : "text-muted-foreground hover:text-foreground"}`,
+        children: [
+          t2.icon,
+          /* @__PURE__ */ jsx("span", { className: "hidden xl:block", children: t2.label })
+        ]
+      },
+      t2.id
+    )) }),
+    /* @__PURE__ */ jsxs("div", { className: "flex-1 overflow-hidden", children: [
+      tab === "panoramas" && /* @__PURE__ */ jsx(PanoPanel, {}),
+      tab === "scene" && /* @__PURE__ */ jsx(ScenePanel, {}),
+      tab === "measurements" && /* @__PURE__ */ jsx(MeasurementsPanel, {}),
+      tab === "classification" && /* @__PURE__ */ jsx(ClassificationPanel, {}),
+      tab === "scenes" && /* @__PURE__ */ jsx(ScenesPanel, {})
+    ] })
+  ] });
+}
+
+// src/components/overlays/pano-viewer.tsx
+init_viewer_provider();
+init_locale_context();
+function PanoViewer() {
+  const { selectedCamera, setSelectedCamera } = useViewer();
+  const tPano = useLocale().panoViewer;
+  const containerRef = useRef(null);
+  const viewerRef = useRef(null);
+  useEffect(() => {
+    if (!selectedCamera?.image || !containerRef.current) return;
+    const initPannellum = async () => {
+      if (!window.pannellum) {
+        if (!document.getElementById("pannellum-css")) {
+          const link = document.createElement("link");
+          link.id = "pannellum-css";
+          link.rel = "stylesheet";
+          link.href = "https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css";
+          document.head.appendChild(link);
+        }
+        await new Promise((resolve) => {
+          if (document.getElementById("pannellum-js")) {
+            resolve();
+            return;
+          }
+          const script = document.createElement("script");
+          script.id = "pannellum-js";
+          script.src = "https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js";
+          script.onload = () => resolve();
+          document.head.appendChild(script);
+        });
+      }
+      if (viewerRef.current) {
+        viewerRef.current.destroy();
+        viewerRef.current = null;
+      }
+      viewerRef.current = window.pannellum.viewer(containerRef.current, {
+        type: "equirectangular",
+        panorama: selectedCamera.image,
+        autoLoad: true,
+        showZoomCtrl: false,
+        showFullscreenCtrl: false,
+        compass: false,
+        yaw: selectedCamera.yaw_deg ?? 0,
+        hfov: 100,
+        minHfov: 30,
+        maxHfov: 150
+      });
+    };
+    initPannellum().catch(console.error);
+    return () => {
+      viewerRef.current?.destroy();
+      viewerRef.current = null;
+    };
+  }, [selectedCamera]);
+  if (!selectedCamera) return null;
+  return /* @__PURE__ */ jsxs("div", { className: "absolute inset-0 z-40 bg-black flex flex-col", children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between px-3 py-2 bg-black/80 backdrop-blur shrink-0", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+        /* @__PURE__ */ jsx(Navigation, { size: 14, className: "text-[hsl(var(--brand))]" }),
+        /* @__PURE__ */ jsx("span", { className: "text-sm font-mono text-white", children: selectedCamera.name }),
+        selectedCamera.position && /* @__PURE__ */ jsxs("span", { className: "text-xs text-white/50 font-mono hidden sm:block", children: [
+          selectedCamera.position.x.toFixed(2),
+          ", ",
+          selectedCamera.position.y.toFixed(2),
+          ", ",
+          selectedCamera.position.z.toFixed(2)
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: () => setSelectedCamera(null),
+          className: "text-white/70 hover:text-white transition-colors p-1",
+          title: tPano.close,
+          children: /* @__PURE__ */ jsx(X, { size: 18 })
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsx("div", { ref: containerRef, className: "flex-1" })
+  ] });
+}
+
+// src/components/overlays/rendering-settings.tsx
+init_viewer_provider();
+init_locale_context();
+function RenderingSettings({ open, onClose }) {
+  const { loader } = useViewer();
+  const t = useLocale().renderingSettings;
+  const [rgbGamma, setRgbGamma] = useState(1);
+  const [rgbBrightness, setRgbBrightness] = useState(0);
+  const [rgbContrast, setRgbContrast] = useState(0);
+  const [intensityGamma, setIntensityGamma] = useState(1);
+  const [intensityBrightness, setIntensityBrightness] = useState(0);
+  const [intensityContrast, setIntensityContrast] = useState(0);
+  const [intensityRange, setIntensityRange] = useState([0, 65535]);
+  const [heightMin, setHeightMin] = useState(0);
+  const [heightMax, setHeightMax] = useState(100);
+  const [opacity, setOpacity] = useState(1);
+  useEffect(() => {
+    if (!open || !loader) return;
+    const pc = loader.getPointCloud();
+    if (!pc) return;
+    const mat = pc.material;
+    if (!mat) return;
+    setRgbGamma(mat.uniforms?.rgbGamma?.value ?? mat.rgbGamma ?? 1);
+    setRgbBrightness(mat.uniforms?.rgbBrightness?.value ?? mat.rgbBrightness ?? 0);
+    setRgbContrast(mat.uniforms?.rgbContrast?.value ?? mat.rgbContrast ?? 0);
+    setIntensityGamma(mat.uniforms?.intensityGamma?.value ?? mat.intensityGamma ?? 1);
+    setIntensityBrightness(mat.uniforms?.intensityBrightness?.value ?? mat.intensityBrightness ?? 0);
+    setIntensityContrast(mat.uniforms?.intensityContrast?.value ?? mat.intensityContrast ?? 0);
+    setOpacity(mat.opacity ?? 1);
+    const wb2 = loader.worldBox;
+    if (wb2 && !wb2.isEmpty()) {
+      setHeightMin(mat.uniforms?.heightMin?.value ?? mat.heightMin ?? wb2.min.z);
+      setHeightMax(mat.uniforms?.heightMax?.value ?? mat.heightMax ?? wb2.max.z);
+    }
+    const ir = mat.uniforms?.intensityRange?.value ?? mat.intensityRange;
+    if (ir) setIntensityRange([ir[0] ?? 0, ir[1] ?? 65535]);
+  }, [open, loader]);
+  const apply = (setter, prop, value) => {
+    setter(value);
+    if (!loader) return;
+    const pc = loader.getPointCloud();
+    if (!pc) return;
+    const mat = pc.material;
+    if (!mat) return;
+    mat[prop] = value;
+    mat.needsUpdate = true;
+  };
+  const applyIntensityRange = (min, max) => {
+    setIntensityRange([min, max]);
+    if (!loader) return;
+    const pc = loader.getPointCloud();
+    if (!pc) return;
+    const mat = pc.material;
+    if (!mat) return;
+    mat.intensityRange = [min, max];
+    mat.needsUpdate = true;
+  };
+  if (!open) return null;
+  const wb = loader?.worldBox;
+  const zMin = wb && !wb.isEmpty() ? wb.min.z : -100;
+  const zMax = wb && !wb.isEmpty() ? wb.max.z : 100;
+  const zRange = zMax - zMin;
+  return /* @__PURE__ */ jsxs("div", { className: "absolute top-12 left-12 z-50 w-80 max-h-[calc(100vh-6rem)] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl", children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--border))]", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+        /* @__PURE__ */ jsx(Sliders, { size: 14, className: "text-[hsl(var(--brand))]" }),
+        /* @__PURE__ */ jsx("span", { className: "text-xs font-semibold", children: t.title })
+      ] }),
+      /* @__PURE__ */ jsx("button", { onClick: onClose, className: "text-muted-foreground hover:text-foreground transition-colors p-0.5", children: /* @__PURE__ */ jsx(X, { size: 14 }) })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "p-3 space-y-4 text-xs", children: [
+      /* @__PURE__ */ jsxs(Section, { title: t.rgbSection, children: [
+        /* @__PURE__ */ jsx(
+          Slider,
+          {
+            label: t.gamma,
+            value: rgbGamma,
+            min: 0.1,
+            max: 4,
+            step: 0.05,
+            onChange: (v) => apply(setRgbGamma, "rgbGamma", v)
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          Slider,
+          {
+            label: t.brightness,
+            value: rgbBrightness,
+            min: -1,
+            max: 1,
+            step: 0.02,
+            onChange: (v) => apply(setRgbBrightness, "rgbBrightness", v)
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          Slider,
+          {
+            label: t.contrast,
+            value: rgbContrast,
+            min: -1,
+            max: 1,
+            step: 0.02,
+            onChange: (v) => apply(setRgbContrast, "rgbContrast", v)
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs(Section, { title: t.intensitySection, children: [
+        /* @__PURE__ */ jsx(
+          Slider,
+          {
+            label: t.gamma,
+            value: intensityGamma,
+            min: 0.1,
+            max: 4,
+            step: 0.05,
+            onChange: (v) => apply(setIntensityGamma, "intensityGamma", v)
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          Slider,
+          {
+            label: t.brightness,
+            value: intensityBrightness,
+            min: -1,
+            max: 1,
+            step: 0.02,
+            onChange: (v) => apply(setIntensityBrightness, "intensityBrightness", v)
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          Slider,
+          {
+            label: t.contrast,
+            value: intensityContrast,
+            min: -1,
+            max: 1,
+            step: 0.02,
+            onChange: (v) => apply(setIntensityContrast, "intensityContrast", v)
+          }
+        ),
+        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+          /* @__PURE__ */ jsx("span", { className: "w-16 text-muted-foreground", children: t.range }),
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              type: "number",
+              value: intensityRange[0],
+              min: 0,
+              max: 65535,
+              onChange: (e) => applyIntensityRange(Number(e.target.value), intensityRange[1]),
+              className: "w-16 bg-muted/40 border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] font-mono"
+            }
+          ),
+          /* @__PURE__ */ jsx("span", { className: "text-muted-foreground", children: "\u2013" }),
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              type: "number",
+              value: intensityRange[1],
+              min: 0,
+              max: 65535,
+              onChange: (e) => applyIntensityRange(intensityRange[0], Number(e.target.value)),
+              className: "w-16 bg-muted/40 border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] font-mono"
+            }
+          )
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs(Section, { title: t.elevationSection, children: [
+        /* @__PURE__ */ jsx(
+          Slider,
+          {
+            label: t.elevMin,
+            value: heightMin,
+            min: zMin - zRange * 0.1,
+            max: zMax + zRange * 0.1,
+            step: zRange / 200,
+            onChange: (v) => apply(setHeightMin, "heightMin", v),
+            display: (v) => v.toFixed(1) + "m"
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          Slider,
+          {
+            label: t.elevMax,
+            value: heightMax,
+            min: zMin - zRange * 0.1,
+            max: zMax + zRange * 0.1,
+            step: zRange / 200,
+            onChange: (v) => apply(setHeightMax, "heightMax", v),
+            display: (v) => v.toFixed(1) + "m"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsx(Section, { title: t.generalSection, children: /* @__PURE__ */ jsx(
+        Slider,
+        {
+          label: t.opacity,
+          value: opacity,
+          min: 0,
+          max: 1,
+          step: 0.02,
+          onChange: (v) => apply(setOpacity, "opacity", v)
+        }
+      ) }),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: () => {
+            apply(setRgbGamma, "rgbGamma", 1);
+            apply(setRgbBrightness, "rgbBrightness", 0);
+            apply(setRgbContrast, "rgbContrast", 0);
+            apply(setIntensityGamma, "intensityGamma", 1);
+            apply(setIntensityBrightness, "intensityBrightness", 0);
+            apply(setIntensityContrast, "intensityContrast", 0);
+            apply(setOpacity, "opacity", 1);
+            if (wb && !wb.isEmpty()) {
+              apply(setHeightMin, "heightMin", wb.min.z);
+              apply(setHeightMax, "heightMax", wb.max.z);
+            }
+            applyIntensityRange(0, 65535);
+          },
+          className: "w-full py-1.5 text-center rounded bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors text-[10px] font-mono",
+          children: t.reset
+        }
+      )
+    ] })
+  ] });
+}
+function Section({ title, children }) {
+  return /* @__PURE__ */ jsxs("div", { children: [
+    /* @__PURE__ */ jsx("p", { className: "text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5", children: title }),
+    /* @__PURE__ */ jsx("div", { className: "space-y-1.5", children })
+  ] });
+}
+function Slider({ label, value, min, max, step, onChange, display }) {
+  return /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+    /* @__PURE__ */ jsx("span", { className: "w-16 text-muted-foreground shrink-0", children: label }),
+    /* @__PURE__ */ jsx(
+      "input",
+      {
+        type: "range",
+        min,
+        max,
+        step,
+        value,
+        onChange: (e) => onChange(Number(e.target.value)),
+        className: "flex-1 accent-[hsl(var(--brand))] h-1"
+      }
+    ),
+    /* @__PURE__ */ jsx("span", { className: "w-12 text-right font-mono text-[10px] tabular-nums", children: display ? display(value) : value.toFixed(2) })
+  ] });
+}
+var Viewport2 = lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
+function ViewportFallback() {
+  const t = useLocale().viewport;
+  return /* @__PURE__ */ jsx("div", { className: "w-full h-full flex items-center justify-center bg-[hsl(var(--background))]", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-center gap-3", children: [
+    /* @__PURE__ */ jsx("div", { className: "w-8 h-8 border-2 border-[hsl(var(--brand))] border-t-transparent rounded-full animate-spin" }),
+    /* @__PURE__ */ jsx("p", { className: "text-xs text-muted-foreground font-mono", children: t.initialisingRenderer })
+  ] }) });
+}
+function WorkspaceLayout({ className }) {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
+  const { fps, pointBudget, activeTool, selectedCamera } = useViewer();
+  const { metadata } = useData();
+  const t = useLocale().viewport;
+  return /* @__PURE__ */ jsxs("div", { className: cn("flex flex-col h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden", className), children: [
+    /* @__PURE__ */ jsx("div", { className: "shrink-0 border-b border-[hsl(var(--border))] bg-[hsl(var(--toolbar-bg,var(--card)))] z-20", children: /* @__PURE__ */ jsx(
+      MainToolbar,
+      {
+        onToggleSidebar: () => setSidebarOpen((o) => !o),
+        sidebarOpen,
+        onToggleRenderSettings: () => setRenderSettingsOpen((o) => !o),
+        renderSettingsOpen
+      }
+    ) }),
+    /* @__PURE__ */ jsxs("div", { className: "flex flex-1 overflow-hidden min-h-0", children: [
+      /* @__PURE__ */ jsx(ToolRail, {}),
+      /* @__PURE__ */ jsxs("div", { className: "flex-1 relative overflow-hidden", children: [
+        /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsx(Viewport2, {}) }),
+        selectedCamera && /* @__PURE__ */ jsx(PanoViewer, {}),
+        /* @__PURE__ */ jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) })
+      ] }),
+      /* @__PURE__ */ jsx(
+        "div",
+        {
+          className: cn(
+            "border-l border-[hsl(var(--border))] shrink-0 overflow-hidden transition-all duration-200",
+            sidebarOpen ? "w-72 xl:w-80" : "w-0"
+          ),
+          children: sidebarOpen && /* @__PURE__ */ jsx(Sidebar, {})
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "shrink-0 border-t border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground", children: [
+      metadata && /* @__PURE__ */ jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
+      /* @__PURE__ */ jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
+      /* @__PURE__ */ jsx("span", { children: t.statusFps(fps) }),
+      activeTool !== "none" && /* @__PURE__ */ jsx("span", { className: "text-[hsl(var(--brand))]", children: activeTool })
+    ] })
+  ] });
+}
+
+// src/components/pano-cloud-viewer.tsx
+init_file_source_adapter();
+function PanoCloudViewer({ source, theme = "dark", className, locale }) {
+  const adapter = createAdapter(source);
+  const config = { source };
+  return /* @__PURE__ */ jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsx("div", { className: `w-full h-full ${className ?? ""}`, children: /* @__PURE__ */ jsx(WorkspaceLayout, {}) }) }) }) }) });
+}
+
+// src/index.ts
+init_viewer_provider();
+init_data_provider();
+init_viewport();
+
+// src/components/toolbar/measure-tools.tsx
+init_viewer_provider();
+var TOOLS = [
+  { type: "point", tool: "measure-point", icon: /* @__PURE__ */ jsx(MapPin, { size: 14 }), title: "Point coordinate" },
+  { type: "distance", tool: "measure-distance", icon: /* @__PURE__ */ jsx(Ruler, { size: 14 }), title: "Distance" },
+  { type: "height", tool: "measure-height", icon: /* @__PURE__ */ jsx(ArrowUpDown, { size: 14 }), title: "Height" },
+  { type: "area", tool: "measure-area", icon: /* @__PURE__ */ jsx(Pentagon, { size: 14 }), title: "Area" },
+  { type: "volume", tool: "measure-volume", icon: /* @__PURE__ */ jsx(Package, { size: 14 }), title: "Volume" },
+  { type: "angle", tool: "measure-angle", icon: /* @__PURE__ */ jsx(Triangle, { size: 14 }), title: "Angle" },
+  { type: "profile", tool: "measure-profile", icon: /* @__PURE__ */ jsx(Waypoints, { size: 14 }), title: "Profile" }
+];
+function MeasureTools() {
+  const { activeTool, setActiveTool } = useViewer();
+  const toggle = (tool) => {
+    setActiveTool(activeTool === tool ? "none" : tool);
+  };
+  return /* @__PURE__ */ jsx(Fragment, { children: TOOLS.map((t) => /* @__PURE__ */ jsx(
+    ToolbarIconBtn,
+    {
+      icon: t.icon,
+      title: t.title,
+      active: activeTool === t.tool,
+      onClick: () => toggle(t.tool)
+    },
+    t.tool
+  )) });
+}
+
+// src/components/toolbar/section-tools.tsx
+init_viewer_provider();
+function SectionTools() {
+  const { activeTool, setActiveTool, clipManager, loader } = useViewer();
+  const addClipBox = () => {
+    if (!clipManager || !loader) return;
+    const boxes = clipManager.getBoxes();
+    if (boxes.length > 0) {
+      clipManager.clear();
+      return;
+    }
+    const wb = loader.worldBox;
+    if (wb.isEmpty()) return;
+    const entry = clipManager.addBox(wb.clone());
+    clipManager.selectBox(entry.id);
+    clipManager.setTransformMode("scale");
+  };
+  const hasClipBox = (clipManager?.getBoxes().length ?? 0) > 0;
+  return /* @__PURE__ */ jsxs(Fragment, { children: [
+    /* @__PURE__ */ jsx(
+      ToolbarIconBtn,
+      {
+        icon: /* @__PURE__ */ jsx(BoxSelect, { size: 14 }),
+        title: "Clipping box",
+        active: hasClipBox,
+        onClick: addClipBox
+      }
+    ),
+    /* @__PURE__ */ jsx(
+      ToolbarIconBtn,
+      {
+        icon: /* @__PURE__ */ jsx(Slice, { size: 14 }),
+        title: "Clipping plane",
+        active: activeTool === "section-plane",
+        onClick: () => setActiveTool(activeTool === "section-plane" ? "none" : "section-plane")
+      }
+    )
+  ] });
+}
+
+// src/components/overlays/about-dialog.tsx
+init_locale_context();
+function AboutDialog({ onClose }) {
+  const t = useLocale().about;
+  return /* @__PURE__ */ jsx("div", { className: "fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm", onClick: onClose, children: /* @__PURE__ */ jsxs(
+    "div",
+    {
+      className: "bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-xl shadow-2xl p-6 w-80 text-sm",
+      onClick: (e) => e.stopPropagation(),
+      children: [
+        /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-4", children: [
+          /* @__PURE__ */ jsx("span", { className: "font-semibold text-[hsl(var(--brand))] font-mono text-xs uppercase tracking-widest", children: t.title }),
+          /* @__PURE__ */ jsx("button", { onClick: onClose, className: "text-muted-foreground hover:text-foreground transition-colors", children: /* @__PURE__ */ jsx(X, { size: 16 }) })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "mb-4", children: [
+          /* @__PURE__ */ jsx("p", { className: "font-bold text-foreground text-base", children: t.productName }),
+          /* @__PURE__ */ jsx("p", { className: "text-muted-foreground text-xs mt-0.5", children: "@der-ort/pano-cloud-viewer" })
+        ] }),
+        /* @__PURE__ */ jsx("p", { className: "text-xs text-muted-foreground leading-relaxed mb-4", children: t.description }),
+        /* @__PURE__ */ jsxs("div", { className: "space-y-1 text-xs text-muted-foreground border-t border-[hsl(var(--border))] pt-3", children: [
+          /* @__PURE__ */ jsx("p", { children: t.engineLabel }),
+          /* @__PURE__ */ jsx("p", { children: t.panoramasLabel }),
+          /* @__PURE__ */ jsx("p", { children: t.uiLabel })
+        ] })
+      ]
+    }
+  ) });
+}
+
+// src/index.ts
+init_scene_manager();
+init_point_cloud_loader();
+init_camera_animator();
+init_marker_manager();
+init_measurement_manager();
+init_export_manager();
+init_minimap_renderer();
+init_clip_manager();
+init_axis_widget();
+init_file_source_adapter();
+init_utils();
+init_locale_context();
+init_en();
+
+// src/i18n/types.ts
+function createLocale(base, overrides) {
+  return deepMerge(base, overrides);
+}
+function deepMerge(base, overrides) {
+  if (typeof base !== "object" || base === null) return overrides ?? base;
+  const result = { ...base };
+  for (const key of Object.keys(overrides)) {
+    const val = overrides[key];
+    result[key] = val !== void 0 && typeof val === "object" && !Array.isArray(val) ? deepMerge(result[key], val) : val;
+  }
+  return result;
+}
+
+// src/i18n/de.ts
+init_en();
+var de = createLocale(en, {
+  toolbar: {
+    viewTop: "Draufsicht",
+    viewTopLabel: "O",
+    viewFront: "Vorderansicht",
+    viewFrontLabel: "Vd",
+    viewBack: "R\xFCckansicht",
+    viewBackLabel: "Rk",
+    viewLeft: "Linke Ansicht",
+    viewLeftLabel: "L",
+    viewRight: "Rechte Ansicht",
+    viewRightLabel: "R",
+    viewBottom: "Unteransicht",
+    viewBottomLabel: "U",
+    budget: "Budget",
+    pointBudgetTitle: (m) => `Punktbudget: ${m.toFixed(1)}M`,
+    size: "Gr\xF6\xDFe",
+    pointSizeTitle: (s) => `Punktgr\xF6\xDFe: ${s.toFixed(1)}`,
+    panoramas: "Panoramen",
+    togglePanoramas: "Panorama-Marker umschalten",
+    minimap: "Minikarte",
+    toggleMinimap: "Minikarte umschalten",
+    clouds: "Wolken",
+    cloudSelector: "Punktwolkenauswahl",
+    theme: "Design",
+    switchToLight: "Zu hell wechseln",
+    switchToDark: "Zu dunkel wechseln",
+    about: "Info",
+    sidebar: "Seitenleiste",
+    toggleSidebar: "Seitenleiste umschalten",
+    colorMode: "Farbmodus",
+    colorRgb: "RGB",
+    colorElevation: "H\xF6he",
+    colorIntensity: "Intensit\xE4t",
+    colorIntensityGradient: "Intensit\xE4tsgradient",
+    colorClassification: "Klassifikation",
+    colorReturnNumber: "R\xFCcklaufnummer",
+    colorSource: "Quelle",
+    quality: "Qualit\xE4t",
+    qualityPerformance: "Leistung",
+    qualityBalanced: "Ausgewogen",
+    qualityHigh: "Hohe Qualit\xE4t",
+    navOrbit: "Orbit",
+    navFly: "Flug",
+    navEarth: "Erde",
+    navOrbitTitle: "Orbit-Navigation \u2014 um Ziel rotieren",
+    navFlyTitle: "Flug-Navigation \u2014 WASD + Ziehen zum Umschauen",
+    navEarthTitle: "Erd-Navigation \u2014 Pan-fokussiert, Horizont fixiert",
+    camPerspective: "Perspek.",
+    camOrthographic: "Ortho",
+    camPerspectiveTitle: "Perspektivische Kamera",
+    camOrthographicTitle: "Orthografische Kamera"
+  },
+  exportPanel: {
+    exportImageTitle: "Orthografisches Bild exportieren",
+    title: "Bild exportieren",
+    view: "Ansicht",
+    viewTop: "Oben (Plan)",
+    viewFront: "Vorne",
+    viewSide: "Seite",
+    viewBack: "Hinten",
+    scale: "Ma\xDFstab",
+    background: "Hintergrund",
+    bgWhite: "wei\xDF",
+    bgBlack: "schwarz",
+    bgTransparent: "\u03B1",
+    format: "Format",
+    exporting: "Exportiere\u2026",
+    download: "Herunterladen"
+  },
+  toolRail: {
+    measureGroup: "M",
+    sectionGroup: "S",
+    measurePoint: "Punktkoordinate",
+    measureDistance: "Abstand",
+    measureHeight: "H\xF6henunterschied",
+    measureArea: "Fl\xE4che",
+    measureVolume: "Volumen",
+    measureAngle: "Winkel",
+    measureProfile: "Profil",
+    clearMeasurements: "Alle Messungen l\xF6schen",
+    drawClipBox: "Ausschnittrahmen ziehen (im Viewport)",
+    clipModeKeepInside: "Modus: innen behalten (zum Umkehren klicken)",
+    clipModeKeepOutside: "Modus: au\xDFen behalten (zum Umkehren klicken)",
+    removeClipBox: "Ausschnittrahmen entfernen"
+  },
+  sidebar: {
+    tabPanoramas: "Panoramen",
+    tabScene: "Szene",
+    tabMeasurements: "Messungen",
+    tabClassification: "Klassifikation",
+    tabScenes: "Szenen"
+  },
+  scenePanel: {
+    pointClouds: "Punktwolken",
+    noCloudLoaded: "Keine Wolke geladen",
+    measurements: "Messungen",
+    clearAll: "Alle l\xF6schen",
+    none: "Keine",
+    sections: "Schnitte",
+    sectionHint: "Werkzeuge nutzen um Schnittvolumen hinzuzuf\xFCgen",
+    clipModeNote: "Schnittmodus gilt f\xFCr alle Boxen"
+  },
+  panoPanel: {
+    searchPlaceholder: "Panoramen suchen\u2026",
+    noResults: "Keine Panoramen gefunden",
+    flyTo: "Dorthin fliegen"
+  },
+  classificationPanel: {
+    title: "LAS-Klassen",
+    all: "Alle",
+    none: "Keine",
+    classLabels: {
+      0: "Nie klassifiziert",
+      1: "Unklassifiziert",
+      2: "Boden",
+      3: "Niedrige Vegetation",
+      4: "Mittlere Vegetation",
+      5: "Hohe Vegetation",
+      6: "Geb\xE4ude",
+      7: "Tiefpunkt (Rauschen)",
+      9: "Wasser",
+      17: "Br\xFCckenbelag",
+      18: "Starkes Rauschen"
+    }
+  },
+  measurementsPanel: {
+    noMeasurements: "Noch keine Messungen.",
+    useMeasureToolHint: "Werkzeuge nutzen um zu messen.",
+    measurementCount: (n) => `${n} Messung${n === 1 ? "" : "en"}`,
+    downloadCsv: "CSV herunterladen",
+    csv: "CSV",
+    clearAll: "Alle l\xF6schen",
+    typePoint: "Punkt",
+    typeDistance: "Abstand",
+    typeHeight: "H\xF6he",
+    typeArea: "Fl\xE4che",
+    typeVolume: "Volumen",
+    typeAngle: "Winkel",
+    typeProfile: "Profil"
+  },
+  viewport: {
+    overview: "\xDCBERSICHT",
+    hintPoint: "Klicken um Punkt zu setzen \u2022 Esc zum Abbrechen",
+    hintDistance: "2 Punkte klicken \u2022 Rechtsklick zum Beenden",
+    hintHeight: "Start- dann Endpunkt klicken",
+    hintArea: "Polygonpunkte klicken \u2022 Rechtsklick zum Schlie\xDFen",
+    hintAngle: "3 Punkte klicken (Mittelpunkt ist der Scheitelpunkt)",
+    hintSectionBox: "Ziehen um Ausschnittrahmen zu definieren",
+    initialisingRenderer: "Renderer wird initialisiert\u2026",
+    statusPts: (m) => `${m.toFixed(1)}M Pkt.`,
+    statusBudget: (m) => `Budget: ${m.toFixed(1)}M`,
+    statusFps: (fps) => `${fps} fps`
+  },
+  renderingSettings: {
+    title: "Rendereinstellungen",
+    rgbSection: "RGB-Anpassungen",
+    intensitySection: "Intensit\xE4ts-Anpassungen",
+    elevationSection: "H\xF6henbereich",
+    generalSection: "Allgemein",
+    gamma: "Gamma",
+    brightness: "Helligkeit",
+    contrast: "Kontrast",
+    range: "Bereich",
+    elevMin: "Min Z",
+    elevMax: "Max Z",
+    opacity: "Deckkraft",
+    reset: "Standardwerte wiederherstellen"
+  },
+  scenesPanel: {
+    saveScene: "Aktuelle Ansicht speichern",
+    namePlaceholder: "Szenenname\u2026",
+    save: "Speichern",
+    savedScenes: "Gespeicherte Szenen",
+    noScenes: "Noch keine gespeicherten Szenen.",
+    restore: "Szene wiederherstellen",
+    exportJson: "Szenen als JSON exportieren",
+    importJson: "Szenen aus JSON importieren"
+  },
+  about: {
+    title: "Info",
+    productName: "PanoCloud Viewer",
+    description: "Ein modularer Punktwolken- und Panorama-Viewer, erstellt mit Next.js 15, potree-core, Three.js und shadcn/ui.",
+    engineLabel: "Engine: potree-core + Three.js",
+    panoramasLabel: "Panoramen: Pannellum 2.5.6",
+    uiLabel: "UI: shadcn/ui + Tailwind CSS"
+  },
+  panoViewer: {
+    close: "Panorama schlie\xDFen"
+  }
+});
+
+export { AboutDialog, AxisWidget, CameraAnimator, ClassificationPanel, ClipManager, DataProvider, DisplayControls, ElectronSourceAdapter, ExportManager, ExportTools, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimapRenderer, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Sidebar, ThemeProvider, ToolRail, ToolbarIconBtn, ToolbarSection, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, captureScene, cn, createAdapter, createLocale, de, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, useData, useLocale, useTheme, useViewer };
+//# sourceMappingURL=index.js.map
+//# sourceMappingURL=index.js.map
