@@ -11,6 +11,9 @@ export { DataProvider, useData } from "./providers/data-provider";
 // ─── Layout ───────────────────────────────────────────────────────────────────
 export { WorkspaceLayout } from "./components/workspace-layout";
 
+// ─── Layouts ─────────────────────────────────────────────────────────────────
+export { WorkstationLayout, FloatingPalette, CollapsibleSidebar } from "./layouts";
+
 // ─── Viewport ─────────────────────────────────────────────────────────────────
 export { Viewport } from "./components/viewport";
 

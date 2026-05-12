@@ -4,7 +4,7 @@ import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import * as THREE6 from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Download, Sliders, Camera, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, X, BoxSelect, Scissors, Move, Maximize2, RotateCcw, Search, Navigation, CloudCog, Trash2, Ruler, Eye, EyeOff, Plus, Upload, Bookmark, Play, Tag, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints } from 'lucide-react';
+import { Download, Sliders, Camera, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, X, BoxSelect, Scissors, Move, Maximize2, RotateCcw, Search, Navigation, CloudCog, Trash2, Ruler, Eye, EyeOff, Plus, Upload, Bookmark, Play, Tag, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Palette, Orbit, Globe, Box, Square, Image } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 var __defProp = Object.defineProperty;
@@ -5088,6 +5088,397 @@ function PanoCloudViewer({ source, theme = "dark", className, locale }) {
 // src/index.ts
 init_viewer_provider();
 init_data_provider();
+
+// src/layouts/workstation/workstation-layout.tsx
+init_viewer_provider();
+init_data_provider();
+
+// src/layouts/workstation/collapsible-sidebar.tsx
+init_utils();
+function CollapsibleSidebar({ side, children, defaultOpen = true, width = "w-60" }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const isLeft = side === "left";
+  const ChevronIcon = open ? isLeft ? ChevronLeft : ChevronRight : isLeft ? ChevronRight : ChevronLeft;
+  return /* @__PURE__ */ jsxs("div", { className: cn(
+    "absolute top-0 bottom-0 z-20 flex",
+    isLeft ? "left-0" : "right-0",
+    isLeft ? "flex-row" : "flex-row-reverse"
+  ), children: [
+    /* @__PURE__ */ jsx("div", { className: cn(
+      "h-full overflow-y-auto overflow-x-hidden transition-all duration-200 bg-[hsl(var(--background)/0.95)] backdrop-blur-sm",
+      isLeft ? "border-r" : "border-l",
+      "border-[hsl(var(--border))]",
+      open ? width : "w-0"
+    ), children: open && /* @__PURE__ */ jsx("div", { className: "p-2 space-y-2 min-w-[230px]", children }) }),
+    /* @__PURE__ */ jsx(
+      "button",
+      {
+        onClick: () => setOpen(!open),
+        className: cn(
+          "self-center -mx-px z-10",
+          "flex items-center justify-center w-5 h-10 rounded-md",
+          "bg-[hsl(var(--card))] border border-[hsl(var(--border))]",
+          "text-muted-foreground hover:text-foreground transition-colors",
+          "shadow-md"
+        ),
+        children: /* @__PURE__ */ jsx(ChevronIcon, { size: 14 })
+      }
+    )
+  ] });
+}
+
+// src/layouts/workstation/tools-palette.tsx
+init_utils();
+init_viewer_provider();
+
+// src/layouts/workstation/floating-palette.tsx
+init_utils();
+function FloatingPalette({ title, icon, children, defaultCollapsed = false, className }) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  return /* @__PURE__ */ jsxs("div", { className: cn(
+    "rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg overflow-hidden",
+    "min-w-[220px]",
+    className
+  ), children: [
+    /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: () => setCollapsed(!collapsed),
+        className: "flex items-center gap-2 w-full px-3 py-2 text-xs font-semibold text-[hsl(var(--foreground))] hover:bg-muted/40 transition-colors",
+        children: [
+          icon && /* @__PURE__ */ jsx("span", { className: "text-muted-foreground", children: icon }),
+          /* @__PURE__ */ jsx("span", { className: "flex-1 text-left", children: title }),
+          collapsed ? /* @__PURE__ */ jsx(ChevronDown, { size: 12 }) : /* @__PURE__ */ jsx(ChevronUp, { size: 12 })
+        ]
+      }
+    ),
+    !collapsed && /* @__PURE__ */ jsx("div", { className: "px-3 pb-3 pt-1 space-y-2 border-t border-[hsl(var(--border))]", children })
+  ] });
+}
+function ToolBtn({ icon, label, active, onClick, disabled }) {
+  return /* @__PURE__ */ jsxs(
+    "button",
+    {
+      title: label,
+      onClick,
+      disabled,
+      className: cn(
+        "flex items-center gap-2 w-full px-2 py-1.5 rounded text-xs transition-colors",
+        active ? "bg-[hsl(var(--brand)/0.15)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:text-foreground hover:bg-muted/40",
+        disabled && "opacity-30 cursor-not-allowed"
+      ),
+      children: [
+        icon,
+        /* @__PURE__ */ jsx("span", { children: label })
+      ]
+    }
+  );
+}
+var MEASURE_TOOLS = [
+  { tool: "measure-point", icon: /* @__PURE__ */ jsx(MapPin, { size: 14 }), label: "Point" },
+  { tool: "measure-distance", icon: /* @__PURE__ */ jsx(Ruler, { size: 14 }), label: "Distance" },
+  { tool: "measure-height", icon: /* @__PURE__ */ jsx(ArrowUpDown, { size: 14 }), label: "Height" },
+  { tool: "measure-area", icon: /* @__PURE__ */ jsx(Pentagon, { size: 14 }), label: "Area" },
+  { tool: "measure-volume", icon: /* @__PURE__ */ jsx(Package, { size: 14 }), label: "Volume" },
+  { tool: "measure-angle", icon: /* @__PURE__ */ jsx(Triangle, { size: 14 }), label: "Angle" },
+  { tool: "measure-profile", icon: /* @__PURE__ */ jsx(Waypoints, { size: 14 }), label: "Profile" }
+];
+function ToolsPalette() {
+  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, clipBoxEntries } = useViewer();
+  const toggle = useCallback((tool) => {
+    setActiveTool(activeTool === tool ? "none" : tool);
+  }, [activeTool, setActiveTool]);
+  const hasClipBox = clipBoxEntries.length > 0;
+  const clipMode = clipBoxEntries[0]?.mode ?? "outside";
+  const addClipBox = useCallback(() => {
+    if (!clipManager || !loader) return;
+    const wb = loader.worldBox;
+    if (wb.isEmpty()) return;
+    const entry = clipManager.addBox(wb.clone());
+    clipManager.selectBox(entry.id);
+    clipManager.setTransformMode("scale");
+  }, [clipManager, loader]);
+  const clearClipBox = useCallback(() => {
+    clipManager?.clear();
+    if (activeTool === "section-box") setActiveTool("none");
+  }, [clipManager, activeTool, setActiveTool]);
+  const toggleClipMode = useCallback(() => {
+    const next = clipMode === "outside" ? "inside" : "outside";
+    for (const b of clipBoxEntries) clipManager?.setBoxMode(b.id, next);
+  }, [clipManager, clipBoxEntries, clipMode]);
+  return /* @__PURE__ */ jsxs(FloatingPalette, { title: "Tools", icon: /* @__PURE__ */ jsx(Ruler, { size: 12 }), children: [
+    /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mb-1", children: "Measure" }),
+    /* @__PURE__ */ jsxs("div", { className: "space-y-0.5", children: [
+      MEASURE_TOOLS.map((def) => /* @__PURE__ */ jsx(ToolBtn, { icon: def.icon, label: def.label, active: activeTool === def.tool, onClick: () => toggle(def.tool) }, def.tool)),
+      /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(X, { size: 14 }), label: "Clear All", onClick: () => {
+        measurementManager?.clearAll();
+        setMeasurementList([]);
+      } })
+    ] }),
+    /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-3 mb-1", children: "Clipping" }),
+    /* @__PURE__ */ jsxs("div", { className: "space-y-0.5", children: [
+      /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(BoxSelect, { size: 14 }), label: hasClipBox ? "Remove Clip Box" : "Add Clip Box", active: hasClipBox, onClick: hasClipBox ? clearClipBox : addClipBox }),
+      hasClipBox && /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(Scissors, { size: 14 }), label: `Mode: ${clipMode === "outside" ? "Keep Inside" : "Keep Outside"}`, onClick: toggleClipMode }),
+        /* @__PURE__ */ jsxs("div", { className: "flex gap-1 pl-2", children: [
+          /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(Move, { size: 12 }), label: "Move", onClick: () => {
+            const id = clipManager?.getSelectedId() ?? clipBoxEntries[0]?.id;
+            if (id) {
+              clipManager?.selectBox(id);
+              clipManager?.setTransformMode("translate");
+            }
+          } }),
+          /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(Maximize2, { size: 12 }), label: "Scale", onClick: () => {
+            const id = clipManager?.getSelectedId() ?? clipBoxEntries[0]?.id;
+            if (id) {
+              clipManager?.selectBox(id);
+              clipManager?.setTransformMode("scale");
+            }
+          } })
+        ] }),
+        /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(RotateCcw, { size: 14 }), label: "Clear Clips", onClick: clearClipBox })
+      ] })
+    ] })
+  ] });
+}
+
+// src/layouts/workstation/display-palette.tsx
+init_utils();
+init_viewer_provider();
+var COLOR_MODES2 = [
+  { value: "rgb", label: "RGB" },
+  { value: "height", label: "Elevation" },
+  { value: "intensity", label: "Intensity" },
+  { value: "intensity_gradient", label: "Intensity Grad." },
+  { value: "classification", label: "Classification" },
+  { value: "return_number", label: "Return #" },
+  { value: "source", label: "Source" }
+];
+var QUALITY_PRESETS2 = [
+  { label: "Perf", shape: 0, sizeType: 0 },
+  { label: "Balanced", shape: 1, sizeType: 2 },
+  { label: "High", shape: 2, sizeType: 2 }
+];
+function DisplayPalette() {
+  const { loader, colorMode, setColorMode, pointBudget, setPointBudget, pointSize, setPointSize } = useViewer();
+  return /* @__PURE__ */ jsxs(FloatingPalette, { title: "Display", icon: /* @__PURE__ */ jsx(Palette, { size: 12 }), children: [
+    /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mb-1", children: "Color" }),
+    /* @__PURE__ */ jsx("div", { className: "flex flex-wrap gap-1", children: COLOR_MODES2.map((cm) => /* @__PURE__ */ jsx(
+      "button",
+      {
+        onClick: () => {
+          setColorMode(cm.value);
+          loader?.setColorMode(cm.value);
+        },
+        className: cn(
+          "text-[10px] px-2 py-0.5 rounded transition-colors",
+          colorMode === cm.value ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+        ),
+        children: cm.label
+      },
+      cm.value
+    )) }),
+    /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-3 mb-1", children: "Quality" }),
+    /* @__PURE__ */ jsx("div", { className: "flex gap-1", children: QUALITY_PRESETS2.map((q) => /* @__PURE__ */ jsx(
+      "button",
+      {
+        onClick: () => {
+          loader?.setPointShape(q.shape);
+          loader?.setPointSizeType(q.sizeType);
+        },
+        className: "text-[10px] px-2 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors",
+        children: q.label
+      },
+      q.label
+    )) }),
+    /* @__PURE__ */ jsxs("div", { className: "space-y-2 mt-2", children: [
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsxs("div", { className: "flex justify-between text-[10px] text-muted-foreground mb-0.5", children: [
+          /* @__PURE__ */ jsx("span", { children: "Budget" }),
+          /* @__PURE__ */ jsxs("span", { children: [
+            (pointBudget / 1e6).toFixed(1),
+            "M"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "range",
+            min: 5e5,
+            max: 1e7,
+            step: 1e5,
+            value: pointBudget,
+            onChange: (e) => {
+              const v = parseInt(e.target.value);
+              setPointBudget(v);
+              loader?.setPointBudget(v);
+            },
+            className: "pcv-slider w-full"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsxs("div", { className: "flex justify-between text-[10px] text-muted-foreground mb-0.5", children: [
+          /* @__PURE__ */ jsx("span", { children: "Point Size" }),
+          /* @__PURE__ */ jsx("span", { children: pointSize.toFixed(1) })
+        ] }),
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "range",
+            min: 0.5,
+            max: 5,
+            step: 0.1,
+            value: pointSize,
+            onChange: (e) => {
+              const v = parseFloat(e.target.value);
+              setPointSize(v);
+              loader?.setPointSize(v);
+            },
+            className: "pcv-slider w-full"
+          }
+        )
+      ] })
+    ] })
+  ] });
+}
+
+// src/layouts/workstation/view-settings-palette.tsx
+init_utils();
+init_viewer_provider();
+function ToggleRow({ icon, label, active, onClick }) {
+  return /* @__PURE__ */ jsxs("button", { onClick, className: "flex items-center gap-2 w-full px-1 py-1 rounded text-xs hover:bg-muted/40 transition-colors", children: [
+    /* @__PURE__ */ jsx("span", { className: cn("text-muted-foreground", active && "text-[hsl(var(--brand))]"), children: icon }),
+    /* @__PURE__ */ jsx("span", { className: "flex-1 text-left text-muted-foreground", children: label }),
+    /* @__PURE__ */ jsx("div", { className: cn("w-6 h-3.5 rounded-full transition-colors flex items-center px-0.5", active ? "bg-[hsl(var(--brand)/0.5)]" : "bg-muted/60"), children: /* @__PURE__ */ jsx("div", { className: cn("w-2.5 h-2.5 rounded-full bg-foreground/80 transition-transform", active && "translate-x-2.5") }) })
+  ] });
+}
+function ModeBtn({ icon, label, active, onClick }) {
+  return /* @__PURE__ */ jsxs("button", { onClick, className: cn(
+    "flex flex-col items-center gap-0.5 px-2 py-1 rounded text-[10px] transition-colors",
+    active ? "bg-[hsl(var(--brand)/0.15)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+  ), children: [
+    icon,
+    /* @__PURE__ */ jsx("span", { children: label })
+  ] });
+}
+function ViewSettingsPalette() {
+  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
+  return /* @__PURE__ */ jsxs(FloatingPalette, { title: "View", icon: /* @__PURE__ */ jsx(Eye, { size: 12 }), defaultCollapsed: true, children: [
+    /* @__PURE__ */ jsx(ToggleRow, { icon: /* @__PURE__ */ jsx(Camera, { size: 13 }), label: "Panoramas", active: showMarkers, onClick: () => setShowMarkers(!showMarkers) }),
+    /* @__PURE__ */ jsx(ToggleRow, { icon: /* @__PURE__ */ jsx(Map$1, { size: 13 }), label: "Minimap", active: showMinimap, onClick: () => setShowMinimap(!showMinimap) }),
+    /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1", children: "Navigation" }),
+    /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
+      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Orbit, { size: 14 }), label: "Orbit", active: navigationMode === "orbit", onClick: () => setNavigationMode("orbit") }),
+      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Navigation, { size: 14 }), label: "Fly", active: navigationMode === "fly", onClick: () => setNavigationMode("fly") }),
+      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Globe, { size: 14 }), label: "Earth", active: navigationMode === "earth", onClick: () => setNavigationMode("earth") })
+    ] }),
+    /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1", children: "Projection" }),
+    /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
+      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Box, { size: 14 }), label: "Perspective", active: projection === "perspective", onClick: () => setProjection("perspective") }),
+      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Square, { size: 14 }), label: "Ortho", active: projection === "orthographic", onClick: () => setProjection("orthographic") })
+    ] })
+  ] });
+}
+
+// src/layouts/workstation/export-palette.tsx
+init_utils();
+init_viewer_provider();
+init_export_manager();
+var VIEWS = [
+  { value: "top", label: "Top" },
+  { value: "front", label: "Front" },
+  { value: "side", label: "Side" },
+  { value: "back", label: "Back" }
+];
+function ExportPalette() {
+  const { exporter } = useViewer();
+  const [view, setView] = useState("top");
+  const [scale, setScale] = useState(2);
+  const [format, setFormat] = useState("png");
+  const [bg, setBg] = useState("white");
+  const [exporting, setExporting] = useState(false);
+  const doExport = useCallback(async () => {
+    if (!exporter) return;
+    setExporting(true);
+    try {
+      const url = await exporter.capture({ view, scale, background: bg, format, showScaleBar: false });
+      ExportManager.download(url, `export-${view}-${scale}x.${format}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [exporter, view, scale, bg, format]);
+  return /* @__PURE__ */ jsxs(FloatingPalette, { title: "Export", icon: /* @__PURE__ */ jsx(Image, { size: 12 }), defaultCollapsed: true, children: [
+    /* @__PURE__ */ jsx("div", { className: "flex gap-1", children: VIEWS.map((v) => /* @__PURE__ */ jsx("button", { onClick: () => setView(v.value), className: cn(
+      "text-[10px] px-2 py-0.5 rounded transition-colors",
+      view === v.value ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:bg-muted/40"
+    ), children: v.label }, v.value)) }),
+    /* @__PURE__ */ jsxs("div", { className: "flex gap-2 mt-1", children: [
+      /* @__PURE__ */ jsx("div", { className: "flex gap-1", children: [1, 2, 4].map((s) => /* @__PURE__ */ jsxs("button", { onClick: () => setScale(s), className: cn(
+        "text-[10px] px-1.5 py-0.5 rounded transition-colors",
+        scale === s ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:bg-muted/40"
+      ), children: [
+        s,
+        "x"
+      ] }, s)) }),
+      /* @__PURE__ */ jsx("div", { className: "flex gap-1", children: ["png", "jpeg"].map((f) => /* @__PURE__ */ jsx("button", { onClick: () => setFormat(f), className: cn(
+        "text-[10px] px-1.5 py-0.5 rounded transition-colors",
+        format === f ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:bg-muted/40"
+      ), children: f.toUpperCase() }, f)) })
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "flex gap-1 mt-1", children: ["white", "black", "transparent"].map((b) => /* @__PURE__ */ jsx("button", { onClick: () => setBg(b), className: cn(
+      "text-[10px] px-1.5 py-0.5 rounded transition-colors",
+      bg === b ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:bg-muted/40"
+    ), children: b === "transparent" ? "Alpha" : b }, b)) }),
+    /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: doExport,
+        disabled: !exporter || exporting,
+        className: cn(
+          "flex items-center justify-center gap-1.5 w-full mt-2 py-1.5 rounded text-xs font-medium transition-colors",
+          "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] hover:bg-[hsl(var(--brand)/0.3)]",
+          (!exporter || exporting) && "opacity-40 cursor-not-allowed"
+        ),
+        children: [
+          /* @__PURE__ */ jsx(Download, { size: 12 }),
+          exporting ? "Exporting..." : "Download"
+        ]
+      }
+    )
+  ] });
+}
+function WorkstationLayout({ viewport, sidebarSide = "left" }) {
+  const { fps, pointBudget, activeTool } = useViewer();
+  const { metadata } = useData();
+  return /* @__PURE__ */ jsxs("div", { className: "relative w-full h-full overflow-hidden bg-[hsl(var(--background))]", children: [
+    /* @__PURE__ */ jsx("div", { className: "absolute inset-0", children: viewport }),
+    /* @__PURE__ */ jsxs(CollapsibleSidebar, { side: sidebarSide, children: [
+      /* @__PURE__ */ jsx(ToolsPalette, {}),
+      /* @__PURE__ */ jsx(DisplayPalette, {}),
+      /* @__PURE__ */ jsx(ViewSettingsPalette, {}),
+      /* @__PURE__ */ jsx(ExportPalette, {})
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "absolute bottom-0 left-0 right-0 z-10 px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground/70 bg-[hsl(var(--card)/0.8)] backdrop-blur-sm border-t border-[hsl(var(--border)/0.5)]", children: [
+      metadata && /* @__PURE__ */ jsxs("span", { children: [
+        (metadata.points / 1e6).toFixed(1),
+        "M pts"
+      ] }),
+      /* @__PURE__ */ jsxs("span", { children: [
+        "Budget: ",
+        (pointBudget / 1e6).toFixed(1),
+        "M"
+      ] }),
+      /* @__PURE__ */ jsxs("span", { children: [
+        fps,
+        " fps"
+      ] }),
+      activeTool !== "none" && /* @__PURE__ */ jsx("span", { className: "text-[hsl(var(--brand))]", children: activeTool })
+    ] })
+  ] });
+}
+
+// src/index.ts
 init_viewport();
 
 // src/components/toolbar/measure-tools.tsx
@@ -5410,6 +5801,6 @@ var de = createLocale(en, {
   }
 });
 
-export { AboutDialog, AxisWidget, CameraAnimator, ClassificationPanel, ClipManager, DataProvider, DisplayControls, ElectronSourceAdapter, ExportManager, ExportTools, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimapRenderer, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Sidebar, ThemeProvider, ToolRail, ToolbarIconBtn, ToolbarSection, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, captureScene, cn, createAdapter, createLocale, de, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, useData, useLocale, useTheme, useViewer };
+export { AboutDialog, AxisWidget, CameraAnimator, ClassificationPanel, ClipManager, CollapsibleSidebar, DataProvider, DisplayControls, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimapRenderer, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Sidebar, ThemeProvider, ToolRail, ToolbarIconBtn, ToolbarSection, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, captureScene, cn, createAdapter, createLocale, de, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, useData, useLocale, useTheme, useViewer };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

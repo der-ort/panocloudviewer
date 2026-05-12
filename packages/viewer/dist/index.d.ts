@@ -807,6 +807,30 @@ interface WorkspaceLayoutProps {
 }
 declare function WorkspaceLayout({ className }: WorkspaceLayoutProps): react_jsx_runtime.JSX.Element;
 
+interface WorkstationLayoutProps {
+    viewport: React.ReactNode;
+    /** Sidebar position. Default: "left" */
+    sidebarSide?: "left" | "right";
+}
+declare function WorkstationLayout({ viewport, sidebarSide }: WorkstationLayoutProps): react_jsx_runtime.JSX.Element;
+
+interface FloatingPaletteProps {
+    title: string;
+    icon?: React.ReactNode;
+    children: React.ReactNode;
+    defaultCollapsed?: boolean;
+    className?: string;
+}
+declare function FloatingPalette({ title, icon, children, defaultCollapsed, className }: FloatingPaletteProps): react_jsx_runtime.JSX.Element;
+
+interface CollapsibleSidebarProps {
+    side: "left" | "right";
+    children: React.ReactNode;
+    defaultOpen?: boolean;
+    width?: string;
+}
+declare function CollapsibleSidebar({ side, children, defaultOpen, width }: CollapsibleSidebarProps): react_jsx_runtime.JSX.Element;
+
 interface ViewportProps {
     className?: string;
 }
@@ -978,4 +1002,4 @@ declare const en: ViewerLocale;
 
 declare const de: ViewerLocale;
 
-export { AboutDialog, type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraProjection, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DataProvider, DisplayControls, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudSource, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Sidebar, ThemeProvider, ToolRail, ToolbarIconBtn, ToolbarSection, ViewControls, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, captureScene, cn, createAdapter, createLocale, de, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, useData, useLocale, useTheme, useViewer };
+export { AboutDialog, type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraProjection, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, CollapsibleSidebar, type ColorMode, DataProvider, DisplayControls, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, FloatingPalette, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudSource, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Sidebar, ThemeProvider, ToolRail, ToolbarIconBtn, ToolbarSection, ViewControls, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, captureScene, cn, createAdapter, createLocale, de, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, useData, useLocale, useTheme, useViewer };
