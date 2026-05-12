@@ -11,7 +11,8 @@ import type { MinimapRenderer } from "../core/minimap-renderer";
 import type { ClipManager } from "../core/clip-manager";
 import type { ClipBoxEntry } from "../core/clip-manager";
 import type { ColorMode } from "../core/point-cloud-loader";
-import type { ActiveTool, CameraData, CameraProjection, Measurement, NavigationMode, ViewerConfig } from "../types";
+import type { ActiveTool, CameraData, CameraProjection, DisplaySettings, Measurement, NavigationMode, ViewerConfig } from "../types";
+import { DISPLAY_PRESETS } from "../types";
 
 interface ViewerContextValue {
   // Core managers (set after Three.js init)
@@ -63,6 +64,8 @@ interface ViewerContextValue {
   setNavigationMode: (mode: NavigationMode) => void;
   projection: CameraProjection;
   setProjection: (mode: CameraProjection) => void;
+  displaySettings: DisplaySettings;
+  setDisplaySettings: (settings: DisplaySettings) => void;
 
   config: ViewerConfig;
 }
@@ -104,6 +107,10 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const [colorMode, setColorMode] = useState<ColorMode>("rgb");
   const [navigationMode, _setNavigationMode] = useState<NavigationMode>("orbit");
   const [projection, _setProjection] = useState<CameraProjection>("perspective");
+  const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(() => ({
+    ...DISPLAY_PRESETS.standard,
+    ...config.displaySettings,
+  }));
 
   const setNavigationMode = useCallback((mode: NavigationMode) => {
     _setNavigationMode(mode);
@@ -139,6 +146,7 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
     colorMode, setColorMode,
     navigationMode, setNavigationMode,
     projection, setProjection,
+    displaySettings, setDisplaySettings,
     config,
   };
 

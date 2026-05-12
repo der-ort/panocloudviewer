@@ -35,7 +35,7 @@ export function Viewport({ className }: ViewportProps) {
     setFps, activeTool, pointBudget,
     showMarkers, showMinimap, setMeasurementList, setSelectedCamera,
     setClipBoxEntries, setSelectedClipBoxId,
-    navigationMode, projection,
+    navigationMode, projection, displaySettings,
   } = useViewer();
   const { cameras, metadata } = useData();
 
@@ -264,6 +264,12 @@ export function Viewport({ className }: ViewportProps) {
   useEffect(() => {
     smRef.current?.setProjection(projection);
   }, [projection]);
+
+  // Sync display settings to managers
+  useEffect(() => {
+    measureRef.current?.applyDisplaySettings(displaySettings);
+    markerRef.current?.applyDisplaySettings(displaySettings);
+  }, [displaySettings]);
 
   // Helper: project NDC coords onto horizontal plane at given Z
   const projectToPlaneZ = useCallback((nx: number, ny: number, planeZ: number): THREE.Vector3 | null => {

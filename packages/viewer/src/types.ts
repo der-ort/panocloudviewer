@@ -126,6 +126,8 @@ export interface ViewerConfig {
   onCameraSelect?: (camera: CameraData) => void;
   /** Called when a measurement is created/updated */
   onMeasurementChange?: (measurements: Measurement[]) => void;
+  /** Display settings overrides (marker/measurement sizing) */
+  displaySettings?: Partial<DisplaySettings>;
 }
 
 // ── Viewer state (context) ───────────────────────────────────
@@ -157,3 +159,53 @@ export type ActiveTool =
 
 export type NavigationMode = "orbit" | "fly" | "earth";
 export type CameraProjection = "perspective" | "orthographic";
+
+// ── Display settings ────────────────────────────────────────
+
+export type DisplayPreset = "compact" | "standard" | "prominent";
+
+export interface DisplaySettings {
+  preset: DisplayPreset;
+  /** Measurement line width in pixels */
+  measurementLineWidth: number;
+  /** Measurement label scale multiplier (1.0 = default) */
+  measurementLabelScale: number;
+  /** Measurement sphere radius in world units */
+  measurementSphereRadius: number;
+  /** Marker sphere scale multiplier on auto-calculated radius */
+  markerSphereScale: number;
+  /** Marker sphere opacity (0-1) */
+  markerSphereOpacity: number;
+  /** Marker label scale multiplier */
+  markerLabelScale: number;
+}
+
+export const DISPLAY_PRESETS: Record<DisplayPreset, DisplaySettings> = {
+  compact: {
+    preset: "compact",
+    measurementLineWidth: 1,
+    measurementLabelScale: 0.6,
+    measurementSphereRadius: 0.08,
+    markerSphereScale: 0.5,
+    markerSphereOpacity: 0.7,
+    markerLabelScale: 0.5,
+  },
+  standard: {
+    preset: "standard",
+    measurementLineWidth: 2,
+    measurementLabelScale: 1.0,
+    measurementSphereRadius: 0.15,
+    markerSphereScale: 1.0,
+    markerSphereOpacity: 0.92,
+    markerLabelScale: 1.0,
+  },
+  prominent: {
+    preset: "prominent",
+    measurementLineWidth: 4,
+    measurementLabelScale: 1.6,
+    measurementSphereRadius: 0.3,
+    markerSphereScale: 2.0,
+    markerSphereOpacity: 1.0,
+    markerLabelScale: 1.5,
+  },
+};

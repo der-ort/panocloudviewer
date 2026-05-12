@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import type { CameraData } from "../types";
+import type { CameraData, DisplaySettings } from "../types";
+import { DISPLAY_PRESETS } from "../types";
 
 const MARKER_COLOR_DEFAULT  = 0xdcd546;  // brand yellow
 const MARKER_COLOR_HOVER    = 0xffffff;
@@ -24,6 +25,9 @@ export class MarkerManager {
   private hoveredIdx = -1;
   private selectedIdx = -1;
   private sphereRadius = 0.5;
+  private _displaySettings: DisplaySettings = DISPLAY_PRESETS.standard;
+  private _cameras: CameraData[] = [];
+  private _worldBox?: THREE.Box3;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -32,8 +36,18 @@ export class MarkerManager {
     this.scene.add(this.group);
   }
 
+  /** Apply new display settings and rebuild all markers */
+  applyDisplaySettings(settings: DisplaySettings): void {
+    this._displaySettings = settings;
+    if (this._cameras.length > 0) {
+      this.build(this._cameras, this._worldBox);
+    }
+  }
+
   /** Build markers from camera data. Pass worldBox for auto-scaling. */
   build(cameras: CameraData[], worldBox?: THREE.Box3) {
+    this._cameras = cameras;
+    this._worldBox = worldBox;
     this.clear();
 
     if (worldBox && !worldBox.isEmpty()) {
@@ -54,7 +68,8 @@ export class MarkerManager {
       this.group.add(mesh);
 
       const label = this._makeLabel(cam.name);
-      label.position.set(x, y, z + this.sphereRadius * 3);
+      const scaledRadius = this.sphereRadius * this._displaySettings.markerSphereScale;
+      label.position.set(x, y, z + scaledRadius * 3);
       this.group.add(label);
 
       this.entries.push({ mesh, label });
@@ -62,13 +77,14 @@ export class MarkerManager {
   }
 
   private _makeSphere(color: number): THREE.Mesh {
-    const geo = new THREE.SphereGeometry(this.sphereRadius, 16, 16);
+    const scaledRadius = this.sphereRadius * this._displaySettings.markerSphereScale;
+    const geo = new THREE.SphereGeometry(scaledRadius, 16, 16);
     const mat = new THREE.MeshBasicMaterial({
       color,
       depthTest: false,   // Always visible through the point cloud
       depthWrite: false,
       transparent: true,
-      opacity: 0.92,
+      opacity: this._displaySettings.markerSphereOpacity,
     });
     return new THREE.Mesh(geo, mat);
   }
@@ -100,7 +116,8 @@ export class MarkerManager {
       transparent: true,
     });
     const sprite = new THREE.Sprite(mat);
-    sprite.scale.set(this.sphereRadius * 8, this.sphereRadius * 2, 1);
+    const ls = this._displaySettings.markerLabelScale;
+    sprite.scale.set(this.sphereRadius * 8 * ls, this.sphereRadius * 2 * ls, 1);
     return sprite;
   }
 

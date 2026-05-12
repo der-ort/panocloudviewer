@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import type { Measurement, MeasurementType } from "../types";
+import type { DisplaySettings, Measurement, MeasurementType } from "../types";
+import { DISPLAY_PRESETS } from "../types";
 import { formatLength, formatArea, formatAngle } from "../lib/utils";
 
 let _idCounter = 0;
@@ -20,6 +21,7 @@ export class MeasurementManager {
   private scene: THREE.Scene;
   private group: THREE.Group;
   private measurements: Map<string, { data: Measurement; objects: THREE.Object3D[] }> = new Map();
+  private _displaySettings: DisplaySettings = DISPLAY_PRESETS.standard;
   onChange?: (measurements: Measurement[]) => void;
 
   // Active drawing state
@@ -40,6 +42,41 @@ export class MeasurementManager {
 
   getAll(): Measurement[] {
     return Array.from(this.measurements.values()).map(v => v.data);
+  }
+
+  /** Apply new display settings and rebuild all existing measurements */
+  applyDisplaySettings(settings: DisplaySettings): void {
+    this._displaySettings = settings;
+    this._rebuildAll();
+  }
+
+  /** Rebuild all existing measurement visuals with current display settings */
+  private _rebuildAll(): void {
+    for (const [id, entry] of this.measurements) {
+      this._disposeObjects(entry.objects);
+      const m = entry.data;
+      const newObjects = m.box
+        ? this.buildVolumeBoxObjects(m, new THREE.Box3(
+            new THREE.Vector3(m.box.min[0], m.box.min[1], m.box.min[2]),
+            new THREE.Vector3(m.box.max[0], m.box.max[1], m.box.max[2]),
+          ))
+        : this.buildObjects(m);
+      this.measurements.set(id, { data: m, objects: newObjects });
+    }
+  }
+
+  /** Dispose geometry/materials and remove objects from the group */
+  private _disposeObjects(objects: THREE.Object3D[]): void {
+    objects.forEach(o => {
+      if (o instanceof THREE.Mesh || o instanceof THREE.Line || o instanceof THREE.LineSegments) {
+        o.geometry.dispose();
+        (o.material as THREE.Material).dispose();
+      } else if (o instanceof THREE.Sprite) {
+        (o.material as THREE.SpriteMaterial).map?.dispose();
+        (o.material as THREE.Material).dispose();
+      }
+      this.group.remove(o);
+    });
   }
 
   /** Start a new measurement (call addPoint for each click, finish() to complete) */
@@ -108,7 +145,7 @@ export class MeasurementManager {
 
     // ── Snap sphere ──
     if (!this._snapSphere) {
-      const geo = new THREE.SphereGeometry(0.12, 10, 8);
+      const geo = new THREE.SphereGeometry(this._displaySettings.measurementSphereRadius * 0.8, 10, 8);
       const mat = new THREE.MeshBasicMaterial({
         color: c,
         depthTest: false,
@@ -283,7 +320,8 @@ export class MeasurementManager {
     const text = `${m.value!.toFixed(3)} m³`;
     const sprite = this.makeTextSprite(text, m.color);
     sprite.position.copy(center).add(new THREE.Vector3(0, 0, size.z / 2 + 0.5));
-    sprite.scale.set(3.2, 0.8, 1);
+    const ls = this._displaySettings.measurementLabelScale;
+    sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
     sprite.renderOrder = 3;
     this.group.add(sprite);
     objects.push(sprite);
@@ -337,7 +375,7 @@ export class MeasurementManager {
 
     // Sphere at each point
     pts.forEach(p => {
-      const geo = new THREE.SphereGeometry(0.15, 8, 6);
+      const geo = new THREE.SphereGeometry(this._displaySettings.measurementSphereRadius, 8, 6);
       const mat = new THREE.MeshBasicMaterial({ color, depthTest: false });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.copy(p);
@@ -395,7 +433,8 @@ export class MeasurementManager {
         const sprite = this.makeTextSprite(text, m.color);
         const mid = pts.reduce((a, b) => a.clone().add(b), new THREE.Vector3()).divideScalar(pts.length);
         sprite.position.copy(mid).add(new THREE.Vector3(0, 0, 1));
-        sprite.scale.set(3.2, 0.8, 1);
+        const ls = this._displaySettings.measurementLabelScale;
+        sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
         sprite.renderOrder = 3;
         this.group.add(sprite);
         objects.push(sprite);
@@ -456,16 +495,7 @@ export class MeasurementManager {
   remove(id: string) {
     const entry = this.measurements.get(id);
     if (!entry) return;
-    entry.objects.forEach(o => {
-      if (o instanceof THREE.Mesh || o instanceof THREE.Line) {
-        o.geometry.dispose();
-        (o.material as THREE.Material).dispose();
-      } else if (o instanceof THREE.Sprite) {
-        (o.material as THREE.SpriteMaterial).map?.dispose();
-        (o.material as THREE.Material).dispose();
-      }
-      this.group.remove(o);
-    });
+    this._disposeObjects(entry.objects);
     this.measurements.delete(id);
     this.onChange?.(this.getAll());
   }

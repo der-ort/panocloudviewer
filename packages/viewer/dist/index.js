@@ -4,7 +4,7 @@ import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import * as THREE6 from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Download, Sliders, Camera, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, X, BoxSelect, Scissors, Move, Maximize2, RotateCcw, Search, Navigation, CloudCog, Trash2, Ruler, Eye, EyeOff, Plus, Upload, Bookmark, Play, Tag, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints } from 'lucide-react';
+import { Download, Sliders, Camera, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, X, BoxSelect, Scissors, Move, Maximize2, RotateCcw, Search, Navigation, CloudCog, Trash2, Ruler, Eye, EyeOff, Plus, Upload, Bookmark, Play, Tag, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Globe, Maximize, Settings, Palette, Box, Square, Image } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 var __defProp = Object.defineProperty;
@@ -16,6 +16,42 @@ var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
+
+// src/types.ts
+var DISPLAY_PRESETS;
+var init_types = __esm({
+  "src/types.ts"() {
+    DISPLAY_PRESETS = {
+      compact: {
+        preset: "compact",
+        measurementLineWidth: 1,
+        measurementLabelScale: 0.6,
+        measurementSphereRadius: 0.08,
+        markerSphereScale: 0.5,
+        markerSphereOpacity: 0.7,
+        markerLabelScale: 0.5
+      },
+      standard: {
+        preset: "standard",
+        measurementLineWidth: 2,
+        measurementLabelScale: 1,
+        measurementSphereRadius: 0.15,
+        markerSphereScale: 1,
+        markerSphereOpacity: 0.92,
+        markerLabelScale: 1
+      },
+      prominent: {
+        preset: "prominent",
+        measurementLineWidth: 4,
+        measurementLabelScale: 1.6,
+        measurementSphereRadius: 0.3,
+        markerSphereScale: 2,
+        markerSphereOpacity: 1,
+        markerLabelScale: 1.5
+      }
+    };
+  }
+});
 function useViewer() {
   const ctx = useContext(ViewerContext);
   if (!ctx) throw new Error("useViewer must be used inside <ViewerProvider>");
@@ -44,6 +80,10 @@ function ViewerProvider({ config, children }) {
   const [colorMode, setColorMode] = useState("rgb");
   const [navigationMode, _setNavigationMode] = useState("orbit");
   const [projection, _setProjection] = useState("perspective");
+  const [displaySettings, setDisplaySettings] = useState(() => ({
+    ...DISPLAY_PRESETS.standard,
+    ...config.displaySettings
+  }));
   const setNavigationMode = useCallback((mode) => {
     _setNavigationMode(mode);
   }, []);
@@ -103,6 +143,8 @@ function ViewerProvider({ config, children }) {
     setNavigationMode,
     projection,
     setProjection,
+    displaySettings,
+    setDisplaySettings,
     config
   };
   return /* @__PURE__ */ jsx(ViewerContext.Provider, { value, children });
@@ -111,6 +153,7 @@ var ViewerContext;
 var init_viewer_provider = __esm({
   "src/providers/viewer-provider.tsx"() {
     "use client";
+    init_types();
     ViewerContext = createContext(null);
   }
 });
@@ -349,6 +392,25 @@ var init_en = __esm({
         restore: "Restore scene",
         exportJson: "Export scenes as JSON",
         importJson: "Import scenes from JSON"
+      },
+      displaySettings: {
+        title: "Display Settings",
+        presetsTab: "Presets",
+        advancedTab: "Advanced",
+        preset_compact: "Compact",
+        preset_compact_desc: "Small labels & markers",
+        preset_standard: "Standard",
+        preset_standard_desc: "Default sizes",
+        preset_prominent: "Prominent",
+        preset_prominent_desc: "Large labels & markers",
+        measurementsSection: "Measurements",
+        lineWidth: "Line Width",
+        labelScale: "Label Size",
+        sphereRadius: "Point Size",
+        markersSection: "Panorama Markers",
+        markerScale: "Sphere Size",
+        markerOpacity: "Sphere Opacity",
+        markerLabelScale: "Label Size"
       },
       about: {
         title: "About",
@@ -1119,6 +1181,7 @@ function nextId() {
 var _idCounter, COLORS, MeasurementManager;
 var init_measurement_manager = __esm({
   "src/core/measurement-manager.ts"() {
+    init_types();
     init_utils();
     _idCounter = 0;
     COLORS = {
@@ -1134,6 +1197,7 @@ var init_measurement_manager = __esm({
       scene;
       group;
       measurements = /* @__PURE__ */ new Map();
+      _displaySettings = DISPLAY_PRESETS.standard;
       onChange;
       // Active drawing state
       activeMeasurement = null;
@@ -1150,6 +1214,36 @@ var init_measurement_manager = __esm({
       }
       getAll() {
         return Array.from(this.measurements.values()).map((v) => v.data);
+      }
+      /** Apply new display settings and rebuild all existing measurements */
+      applyDisplaySettings(settings) {
+        this._displaySettings = settings;
+        this._rebuildAll();
+      }
+      /** Rebuild all existing measurement visuals with current display settings */
+      _rebuildAll() {
+        for (const [id, entry] of this.measurements) {
+          this._disposeObjects(entry.objects);
+          const m = entry.data;
+          const newObjects = m.box ? this.buildVolumeBoxObjects(m, new THREE6.Box3(
+            new THREE6.Vector3(m.box.min[0], m.box.min[1], m.box.min[2]),
+            new THREE6.Vector3(m.box.max[0], m.box.max[1], m.box.max[2])
+          )) : this.buildObjects(m);
+          this.measurements.set(id, { data: m, objects: newObjects });
+        }
+      }
+      /** Dispose geometry/materials and remove objects from the group */
+      _disposeObjects(objects) {
+        objects.forEach((o) => {
+          if (o instanceof THREE6.Mesh || o instanceof THREE6.Line || o instanceof THREE6.LineSegments) {
+            o.geometry.dispose();
+            o.material.dispose();
+          } else if (o instanceof THREE6.Sprite) {
+            o.material.map?.dispose();
+            o.material.dispose();
+          }
+          this.group.remove(o);
+        });
       }
       /** Start a new measurement (call addPoint for each click, finish() to complete) */
       start(type) {
@@ -1202,7 +1296,7 @@ var init_measurement_manager = __esm({
       updateSnap(worldPos, color) {
         const c = new THREE6.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
         if (!this._snapSphere) {
-          const geo = new THREE6.SphereGeometry(0.12, 10, 8);
+          const geo = new THREE6.SphereGeometry(this._displaySettings.measurementSphereRadius * 0.8, 10, 8);
           const mat = new THREE6.MeshBasicMaterial({
             color: c,
             depthTest: false,
@@ -1359,7 +1453,8 @@ var init_measurement_manager = __esm({
         const text = `${m.value.toFixed(3)} m\xB3`;
         const sprite = this.makeTextSprite(text, m.color);
         sprite.position.copy(center).add(new THREE6.Vector3(0, 0, size.z / 2 + 0.5));
-        sprite.scale.set(3.2, 0.8, 1);
+        const ls = this._displaySettings.measurementLabelScale;
+        sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
         sprite.renderOrder = 3;
         this.group.add(sprite);
         objects.push(sprite);
@@ -1411,7 +1506,7 @@ var init_measurement_manager = __esm({
         const color = new THREE6.Color(m.color);
         const pts = m.points;
         pts.forEach((p) => {
-          const geo = new THREE6.SphereGeometry(0.15, 8, 6);
+          const geo = new THREE6.SphereGeometry(this._displaySettings.measurementSphereRadius, 8, 6);
           const mat = new THREE6.MeshBasicMaterial({ color, depthTest: false });
           const mesh = new THREE6.Mesh(geo, mat);
           mesh.position.copy(p);
@@ -1475,7 +1570,8 @@ var init_measurement_manager = __esm({
             const sprite = this.makeTextSprite(text, m.color);
             const mid = pts.reduce((a, b) => a.clone().add(b), new THREE6.Vector3()).divideScalar(pts.length);
             sprite.position.copy(mid).add(new THREE6.Vector3(0, 0, 1));
-            sprite.scale.set(3.2, 0.8, 1);
+            const ls = this._displaySettings.measurementLabelScale;
+            sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
             sprite.renderOrder = 3;
             this.group.add(sprite);
             objects.push(sprite);
@@ -1531,16 +1627,7 @@ var init_measurement_manager = __esm({
       remove(id) {
         const entry = this.measurements.get(id);
         if (!entry) return;
-        entry.objects.forEach((o) => {
-          if (o instanceof THREE6.Mesh || o instanceof THREE6.Line) {
-            o.geometry.dispose();
-            o.material.dispose();
-          } else if (o instanceof THREE6.Sprite) {
-            o.material.map?.dispose();
-            o.material.dispose();
-          }
-          this.group.remove(o);
-        });
+        this._disposeObjects(entry.objects);
         this.measurements.delete(id);
         this.onChange?.(this.getAll());
       }
@@ -1559,6 +1646,7 @@ var init_measurement_manager = __esm({
 var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, MarkerManager;
 var init_marker_manager = __esm({
   "src/core/marker-manager.ts"() {
+    init_types();
     MARKER_COLOR_DEFAULT = 14472518;
     MARKER_COLOR_HOVER = 16777215;
     MARKER_COLOR_SELECTED = 16737860;
@@ -1569,14 +1657,26 @@ var init_marker_manager = __esm({
       hoveredIdx = -1;
       selectedIdx = -1;
       sphereRadius = 0.5;
+      _displaySettings = DISPLAY_PRESETS.standard;
+      _cameras = [];
+      _worldBox;
       constructor(scene) {
         this.scene = scene;
         this.group = new THREE6.Group();
         this.group.name = "pano-markers";
         this.scene.add(this.group);
       }
+      /** Apply new display settings and rebuild all markers */
+      applyDisplaySettings(settings) {
+        this._displaySettings = settings;
+        if (this._cameras.length > 0) {
+          this.build(this._cameras, this._worldBox);
+        }
+      }
       /** Build markers from camera data. Pass worldBox for auto-scaling. */
       build(cameras, worldBox) {
+        this._cameras = cameras;
+        this._worldBox = worldBox;
         this.clear();
         if (worldBox && !worldBox.isEmpty()) {
           const size = new THREE6.Vector3();
@@ -1592,20 +1692,22 @@ var init_marker_manager = __esm({
           mesh.userData = { cameraIndex: i, cameraData: cam };
           this.group.add(mesh);
           const label = this._makeLabel(cam.name);
-          label.position.set(x, y, z + this.sphereRadius * 3);
+          const scaledRadius = this.sphereRadius * this._displaySettings.markerSphereScale;
+          label.position.set(x, y, z + scaledRadius * 3);
           this.group.add(label);
           this.entries.push({ mesh, label });
         });
       }
       _makeSphere(color) {
-        const geo = new THREE6.SphereGeometry(this.sphereRadius, 16, 16);
+        const scaledRadius = this.sphereRadius * this._displaySettings.markerSphereScale;
+        const geo = new THREE6.SphereGeometry(scaledRadius, 16, 16);
         const mat = new THREE6.MeshBasicMaterial({
           color,
           depthTest: false,
           // Always visible through the point cloud
           depthWrite: false,
           transparent: true,
-          opacity: 0.92
+          opacity: this._displaySettings.markerSphereOpacity
         });
         return new THREE6.Mesh(geo, mat);
       }
@@ -1631,7 +1733,8 @@ var init_marker_manager = __esm({
           transparent: true
         });
         const sprite = new THREE6.Sprite(mat);
-        sprite.scale.set(this.sphereRadius * 8, this.sphereRadius * 2, 1);
+        const ls = this._displaySettings.markerLabelScale;
+        sprite.scale.set(this.sphereRadius * 8 * ls, this.sphereRadius * 2 * ls, 1);
         return sprite;
       }
       /** Update sphere color by index */
@@ -2698,7 +2801,8 @@ function Viewport({ className }) {
     setClipBoxEntries,
     setSelectedClipBoxId,
     navigationMode,
-    projection
+    projection,
+    displaySettings
   } = useViewer();
   const { cameras, metadata } = useData();
   const metaZRef = useRef(null);
@@ -2873,6 +2977,10 @@ function Viewport({ className }) {
   useEffect(() => {
     smRef.current?.setProjection(projection);
   }, [projection]);
+  useEffect(() => {
+    measureRef.current?.applyDisplaySettings(displaySettings);
+    markerRef.current?.applyDisplaySettings(displaySettings);
+  }, [displaySettings]);
   const projectToPlaneZ = useCallback((nx, ny, planeZ) => {
     const sm = smRef.current;
     if (!sm) return null;
@@ -5079,15 +5187,712 @@ function WorkspaceLayout({ className }) {
 
 // src/components/pano-cloud-viewer.tsx
 init_file_source_adapter();
-function PanoCloudViewer({ source, theme = "dark", className, locale }) {
+var Viewport3 = lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
+function ViewportFallback2() {
+  return /* @__PURE__ */ jsx("div", { className: "w-full h-full flex items-center justify-center bg-[hsl(var(--background))]", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-center gap-3", children: [
+    /* @__PURE__ */ jsx("div", { className: "w-8 h-8 border-2 border-[hsl(var(--brand))] border-t-transparent rounded-full animate-spin" }),
+    /* @__PURE__ */ jsx("p", { className: "text-xs text-muted-foreground font-mono", children: "Initialising renderer\u2026" })
+  ] }) });
+}
+function PanoOverlayBridge() {
+  const { selectedCamera } = useViewer();
+  if (!selectedCamera) return null;
+  return /* @__PURE__ */ jsx(PanoViewer, {});
+}
+function PanoCloudViewer({ source, theme = "dark", className, locale, children }) {
   const adapter = createAdapter(source);
   const config = { source };
-  return /* @__PURE__ */ jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsx("div", { className: `w-full h-full ${className ?? ""}`, children: /* @__PURE__ */ jsx(WorkspaceLayout, {}) }) }) }) }) });
+  return /* @__PURE__ */ jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsx("div", { className: `w-full h-full ${className ?? ""}`, children: children ? /* @__PURE__ */ jsxs(Fragment, { children: [
+    children(
+      /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback2, {}), children: /* @__PURE__ */ jsx(Viewport3, {}) })
+    ),
+    /* @__PURE__ */ jsx(PanoOverlayBridge, {})
+  ] }) : /* @__PURE__ */ jsx(WorkspaceLayout, {}) }) }) }) }) });
 }
 
 // src/index.ts
 init_viewer_provider();
 init_data_provider();
+
+// src/layouts/minimal/minimal-toolbar.tsx
+init_utils();
+init_viewer_provider();
+
+// src/layouts/minimal/minimal-settings-popover.tsx
+init_utils();
+init_viewer_provider();
+var COLOR_MODES2 = [
+  { value: "rgb", label: "RGB" },
+  { value: "height", label: "Elevation" },
+  { value: "intensity", label: "Intensity" },
+  { value: "classification", label: "Classification" }
+];
+function ToggleRow({
+  icon,
+  label,
+  active,
+  onClick
+}) {
+  return /* @__PURE__ */ jsxs(
+    "button",
+    {
+      onClick,
+      className: "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors",
+      children: [
+        /* @__PURE__ */ jsx("span", { className: cn("text-white/50", active && "text-[hsl(var(--brand))]"), children: icon }),
+        /* @__PURE__ */ jsx("span", { className: "text-xs text-white/80 flex-1 text-left", children: label }),
+        /* @__PURE__ */ jsx(
+          "div",
+          {
+            className: cn(
+              "w-7 h-4 rounded-full transition-colors flex items-center px-0.5",
+              active ? "bg-[hsl(var(--brand)/0.6)]" : "bg-white/15"
+            ),
+            children: /* @__PURE__ */ jsx(
+              "div",
+              {
+                className: cn(
+                  "w-3 h-3 rounded-full bg-white transition-transform",
+                  active && "translate-x-3"
+                )
+              }
+            )
+          }
+        )
+      ]
+    }
+  );
+}
+function MinimalSettingsPopover({ onClose }) {
+  const {
+    showMarkers,
+    setShowMarkers,
+    showMinimap,
+    setShowMinimap,
+    colorMode,
+    setColorMode,
+    pointSize,
+    setPointSize,
+    loader
+  } = useViewer();
+  return /* @__PURE__ */ jsx("div", { className: "absolute bottom-20 right-8 z-30", children: /* @__PURE__ */ jsxs(
+    "div",
+    {
+      className: cn(
+        "w-56 p-3 space-y-3",
+        "backdrop-blur-xl bg-black/30 dark:bg-black/40",
+        "border border-white/15 dark:border-white/10",
+        "rounded-xl shadow-2xl shadow-black/20"
+      ),
+      children: [
+        /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "View Settings" }),
+        /* @__PURE__ */ jsxs("div", { className: "space-y-0.5", children: [
+          /* @__PURE__ */ jsx(
+            ToggleRow,
+            {
+              icon: /* @__PURE__ */ jsx(Camera, { size: 14 }),
+              label: "Panoramas",
+              active: showMarkers,
+              onClick: () => setShowMarkers(!showMarkers)
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            ToggleRow,
+            {
+              icon: /* @__PURE__ */ jsx(Map$1, { size: 14 }),
+              label: "Minimap",
+              active: showMinimap,
+              onClick: () => setShowMinimap(!showMinimap)
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "space-y-1.5", children: [
+          /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Color" }),
+          /* @__PURE__ */ jsx("div", { className: "grid grid-cols-2 gap-1", children: COLOR_MODES2.map((cm) => /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: () => {
+                setColorMode(cm.value);
+                loader?.setColorMode(cm.value);
+              },
+              className: cn(
+                "text-[10px] py-1 px-2 rounded-lg transition-colors",
+                colorMode === cm.value ? "bg-[hsl(var(--brand)/0.25)] text-[hsl(var(--brand))]" : "text-white/60 hover:text-white hover:bg-white/10"
+              ),
+              children: cm.label
+            },
+            cm.value
+          )) })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "space-y-1.5", children: [
+          /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Point Size" }),
+          /* @__PURE__ */ jsx("div", { className: "px-1", children: /* @__PURE__ */ jsx(
+            "input",
+            {
+              type: "range",
+              min: 0.5,
+              max: 5,
+              step: 0.1,
+              value: pointSize,
+              onChange: (e) => {
+                const v = parseFloat(e.target.value);
+                setPointSize(v);
+                loader?.setPointSize(v);
+              },
+              className: "pcv-slider w-full"
+            }
+          ) })
+        ] })
+      ]
+    }
+  ) });
+}
+function GlassButton({
+  icon,
+  active,
+  onClick,
+  title,
+  className
+}) {
+  return /* @__PURE__ */ jsx(
+    "button",
+    {
+      title,
+      onClick,
+      className: cn(
+        "flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-200",
+        active ? "bg-[hsl(var(--brand)/0.25)] text-[hsl(var(--brand))] shadow-[0_0_12px_hsl(var(--brand)/0.3)]" : "text-white/70 hover:text-white hover:bg-white/10",
+        className
+      ),
+      children: icon
+    }
+  );
+}
+function Separator() {
+  return /* @__PURE__ */ jsx("div", { className: "w-px h-6 bg-white/15 mx-0.5" });
+}
+function MinimalToolbar() {
+  const {
+    activeTool,
+    setActiveTool,
+    navigationMode,
+    setNavigationMode,
+    sceneManager,
+    loader
+  } = useViewer();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const toggleMeasure = useCallback(
+    (tool) => {
+      setActiveTool(activeTool === tool ? "none" : tool);
+    },
+    [activeTool, setActiveTool]
+  );
+  const fitToView = useCallback(() => {
+    if (!sceneManager || !loader) return;
+    const wb = loader.worldBox;
+    if (!wb.isEmpty()) sceneManager.fitToBox(wb);
+  }, [sceneManager, loader]);
+  const isMeasuring = activeTool.startsWith("measure-");
+  return /* @__PURE__ */ jsxs(Fragment, { children: [
+    /* @__PURE__ */ jsx("div", { className: "absolute bottom-4 left-1/2 -translate-x-1/2 z-30", children: /* @__PURE__ */ jsxs(
+      "div",
+      {
+        className: cn(
+          "flex items-center gap-0.5 px-2 py-1.5",
+          "backdrop-blur-xl bg-black/30 dark:bg-black/40",
+          "border border-white/15 dark:border-white/10",
+          "rounded-2xl shadow-2xl shadow-black/20"
+        ),
+        children: [
+          /* @__PURE__ */ jsx(
+            GlassButton,
+            {
+              icon: /* @__PURE__ */ jsx(Orbit, { size: 16 }),
+              title: "Orbit",
+              active: navigationMode === "orbit",
+              onClick: () => setNavigationMode("orbit")
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            GlassButton,
+            {
+              icon: /* @__PURE__ */ jsx(Navigation, { size: 16 }),
+              title: "Fly",
+              active: navigationMode === "fly",
+              onClick: () => setNavigationMode("fly")
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            GlassButton,
+            {
+              icon: /* @__PURE__ */ jsx(Globe, { size: 16 }),
+              title: "Earth",
+              active: navigationMode === "earth",
+              onClick: () => setNavigationMode("earth")
+            }
+          ),
+          /* @__PURE__ */ jsx(Separator, {}),
+          /* @__PURE__ */ jsx(
+            GlassButton,
+            {
+              icon: /* @__PURE__ */ jsx(Maximize, { size: 16 }),
+              title: "Fit to view",
+              onClick: fitToView
+            }
+          ),
+          /* @__PURE__ */ jsx(Separator, {}),
+          /* @__PURE__ */ jsx(
+            GlassButton,
+            {
+              icon: /* @__PURE__ */ jsx(Ruler, { size: 16 }),
+              title: "Distance",
+              active: activeTool === "measure-distance",
+              onClick: () => toggleMeasure("measure-distance")
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            GlassButton,
+            {
+              icon: /* @__PURE__ */ jsx(ArrowUpDown, { size: 16 }),
+              title: "Height",
+              active: activeTool === "measure-height",
+              onClick: () => toggleMeasure("measure-height")
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            GlassButton,
+            {
+              icon: /* @__PURE__ */ jsx(Pentagon, { size: 16 }),
+              title: "Area",
+              active: activeTool === "measure-area",
+              onClick: () => toggleMeasure("measure-area")
+            }
+          ),
+          isMeasuring && /* @__PURE__ */ jsxs(Fragment, { children: [
+            /* @__PURE__ */ jsx(Separator, {}),
+            /* @__PURE__ */ jsx(
+              GlassButton,
+              {
+                icon: /* @__PURE__ */ jsx(X, { size: 16 }),
+                title: "Cancel measurement",
+                onClick: () => setActiveTool("none"),
+                className: "text-red-400/80 hover:text-red-400 hover:bg-red-500/10"
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsx(Separator, {}),
+          /* @__PURE__ */ jsx(
+            GlassButton,
+            {
+              icon: /* @__PURE__ */ jsx(Settings, { size: 16 }),
+              title: "View settings",
+              active: settingsOpen,
+              onClick: () => setSettingsOpen(!settingsOpen)
+            }
+          )
+        ]
+      }
+    ) }),
+    settingsOpen && /* @__PURE__ */ jsx(MinimalSettingsPopover, { onClose: () => setSettingsOpen(false) })
+  ] });
+}
+function MinimalLayout({ viewport }) {
+  return /* @__PURE__ */ jsxs("div", { className: "relative w-full h-full overflow-hidden", children: [
+    /* @__PURE__ */ jsx("div", { className: "absolute inset-0", children: viewport }),
+    /* @__PURE__ */ jsx(MinimalToolbar, {})
+  ] });
+}
+
+// src/layouts/workstation/workstation-layout.tsx
+init_viewer_provider();
+init_data_provider();
+
+// src/layouts/workstation/collapsible-sidebar.tsx
+init_utils();
+function CollapsibleSidebar({ side, children, defaultOpen = true, width = "w-60" }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const isLeft = side === "left";
+  const ChevronIcon = open ? isLeft ? ChevronLeft : ChevronRight : isLeft ? ChevronRight : ChevronLeft;
+  return /* @__PURE__ */ jsxs("div", { className: cn(
+    "absolute top-0 bottom-0 z-20 flex",
+    isLeft ? "left-0" : "right-0",
+    isLeft ? "flex-row" : "flex-row-reverse"
+  ), children: [
+    /* @__PURE__ */ jsx("div", { className: cn(
+      "h-full overflow-y-auto overflow-x-hidden transition-all duration-200 bg-[hsl(var(--background)/0.95)] backdrop-blur-sm",
+      isLeft ? "border-r" : "border-l",
+      "border-[hsl(var(--border))]",
+      open ? width : "w-0"
+    ), children: open && /* @__PURE__ */ jsx("div", { className: "p-2 space-y-2 min-w-[230px]", children }) }),
+    /* @__PURE__ */ jsx(
+      "button",
+      {
+        onClick: () => setOpen(!open),
+        className: cn(
+          "self-center -mx-px z-10",
+          "flex items-center justify-center w-5 h-10 rounded-md",
+          "bg-[hsl(var(--card))] border border-[hsl(var(--border))]",
+          "text-muted-foreground hover:text-foreground transition-colors",
+          "shadow-md"
+        ),
+        children: /* @__PURE__ */ jsx(ChevronIcon, { size: 14 })
+      }
+    )
+  ] });
+}
+
+// src/layouts/workstation/tools-palette.tsx
+init_utils();
+init_viewer_provider();
+
+// src/layouts/workstation/floating-palette.tsx
+init_utils();
+function FloatingPalette({ title, icon, children, defaultCollapsed = false, className }) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  return /* @__PURE__ */ jsxs("div", { className: cn(
+    "rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg overflow-hidden",
+    "min-w-[220px]",
+    className
+  ), children: [
+    /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: () => setCollapsed(!collapsed),
+        className: "flex items-center gap-2 w-full px-3 py-2 text-xs font-semibold text-[hsl(var(--foreground))] hover:bg-muted/40 transition-colors",
+        children: [
+          icon && /* @__PURE__ */ jsx("span", { className: "text-muted-foreground", children: icon }),
+          /* @__PURE__ */ jsx("span", { className: "flex-1 text-left", children: title }),
+          collapsed ? /* @__PURE__ */ jsx(ChevronDown, { size: 12 }) : /* @__PURE__ */ jsx(ChevronUp, { size: 12 })
+        ]
+      }
+    ),
+    !collapsed && /* @__PURE__ */ jsx("div", { className: "px-3 pb-3 pt-1 space-y-2 border-t border-[hsl(var(--border))]", children })
+  ] });
+}
+function ToolBtn({ icon, label, active, onClick, disabled }) {
+  return /* @__PURE__ */ jsxs(
+    "button",
+    {
+      title: label,
+      onClick,
+      disabled,
+      className: cn(
+        "flex items-center gap-2 w-full px-2 py-1.5 rounded text-xs transition-colors",
+        active ? "bg-[hsl(var(--brand)/0.15)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:text-foreground hover:bg-muted/40",
+        disabled && "opacity-30 cursor-not-allowed"
+      ),
+      children: [
+        icon,
+        /* @__PURE__ */ jsx("span", { children: label })
+      ]
+    }
+  );
+}
+var MEASURE_TOOLS = [
+  { tool: "measure-point", icon: /* @__PURE__ */ jsx(MapPin, { size: 14 }), label: "Point" },
+  { tool: "measure-distance", icon: /* @__PURE__ */ jsx(Ruler, { size: 14 }), label: "Distance" },
+  { tool: "measure-height", icon: /* @__PURE__ */ jsx(ArrowUpDown, { size: 14 }), label: "Height" },
+  { tool: "measure-area", icon: /* @__PURE__ */ jsx(Pentagon, { size: 14 }), label: "Area" },
+  { tool: "measure-volume", icon: /* @__PURE__ */ jsx(Package, { size: 14 }), label: "Volume" },
+  { tool: "measure-angle", icon: /* @__PURE__ */ jsx(Triangle, { size: 14 }), label: "Angle" },
+  { tool: "measure-profile", icon: /* @__PURE__ */ jsx(Waypoints, { size: 14 }), label: "Profile" }
+];
+function ToolsPalette() {
+  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, clipBoxEntries } = useViewer();
+  const toggle = useCallback((tool) => {
+    setActiveTool(activeTool === tool ? "none" : tool);
+  }, [activeTool, setActiveTool]);
+  const hasClipBox = clipBoxEntries.length > 0;
+  const clipMode = clipBoxEntries[0]?.mode ?? "outside";
+  const addClipBox = useCallback(() => {
+    if (!clipManager || !loader) return;
+    const wb = loader.worldBox;
+    if (wb.isEmpty()) return;
+    const entry = clipManager.addBox(wb.clone());
+    clipManager.selectBox(entry.id);
+    clipManager.setTransformMode("scale");
+  }, [clipManager, loader]);
+  const clearClipBox = useCallback(() => {
+    clipManager?.clear();
+    if (activeTool === "section-box") setActiveTool("none");
+  }, [clipManager, activeTool, setActiveTool]);
+  const toggleClipMode = useCallback(() => {
+    const next = clipMode === "outside" ? "inside" : "outside";
+    for (const b of clipBoxEntries) clipManager?.setBoxMode(b.id, next);
+  }, [clipManager, clipBoxEntries, clipMode]);
+  return /* @__PURE__ */ jsxs(FloatingPalette, { title: "Tools", icon: /* @__PURE__ */ jsx(Ruler, { size: 12 }), children: [
+    /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mb-1", children: "Measure" }),
+    /* @__PURE__ */ jsxs("div", { className: "space-y-0.5", children: [
+      MEASURE_TOOLS.map((def) => /* @__PURE__ */ jsx(ToolBtn, { icon: def.icon, label: def.label, active: activeTool === def.tool, onClick: () => toggle(def.tool) }, def.tool)),
+      /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(X, { size: 14 }), label: "Clear All", onClick: () => {
+        measurementManager?.clearAll();
+        setMeasurementList([]);
+      } })
+    ] }),
+    /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-3 mb-1", children: "Clipping" }),
+    /* @__PURE__ */ jsxs("div", { className: "space-y-0.5", children: [
+      /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(BoxSelect, { size: 14 }), label: hasClipBox ? "Remove Clip Box" : "Add Clip Box", active: hasClipBox, onClick: hasClipBox ? clearClipBox : addClipBox }),
+      hasClipBox && /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(Scissors, { size: 14 }), label: `Mode: ${clipMode === "outside" ? "Keep Inside" : "Keep Outside"}`, onClick: toggleClipMode }),
+        /* @__PURE__ */ jsxs("div", { className: "flex gap-1 pl-2", children: [
+          /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(Move, { size: 12 }), label: "Move", onClick: () => {
+            const id = clipManager?.getSelectedId() ?? clipBoxEntries[0]?.id;
+            if (id) {
+              clipManager?.selectBox(id);
+              clipManager?.setTransformMode("translate");
+            }
+          } }),
+          /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(Maximize2, { size: 12 }), label: "Scale", onClick: () => {
+            const id = clipManager?.getSelectedId() ?? clipBoxEntries[0]?.id;
+            if (id) {
+              clipManager?.selectBox(id);
+              clipManager?.setTransformMode("scale");
+            }
+          } })
+        ] }),
+        /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(RotateCcw, { size: 14 }), label: "Clear Clips", onClick: clearClipBox })
+      ] })
+    ] })
+  ] });
+}
+
+// src/layouts/workstation/display-palette.tsx
+init_utils();
+init_viewer_provider();
+var COLOR_MODES3 = [
+  { value: "rgb", label: "RGB" },
+  { value: "height", label: "Elevation" },
+  { value: "intensity", label: "Intensity" },
+  { value: "intensity_gradient", label: "Intensity Grad." },
+  { value: "classification", label: "Classification" },
+  { value: "return_number", label: "Return #" },
+  { value: "source", label: "Source" }
+];
+var QUALITY_PRESETS2 = [
+  { label: "Perf", shape: 0, sizeType: 0 },
+  { label: "Balanced", shape: 1, sizeType: 2 },
+  { label: "High", shape: 2, sizeType: 2 }
+];
+function DisplayPalette() {
+  const { loader, colorMode, setColorMode, pointBudget, setPointBudget, pointSize, setPointSize } = useViewer();
+  return /* @__PURE__ */ jsxs(FloatingPalette, { title: "Display", icon: /* @__PURE__ */ jsx(Palette, { size: 12 }), children: [
+    /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mb-1", children: "Color" }),
+    /* @__PURE__ */ jsx("div", { className: "flex flex-wrap gap-1", children: COLOR_MODES3.map((cm) => /* @__PURE__ */ jsx(
+      "button",
+      {
+        onClick: () => {
+          setColorMode(cm.value);
+          loader?.setColorMode(cm.value);
+        },
+        className: cn(
+          "text-[10px] px-2 py-0.5 rounded transition-colors",
+          colorMode === cm.value ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+        ),
+        children: cm.label
+      },
+      cm.value
+    )) }),
+    /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-3 mb-1", children: "Quality" }),
+    /* @__PURE__ */ jsx("div", { className: "flex gap-1", children: QUALITY_PRESETS2.map((q) => /* @__PURE__ */ jsx(
+      "button",
+      {
+        onClick: () => {
+          loader?.setPointShape(q.shape);
+          loader?.setPointSizeType(q.sizeType);
+        },
+        className: "text-[10px] px-2 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors",
+        children: q.label
+      },
+      q.label
+    )) }),
+    /* @__PURE__ */ jsxs("div", { className: "space-y-2 mt-2", children: [
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsxs("div", { className: "flex justify-between text-[10px] text-muted-foreground mb-0.5", children: [
+          /* @__PURE__ */ jsx("span", { children: "Budget" }),
+          /* @__PURE__ */ jsxs("span", { children: [
+            (pointBudget / 1e6).toFixed(1),
+            "M"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "range",
+            min: 5e5,
+            max: 1e7,
+            step: 1e5,
+            value: pointBudget,
+            onChange: (e) => {
+              const v = parseInt(e.target.value);
+              setPointBudget(v);
+              loader?.setPointBudget(v);
+            },
+            className: "pcv-slider w-full"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsxs("div", { className: "flex justify-between text-[10px] text-muted-foreground mb-0.5", children: [
+          /* @__PURE__ */ jsx("span", { children: "Point Size" }),
+          /* @__PURE__ */ jsx("span", { children: pointSize.toFixed(1) })
+        ] }),
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "range",
+            min: 0.5,
+            max: 5,
+            step: 0.1,
+            value: pointSize,
+            onChange: (e) => {
+              const v = parseFloat(e.target.value);
+              setPointSize(v);
+              loader?.setPointSize(v);
+            },
+            className: "pcv-slider w-full"
+          }
+        )
+      ] })
+    ] })
+  ] });
+}
+
+// src/layouts/workstation/view-settings-palette.tsx
+init_utils();
+init_viewer_provider();
+function ToggleRow2({ icon, label, active, onClick }) {
+  return /* @__PURE__ */ jsxs("button", { onClick, className: "flex items-center gap-2 w-full px-1 py-1 rounded text-xs hover:bg-muted/40 transition-colors", children: [
+    /* @__PURE__ */ jsx("span", { className: cn("text-muted-foreground", active && "text-[hsl(var(--brand))]"), children: icon }),
+    /* @__PURE__ */ jsx("span", { className: "flex-1 text-left text-muted-foreground", children: label }),
+    /* @__PURE__ */ jsx("div", { className: cn("w-6 h-3.5 rounded-full transition-colors flex items-center px-0.5", active ? "bg-[hsl(var(--brand)/0.5)]" : "bg-muted/60"), children: /* @__PURE__ */ jsx("div", { className: cn("w-2.5 h-2.5 rounded-full bg-foreground/80 transition-transform", active && "translate-x-2.5") }) })
+  ] });
+}
+function ModeBtn({ icon, label, active, onClick }) {
+  return /* @__PURE__ */ jsxs("button", { onClick, className: cn(
+    "flex flex-col items-center gap-0.5 px-2 py-1 rounded text-[10px] transition-colors",
+    active ? "bg-[hsl(var(--brand)/0.15)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+  ), children: [
+    icon,
+    /* @__PURE__ */ jsx("span", { children: label })
+  ] });
+}
+function ViewSettingsPalette() {
+  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
+  return /* @__PURE__ */ jsxs(FloatingPalette, { title: "View", icon: /* @__PURE__ */ jsx(Eye, { size: 12 }), defaultCollapsed: true, children: [
+    /* @__PURE__ */ jsx(ToggleRow2, { icon: /* @__PURE__ */ jsx(Camera, { size: 13 }), label: "Panoramas", active: showMarkers, onClick: () => setShowMarkers(!showMarkers) }),
+    /* @__PURE__ */ jsx(ToggleRow2, { icon: /* @__PURE__ */ jsx(Map$1, { size: 13 }), label: "Minimap", active: showMinimap, onClick: () => setShowMinimap(!showMinimap) }),
+    /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1", children: "Navigation" }),
+    /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
+      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Orbit, { size: 14 }), label: "Orbit", active: navigationMode === "orbit", onClick: () => setNavigationMode("orbit") }),
+      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Navigation, { size: 14 }), label: "Fly", active: navigationMode === "fly", onClick: () => setNavigationMode("fly") }),
+      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Globe, { size: 14 }), label: "Earth", active: navigationMode === "earth", onClick: () => setNavigationMode("earth") })
+    ] }),
+    /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1", children: "Projection" }),
+    /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
+      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Box, { size: 14 }), label: "Perspective", active: projection === "perspective", onClick: () => setProjection("perspective") }),
+      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Square, { size: 14 }), label: "Ortho", active: projection === "orthographic", onClick: () => setProjection("orthographic") })
+    ] })
+  ] });
+}
+
+// src/layouts/workstation/export-palette.tsx
+init_utils();
+init_viewer_provider();
+init_export_manager();
+var VIEWS = [
+  { value: "top", label: "Top" },
+  { value: "front", label: "Front" },
+  { value: "side", label: "Side" },
+  { value: "back", label: "Back" }
+];
+function ExportPalette() {
+  const { exporter } = useViewer();
+  const [view, setView] = useState("top");
+  const [scale, setScale] = useState(2);
+  const [format, setFormat] = useState("png");
+  const [bg, setBg] = useState("white");
+  const [exporting, setExporting] = useState(false);
+  const doExport = useCallback(async () => {
+    if (!exporter) return;
+    setExporting(true);
+    try {
+      const url = await exporter.capture({ view, scale, background: bg, format, showScaleBar: false });
+      ExportManager.download(url, `export-${view}-${scale}x.${format}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [exporter, view, scale, bg, format]);
+  return /* @__PURE__ */ jsxs(FloatingPalette, { title: "Export", icon: /* @__PURE__ */ jsx(Image, { size: 12 }), defaultCollapsed: true, children: [
+    /* @__PURE__ */ jsx("div", { className: "flex gap-1", children: VIEWS.map((v) => /* @__PURE__ */ jsx("button", { onClick: () => setView(v.value), className: cn(
+      "text-[10px] px-2 py-0.5 rounded transition-colors",
+      view === v.value ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:bg-muted/40"
+    ), children: v.label }, v.value)) }),
+    /* @__PURE__ */ jsxs("div", { className: "flex gap-2 mt-1", children: [
+      /* @__PURE__ */ jsx("div", { className: "flex gap-1", children: [1, 2, 4].map((s) => /* @__PURE__ */ jsxs("button", { onClick: () => setScale(s), className: cn(
+        "text-[10px] px-1.5 py-0.5 rounded transition-colors",
+        scale === s ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:bg-muted/40"
+      ), children: [
+        s,
+        "x"
+      ] }, s)) }),
+      /* @__PURE__ */ jsx("div", { className: "flex gap-1", children: ["png", "jpeg"].map((f) => /* @__PURE__ */ jsx("button", { onClick: () => setFormat(f), className: cn(
+        "text-[10px] px-1.5 py-0.5 rounded transition-colors",
+        format === f ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:bg-muted/40"
+      ), children: f.toUpperCase() }, f)) })
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "flex gap-1 mt-1", children: ["white", "black", "transparent"].map((b) => /* @__PURE__ */ jsx("button", { onClick: () => setBg(b), className: cn(
+      "text-[10px] px-1.5 py-0.5 rounded transition-colors",
+      bg === b ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:bg-muted/40"
+    ), children: b === "transparent" ? "Alpha" : b }, b)) }),
+    /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: doExport,
+        disabled: !exporter || exporting,
+        className: cn(
+          "flex items-center justify-center gap-1.5 w-full mt-2 py-1.5 rounded text-xs font-medium transition-colors",
+          "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] hover:bg-[hsl(var(--brand)/0.3)]",
+          (!exporter || exporting) && "opacity-40 cursor-not-allowed"
+        ),
+        children: [
+          /* @__PURE__ */ jsx(Download, { size: 12 }),
+          exporting ? "Exporting..." : "Download"
+        ]
+      }
+    )
+  ] });
+}
+function WorkstationLayout({ viewport, sidebarSide = "left" }) {
+  const { fps, pointBudget, activeTool } = useViewer();
+  const { metadata } = useData();
+  return /* @__PURE__ */ jsxs("div", { className: "relative w-full h-full overflow-hidden bg-[hsl(var(--background))]", children: [
+    /* @__PURE__ */ jsx("div", { className: "absolute inset-0", children: viewport }),
+    /* @__PURE__ */ jsxs(CollapsibleSidebar, { side: sidebarSide, children: [
+      /* @__PURE__ */ jsx(ToolsPalette, {}),
+      /* @__PURE__ */ jsx(DisplayPalette, {}),
+      /* @__PURE__ */ jsx(ViewSettingsPalette, {}),
+      /* @__PURE__ */ jsx(ExportPalette, {})
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "absolute bottom-0 left-0 right-0 z-10 px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground/70 bg-[hsl(var(--card)/0.8)] backdrop-blur-sm border-t border-[hsl(var(--border)/0.5)]", children: [
+      metadata && /* @__PURE__ */ jsxs("span", { children: [
+        (metadata.points / 1e6).toFixed(1),
+        "M pts"
+      ] }),
+      /* @__PURE__ */ jsxs("span", { children: [
+        "Budget: ",
+        (pointBudget / 1e6).toFixed(1),
+        "M"
+      ] }),
+      /* @__PURE__ */ jsxs("span", { children: [
+        fps,
+        " fps"
+      ] }),
+      activeTool !== "none" && /* @__PURE__ */ jsx("span", { className: "text-[hsl(var(--brand))]", children: activeTool })
+    ] })
+  ] });
+}
+
+// src/index.ts
 init_viewport();
 
 // src/components/toolbar/measure-tools.tsx
@@ -5198,6 +6003,229 @@ init_minimap_renderer();
 init_clip_manager();
 init_axis_widget();
 init_file_source_adapter();
+init_types();
+
+// src/hooks/use-navigation-actions.ts
+init_viewer_provider();
+function useNavigationActions() {
+  const { sceneManager, loader, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
+  const fitToView = useCallback(() => {
+    if (!sceneManager || !loader) return;
+    const wb = loader.worldBox;
+    if (!wb.isEmpty()) sceneManager.fitToBox(wb);
+  }, [sceneManager, loader]);
+  const flyToView = useCallback((preset) => {
+    if (!sceneManager || !loader) return;
+    const wb = loader.worldBox;
+    if (wb.isEmpty()) return;
+    const cam = sceneManager.camera;
+    const controls = sceneManager.controls;
+    const target = controls.target.clone();
+    const dist = cam.position.distanceTo(target);
+    const dirs = {
+      top: [0, 0, 1],
+      bottom: [0, 0, -1],
+      front: [0, -1, 0],
+      back: [0, 1, 0],
+      left: [-1, 0, 0],
+      right: [1, 0, 0]
+    };
+    const [dx, dy, dz] = dirs[preset];
+    setProjection("orthographic");
+    cam.position.set(
+      target.x + dx * dist,
+      target.y + dy * dist,
+      target.z + dz * dist
+    );
+    cam.up.set(0, preset === "top" || preset === "bottom" ? 1 : 0, preset === "top" || preset === "bottom" ? 0 : 1);
+    controls.update();
+  }, [sceneManager, loader, setProjection]);
+  return {
+    navigationMode,
+    setNavigationMode,
+    projection,
+    setProjection,
+    fitToView,
+    flyToView
+  };
+}
+
+// src/hooks/use-measurement-actions.ts
+init_viewer_provider();
+init_utils();
+function useMeasurementActions() {
+  const { activeTool, setActiveTool, measurementManager, measurementList, setMeasurementList } = useViewer();
+  const startTool = useCallback((type) => {
+    const tool = `measure-${type}`;
+    setActiveTool(activeTool === tool ? "none" : tool);
+  }, [activeTool, setActiveTool]);
+  const cancelTool = useCallback(() => {
+    setActiveTool("none");
+  }, [setActiveTool]);
+  const clearAll = useCallback(() => {
+    measurementManager?.clearAll();
+    setMeasurementList([]);
+  }, [measurementManager, setMeasurementList]);
+  const remove = useCallback((id) => {
+    measurementManager?.remove(id);
+  }, [measurementManager]);
+  const rename = useCallback((id, name) => {
+    measurementManager?.rename(id, name);
+  }, [measurementManager]);
+  const exportCSV = useCallback(() => {
+    exportMeasurementsCSV(measurementList);
+  }, [measurementList]);
+  return {
+    activeTool,
+    startTool,
+    cancelTool,
+    measurements: measurementList,
+    clearAll,
+    remove,
+    rename,
+    exportCSV
+  };
+}
+
+// src/hooks/use-clip-actions.ts
+init_viewer_provider();
+function useClipActions() {
+  const { clipManager, loader, clipBoxEntries, selectedClipBoxId, activeTool, setActiveTool } = useViewer();
+  const boxes = clipBoxEntries;
+  const hasClipBox = boxes.length > 0;
+  const clipMode = boxes[0]?.mode ?? "outside";
+  const addBox = useCallback(() => {
+    if (!clipManager || !loader) return;
+    const wb = loader.worldBox;
+    if (wb.isEmpty()) return;
+    const entry = clipManager.addBox(wb.clone());
+    clipManager.selectBox(entry.id);
+    clipManager.setTransformMode("scale");
+  }, [clipManager, loader]);
+  const clearAll = useCallback(() => {
+    clipManager?.clear();
+    if (activeTool === "section-box") setActiveTool("none");
+  }, [clipManager, activeTool, setActiveTool]);
+  const toggleMode = useCallback(() => {
+    const next = clipMode === "outside" ? "inside" : "outside";
+    for (const b of boxes) {
+      clipManager?.setBoxMode(b.id, next);
+    }
+  }, [clipManager, boxes, clipMode]);
+  const selectBox = useCallback((id) => {
+    clipManager?.selectBox(id);
+  }, [clipManager]);
+  const setTransformMode = useCallback((mode) => {
+    if (!clipManager) return;
+    const id = clipManager.getSelectedId();
+    if (id) {
+      clipManager.setTransformMode(mode);
+    } else if (boxes[0]) {
+      clipManager.selectBox(boxes[0].id);
+      clipManager.setTransformMode(mode);
+    }
+  }, [clipManager, boxes]);
+  return {
+    boxes,
+    selectedBoxId: selectedClipBoxId,
+    hasClipBox,
+    clipMode,
+    addBox,
+    clearAll,
+    toggleMode,
+    selectBox,
+    setTransformMode
+  };
+}
+
+// src/hooks/use-display-actions.ts
+init_viewer_provider();
+function useDisplayActions() {
+  const { loader, colorMode, setColorMode, pointBudget, setPointBudget, pointSize, setPointSize } = useViewer();
+  const setQualityPreset = useCallback((preset) => {
+    if (!loader) return;
+    switch (preset) {
+      case "performance":
+        loader.setPointShape(0);
+        loader.setPointSizeType(0);
+        break;
+      case "balanced":
+        loader.setPointShape(1);
+        loader.setPointSizeType(2);
+        break;
+      case "high":
+        loader.setPointShape(2);
+        loader.setPointSizeType(2);
+        break;
+    }
+  }, [loader]);
+  return {
+    colorMode,
+    setColorMode,
+    pointBudget,
+    setPointBudget,
+    pointSize,
+    setPointSize,
+    setQualityPreset
+  };
+}
+
+// src/hooks/use-export-actions.ts
+init_viewer_provider();
+init_export_manager();
+function useExportActions() {
+  const { exporter } = useViewer();
+  const capture = useCallback(async (options) => {
+    if (!exporter) return null;
+    return exporter.capture(options);
+  }, [exporter]);
+  const download = useCallback((dataUrl, filename) => {
+    ExportManager.download(dataUrl, filename);
+  }, []);
+  return { capture, download };
+}
+
+// src/hooks/use-visibility-actions.ts
+init_viewer_provider();
+function useVisibilityActions() {
+  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap } = useViewer();
+  const toggleMarkers = useCallback(() => {
+    setShowMarkers(!showMarkers);
+  }, [showMarkers, setShowMarkers]);
+  const toggleMinimap = useCallback(() => {
+    setShowMinimap(!showMinimap);
+  }, [showMinimap, setShowMinimap]);
+  return {
+    showMarkers,
+    toggleMarkers,
+    showMinimap,
+    toggleMinimap
+  };
+}
+
+// src/hooks/use-display-settings.ts
+init_viewer_provider();
+init_types();
+function useDisplaySettings() {
+  const viewer = useViewer();
+  const [localSettings, setLocalSettings] = useState(DISPLAY_PRESETS.standard);
+  const settings = viewer.displaySettings ?? localSettings;
+  const setSettings = viewer.setDisplaySettings ?? setLocalSettings;
+  const applyPreset = useCallback((preset) => {
+    setSettings({ ...DISPLAY_PRESETS[preset] });
+  }, [setSettings]);
+  const updateSetting = useCallback((key, value) => {
+    setSettings({ ...settings, preset: "standard", [key]: value });
+  }, [settings, setSettings]);
+  return {
+    settings,
+    presets: DISPLAY_PRESETS,
+    applyPreset,
+    updateSetting
+  };
+}
+
+// src/index.ts
 init_utils();
 init_locale_context();
 init_en();
@@ -5397,6 +6425,25 @@ var de = createLocale(en, {
     exportJson: "Szenen als JSON exportieren",
     importJson: "Szenen aus JSON importieren"
   },
+  displaySettings: {
+    title: "Anzeigeeinstellungen",
+    presetsTab: "Voreinstellungen",
+    advancedTab: "Erweitert",
+    preset_compact: "Kompakt",
+    preset_compact_desc: "Kleine Beschriftungen & Marker",
+    preset_standard: "Standard",
+    preset_standard_desc: "Standardgr\xF6\xDFen",
+    preset_prominent: "Auff\xE4llig",
+    preset_prominent_desc: "Gro\xDFe Beschriftungen & Marker",
+    measurementsSection: "Messungen",
+    lineWidth: "Linienbreite",
+    labelScale: "Beschriftungsgr\xF6\xDFe",
+    sphereRadius: "Punktgr\xF6\xDFe",
+    markersSection: "Panorama-Marker",
+    markerScale: "Kugelgr\xF6\xDFe",
+    markerOpacity: "Kugel-Deckkraft",
+    markerLabelScale: "Beschriftungsgr\xF6\xDFe"
+  },
   about: {
     title: "Info",
     productName: "PanoCloud Viewer",
@@ -5410,6 +6457,6 @@ var de = createLocale(en, {
   }
 });
 
-export { AboutDialog, AxisWidget, CameraAnimator, ClassificationPanel, ClipManager, DataProvider, DisplayControls, ElectronSourceAdapter, ExportManager, ExportTools, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimapRenderer, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Sidebar, ThemeProvider, ToolRail, ToolbarIconBtn, ToolbarSection, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, captureScene, cn, createAdapter, createLocale, de, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, useData, useLocale, useTheme, useViewer };
+export { AboutDialog, AxisWidget, CameraAnimator, ClassificationPanel, ClipManager, CollapsibleSidebar, DISPLAY_PRESETS, DataProvider, DisplayControls, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, MinimapRenderer, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Sidebar, ThemeProvider, ToolRail, ToolbarIconBtn, ToolbarSection, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, captureScene, cn, createAdapter, createLocale, de, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, useClipActions, useData, useDisplayActions, useDisplaySettings, useExportActions, useLocale, useMeasurementActions, useNavigationActions, useTheme, useViewer, useVisibilityActions };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

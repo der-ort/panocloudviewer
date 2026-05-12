@@ -11,6 +11,9 @@ export { DataProvider, useData } from "./providers/data-provider";
 // ─── Layout ───────────────────────────────────────────────────────────────────
 export { WorkspaceLayout } from "./components/workspace-layout";
 
+// ─── Layouts ─────────────────────────────────────────────────────────────────
+export { MinimalLayout, WorkstationLayout, FloatingPalette, CollapsibleSidebar } from "./layouts";
+
 // ─── Viewport ─────────────────────────────────────────────────────────────────
 export { Viewport } from "./components/viewport";
 
@@ -68,7 +71,21 @@ export type {
   ExportOptions,
   ExportView,
   ExportFormat,
+  DisplayPreset,
+  DisplaySettings,
 } from "./types";
+export { DISPLAY_PRESETS } from "./types";
+
+// ─── Action hooks (for custom UIs) ───────────────────────────────────────────
+export {
+  useNavigationActions,
+  useMeasurementActions,
+  useClipActions,
+  useDisplayActions,
+  useExportActions,
+  useVisibilityActions,
+  useDisplaySettings,
+} from "./hooks";
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
 export { cn, formatLength, formatArea, formatVolume, formatAngle, formatCoord, exportMeasurementsCSV } from "./lib/utils";

@@ -1,6 +1,6 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
-import * as THREE from 'three';
 import React, { ReactNode } from 'react';
+import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ClassValue } from 'clsx';
 
@@ -90,10 +90,29 @@ interface ViewerConfig {
     onCameraSelect?: (camera: CameraData) => void;
     /** Called when a measurement is created/updated */
     onMeasurementChange?: (measurements: Measurement[]) => void;
+    /** Display settings overrides (marker/measurement sizing) */
+    displaySettings?: Partial<DisplaySettings>;
 }
 type ActiveTool = "none" | "measure-point" | "measure-distance" | "measure-height" | "measure-area" | "measure-volume" | "measure-angle" | "measure-profile" | "section-box" | "section-plane" | "annotate";
 type NavigationMode = "orbit" | "fly" | "earth";
 type CameraProjection = "perspective" | "orthographic";
+type DisplayPreset = "compact" | "standard" | "prominent";
+interface DisplaySettings {
+    preset: DisplayPreset;
+    /** Measurement line width in pixels */
+    measurementLineWidth: number;
+    /** Measurement label scale multiplier (1.0 = default) */
+    measurementLabelScale: number;
+    /** Measurement sphere radius in world units */
+    measurementSphereRadius: number;
+    /** Marker sphere scale multiplier on auto-calculated radius */
+    markerSphereScale: number;
+    /** Marker sphere opacity (0-1) */
+    markerSphereOpacity: number;
+    /** Marker label scale multiplier */
+    markerLabelScale: number;
+}
+declare const DISPLAY_PRESETS: Record<DisplayPreset, DisplaySettings>;
 
 /**
  * Full locale dictionary for PanoCloudViewer.
@@ -266,6 +285,25 @@ interface ViewerLocale {
         exportJson: string;
         importJson: string;
     };
+    displaySettings: {
+        title: string;
+        presetsTab: string;
+        advancedTab: string;
+        preset_compact: string;
+        preset_compact_desc: string;
+        preset_standard: string;
+        preset_standard_desc: string;
+        preset_prominent: string;
+        preset_prominent_desc: string;
+        measurementsSection: string;
+        lineWidth: string;
+        labelScale: string;
+        sphereRadius: string;
+        markersSection: string;
+        markerScale: string;
+        markerOpacity: string;
+        markerLabelScale: string;
+    };
     about: {
         title: string;
         productName: string;
@@ -308,6 +346,21 @@ interface PanoCloudViewerProps {
      * <PanoCloudViewer locale={de} ... />
      */
     locale?: ViewerLocale;
+    /**
+     * Custom UI via render prop. Receives the viewport element that must be rendered.
+     * When omitted, the default WorkspaceLayout is used.
+     *
+     * @example
+     * <PanoCloudViewer source={source}>
+     *   {(viewport) => (
+     *     <div className="relative w-full h-full">
+     *       {viewport}
+     *       <MyToolbar />
+     *     </div>
+     *   )}
+     * </PanoCloudViewer>
+     */
+    children?: (viewport: React.ReactNode) => React.ReactNode;
 }
 /**
  * Drop-in PanoCloud Viewer component.
@@ -323,7 +376,7 @@ interface PanoCloudViewerProps {
  * />
  * ```
  */
-declare function PanoCloudViewer({ source, theme, className, locale }: PanoCloudViewerProps): react_jsx_runtime.JSX.Element;
+declare function PanoCloudViewer({ source, theme, className, locale, children }: PanoCloudViewerProps): react_jsx_runtime.JSX.Element;
 
 interface SceneManagerOptions {
     canvas: HTMLElement;
@@ -491,6 +544,7 @@ declare class MeasurementManager {
     private scene;
     private group;
     private measurements;
+    private _displaySettings;
     onChange?: (measurements: Measurement[]) => void;
     activeMeasurement: Measurement | null;
     private previewLine;
@@ -498,6 +552,12 @@ declare class MeasurementManager {
     private _snapLine;
     constructor(scene: THREE.Scene);
     getAll(): Measurement[];
+    /** Apply new display settings and rebuild all existing measurements */
+    applyDisplaySettings(settings: DisplaySettings): void;
+    /** Rebuild all existing measurement visuals with current display settings */
+    private _rebuildAll;
+    /** Dispose geometry/materials and remove objects from the group */
+    private _disposeObjects;
     /** Start a new measurement (call addPoint for each click, finish() to complete) */
     start(type: MeasurementType): Measurement;
     /** Add a 3D point to the active measurement */
@@ -546,7 +606,12 @@ declare class MarkerManager {
     private hoveredIdx;
     private selectedIdx;
     private sphereRadius;
+    private _displaySettings;
+    private _cameras;
+    private _worldBox?;
     constructor(scene: THREE.Scene);
+    /** Apply new display settings and rebuild all markers */
+    applyDisplaySettings(settings: DisplaySettings): void;
     /** Build markers from camera data. Pass worldBox for auto-scaling. */
     build(cameras: CameraData[], worldBox?: THREE.Box3): void;
     private _makeSphere;
@@ -764,6 +829,8 @@ interface ViewerContextValue {
     setNavigationMode: (mode: NavigationMode) => void;
     projection: CameraProjection;
     setProjection: (mode: CameraProjection) => void;
+    displaySettings: DisplaySettings;
+    setDisplaySettings: (settings: DisplaySettings) => void;
     config: ViewerConfig;
 }
 declare function useViewer(): ViewerContextValue;
@@ -806,6 +873,35 @@ interface WorkspaceLayoutProps {
     className?: string;
 }
 declare function WorkspaceLayout({ className }: WorkspaceLayoutProps): react_jsx_runtime.JSX.Element;
+
+interface MinimalLayoutProps {
+    viewport: React.ReactNode;
+}
+declare function MinimalLayout({ viewport }: MinimalLayoutProps): react_jsx_runtime.JSX.Element;
+
+interface WorkstationLayoutProps {
+    viewport: React.ReactNode;
+    /** Sidebar position. Default: "left" */
+    sidebarSide?: "left" | "right";
+}
+declare function WorkstationLayout({ viewport, sidebarSide }: WorkstationLayoutProps): react_jsx_runtime.JSX.Element;
+
+interface FloatingPaletteProps {
+    title: string;
+    icon?: React.ReactNode;
+    children: React.ReactNode;
+    defaultCollapsed?: boolean;
+    className?: string;
+}
+declare function FloatingPalette({ title, icon, children, defaultCollapsed, className }: FloatingPaletteProps): react_jsx_runtime.JSX.Element;
+
+interface CollapsibleSidebarProps {
+    side: "left" | "right";
+    children: React.ReactNode;
+    defaultOpen?: boolean;
+    width?: string;
+}
+declare function CollapsibleSidebar({ side, children, defaultOpen, width }: CollapsibleSidebarProps): react_jsx_runtime.JSX.Element;
 
 interface ViewportProps {
     className?: string;
@@ -953,6 +1049,69 @@ declare function captureScene(name: string, cameraPos: {
     z: number;
 }, clipBoxes: ClipBoxEntry[], colorMode: string, pointSize: number, pointBudget: number): Omit<ViewerScene, "id" | "createdAt">;
 
+type ViewPreset = "top" | "bottom" | "front" | "back" | "left" | "right";
+declare function useNavigationActions(): {
+    navigationMode: NavigationMode;
+    setNavigationMode: (mode: NavigationMode) => void;
+    projection: CameraProjection;
+    setProjection: (mode: CameraProjection) => void;
+    fitToView: () => void;
+    flyToView: (preset: ViewPreset) => void;
+};
+
+declare function useMeasurementActions(): {
+    activeTool: ActiveTool;
+    startTool: (type: MeasurementType) => void;
+    cancelTool: () => void;
+    measurements: Measurement[];
+    clearAll: () => void;
+    remove: (id: string) => void;
+    rename: (id: string, name: string) => void;
+    exportCSV: () => void;
+};
+
+declare function useClipActions(): {
+    boxes: ClipBoxEntry[];
+    selectedBoxId: string | null;
+    hasClipBox: boolean;
+    clipMode: ClipMode;
+    addBox: () => void;
+    clearAll: () => void;
+    toggleMode: () => void;
+    selectBox: (id: string | null) => void;
+    setTransformMode: (mode: "translate" | "scale" | "rotate") => void;
+};
+
+type QualityPreset = "performance" | "balanced" | "high";
+declare function useDisplayActions(): {
+    colorMode: ColorMode;
+    setColorMode: (mode: ColorMode) => void;
+    pointBudget: number;
+    setPointBudget: (v: number) => void;
+    pointSize: number;
+    setPointSize: (v: number) => void;
+    setQualityPreset: (preset: QualityPreset) => void;
+};
+
+declare function useExportActions(): {
+    capture: (options: ExportOptions) => Promise<string | null>;
+    download: (dataUrl: string, filename: string) => void;
+};
+
+declare function useVisibilityActions(): {
+    showMarkers: boolean;
+    toggleMarkers: () => void;
+    showMinimap: boolean;
+    toggleMinimap: () => void;
+};
+
+declare function useDisplaySettings(): {
+    settings: DisplaySettings;
+    presets: Record<DisplayPreset, DisplaySettings>;
+    applyPreset: (preset: DisplayPreset) => void;
+    updateSetting: <K extends keyof DisplaySettings>(key: K, value: DisplaySettings[K]) => void;
+};
+
 declare function cn(...inputs: ClassValue[]): string;
 /** Format a number in meters with appropriate precision */
 declare function formatLength(meters: number): string;
@@ -978,4 +1137,4 @@ declare const en: ViewerLocale;
 
 declare const de: ViewerLocale;
 
-export { AboutDialog, type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraProjection, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DataProvider, DisplayControls, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudSource, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Sidebar, ThemeProvider, ToolRail, ToolbarIconBtn, ToolbarSection, ViewControls, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, captureScene, cn, createAdapter, createLocale, de, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, useData, useLocale, useTheme, useViewer };
+export { AboutDialog, type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraProjection, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, CollapsibleSidebar, type ColorMode, DISPLAY_PRESETS, DataProvider, DisplayControls, type DisplayPreset, type DisplaySettings, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, FloatingPalette, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudSource, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Sidebar, ThemeProvider, ToolRail, ToolbarIconBtn, ToolbarSection, ViewControls, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, captureScene, cn, createAdapter, createLocale, de, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, useClipActions, useData, useDisplayActions, useDisplaySettings, useExportActions, useLocale, useMeasurementActions, useNavigationActions, useTheme, useViewer, useVisibilityActions };

@@ -177,6 +177,25 @@ export interface ViewerLocale {
     exportJson: string;
     importJson: string;
   };
+  displaySettings: {
+    title: string;
+    presetsTab: string;
+    advancedTab: string;
+    preset_compact: string;
+    preset_compact_desc: string;
+    preset_standard: string;
+    preset_standard_desc: string;
+    preset_prominent: string;
+    preset_prominent_desc: string;
+    measurementsSection: string;
+    lineWidth: string;
+    labelScale: string;
+    sphereRadius: string;
+    markersSection: string;
+    markerScale: string;
+    markerOpacity: string;
+    markerLabelScale: string;
+  };
   about: {
     title: string;
     productName: string;
