@@ -462,9 +462,13 @@ declare class FaceHandleController {
     private raycaster;
     private group;
     private disposed;
+    /** Rotation of the box about the world Z axis, in radians. */
+    private _rotationZ;
     constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement);
     private createHandles;
     attach(box: THREE.Box3, onChange: (box: THREE.Box3) => void): void;
+    /** Set the box's rotation about the world Z axis (radians) so handles follow it. */
+    setRotationZ(r: number): void;
     detach(): void;
     isAttached(): boolean;
     isDragging(): boolean;
@@ -476,6 +480,8 @@ declare class FaceHandleController {
      * Returns true if a handle was grabbed (caller should disable orbit controls).
      */
     onPointerDown(clientX: number, clientY: number): boolean;
+    /** World-space unit vector for a box-local face axis, rotated by _rotationZ around Z. */
+    private worldAxisFor;
     /** Update the box during a drag. Call on pointermove. */
     onPointerMove(clientX: number, clientY: number): void;
     /** End the drag. Call on pointerup. */
@@ -495,6 +501,8 @@ interface ClipBoxEntry {
     box: THREE.Box3;
     mode: ClipMode;
     visible: boolean;
+    /** Rotation about the world Z axis, in radians. Defaults to 0. */
+    rotationZ: number;
 }
 /** Manages multiple named clip boxes with TransformControls support */
 declare class ClipManager {
@@ -829,6 +837,20 @@ interface ViewerLocale {
     panoViewer: {
         close: string;
     };
+    /** Clip management toolbar strings */
+    clipToolbar: {
+        title: string;
+        addBox: string;
+        clearAll: string;
+        keepInside: string;
+        keepOutside: string;
+        show: string;
+        hide: string;
+        delete: string;
+        move: string;
+        scale: string;
+        rotateZ: string;
+    };
     /** UI mode labels and related toolbar strings */
     uiModes: {
         /** Label for the "professional" mode */
@@ -871,6 +893,15 @@ declare const DialogOverlay: React.ForwardRefExoticComponent<Omit<DialogPrimitiv
 declare const DialogContent: React.ForwardRefExoticComponent<Omit<DialogPrimitive.DialogContentProps & React.RefAttributes<HTMLDivElement>, "ref"> & {
     /** Portal container — pass the `.pcv` root so themed tokens apply to the portalled dialog. */
     container?: HTMLElement | null;
+    /**
+     * Drag offset in pixels. When provided the dialog is translated by this amount
+     * relative to its centered position. Centering (-50%, -50%) is always preserved
+     * and composed with the drag offset so the dialog stays centered when offset is {0,0}.
+     */
+    dragOffset?: {
+        x: number;
+        y: number;
+    };
 } & React.RefAttributes<HTMLDivElement>>;
 declare const DialogHeader: {
     ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>): react_jsx_runtime.JSX.Element;
@@ -1213,6 +1244,8 @@ declare function ExportTools(): react_jsx_runtime.JSX.Element;
 
 declare function ToolRail(): react_jsx_runtime.JSX.Element;
 
+declare function ClipToolbar(): react_jsx_runtime.JSX.Element | null;
+
 declare function PanoViewer(): react_jsx_runtime.JSX.Element | null;
 
 interface AboutDialogProps {
@@ -1263,6 +1296,9 @@ declare function useClipActions(): {
     toggleMode: () => void;
     selectBox: (id: string | null) => void;
     setTransformMode: (mode: "translate" | "scale" | "rotate") => void;
+    removeBox: (id: string) => void;
+    setBoxVisible: (id: string, visible: boolean) => void;
+    setModeAll: (mode: "outside" | "inside") => void;
 };
 
 type QualityPreset = "performance" | "balanced" | "high";
@@ -1295,6 +1331,27 @@ declare function useDisplaySettings(): {
     updateSetting: <K extends keyof DisplaySettings>(key: K, value: DisplaySettings[K]) => void;
 };
 
+interface DraggableState {
+    /** offset applied via transform: translate(x, y) */
+    position: {
+        x: number;
+        y: number;
+    };
+    /** attach to the drag-handle element's onMouseDown */
+    onDragStart: (e: React.MouseEvent) => void;
+    /** reset back to {0,0} */
+    reset: () => void;
+}
+interface UseDraggableOptions {
+    /** Optional container; the grabbed point is kept within its bounds so the panel can't be lost off-screen. */
+    bounds?: React.RefObject<HTMLElement | null>;
+}
+/**
+ * Drag-to-move hook. Attach `onDragStart` to a header element's `onMouseDown`
+ * and apply `transform: translate(position.x, position.y)` to the panel.
+ */
+declare function useDraggable(options?: UseDraggableOptions): DraggableState;
+
 declare function cn(...inputs: ClassValue[]): string;
 
 declare function useLocale(): ViewerLocale;
@@ -1308,4 +1365,4 @@ declare const en: ViewerLocale;
 
 declare const de: ViewerLocale;
 
-export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };

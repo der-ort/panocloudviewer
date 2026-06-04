@@ -450,9 +450,13 @@ declare class FaceHandleController {
     private raycaster;
     private group;
     private disposed;
+    /** Rotation of the box about the world Z axis, in radians. */
+    private _rotationZ;
     constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement);
     private createHandles;
     attach(box: THREE.Box3, onChange: (box: THREE.Box3) => void): void;
+    /** Set the box's rotation about the world Z axis (radians) so handles follow it. */
+    setRotationZ(r: number): void;
     detach(): void;
     isAttached(): boolean;
     isDragging(): boolean;
@@ -464,6 +468,8 @@ declare class FaceHandleController {
      * Returns true if a handle was grabbed (caller should disable orbit controls).
      */
     onPointerDown(clientX: number, clientY: number): boolean;
+    /** World-space unit vector for a box-local face axis, rotated by _rotationZ around Z. */
+    private worldAxisFor;
     /** Update the box during a drag. Call on pointermove. */
     onPointerMove(clientX: number, clientY: number): void;
     /** End the drag. Call on pointerup. */
@@ -483,6 +489,8 @@ interface ClipBoxEntry {
     box: THREE.Box3;
     mode: ClipMode;
     visible: boolean;
+    /** Rotation about the world Z axis, in radians. Defaults to 0. */
+    rotationZ: number;
 }
 /** Manages multiple named clip boxes with TransformControls support */
 declare class ClipManager {

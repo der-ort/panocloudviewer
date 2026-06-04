@@ -1493,7 +1493,11 @@ var MinimapRenderer = class {
     this.container = null;
   }
 };
-var HANDLE_COLOR = 14472518;
+var AXIS_COLOR = {
+  x: 15680580,
+  y: 2278750,
+  z: 3900150
+};
 var HANDLE_HOVER_COLOR = 16777215;
 var HANDLE_DRAG_COLOR = 16347926;
 var FaceHandleController = class {
@@ -1508,6 +1512,8 @@ var FaceHandleController = class {
   raycaster = new THREE5.Raycaster();
   group;
   disposed = false;
+  /** Rotation of the box about the world Z axis, in radians. */
+  _rotationZ = 0;
   constructor(scene, camera, domElement) {
     this.scene = scene;
     this.camera = camera;
@@ -1524,7 +1530,7 @@ var FaceHandleController = class {
     for (const axis of axes) {
       for (const sign of signs) {
         const mat = new THREE5.MeshBasicMaterial({
-          color: HANDLE_COLOR,
+          color: AXIS_COLOR[axis],
           transparent: true,
           opacity: 0.7,
           depthTest: false
@@ -1543,6 +1549,11 @@ var FaceHandleController = class {
     this.onChange = onChange;
     this.updatePositions();
     for (const h of this.handles) h.mesh.visible = true;
+  }
+  /** Set the box's rotation about the world Z axis (radians) so handles follow it. */
+  setRotationZ(r) {
+    this._rotationZ = r;
+    if (this.box) this.updatePositions();
   }
   detach() {
     this.box = null;
@@ -1569,14 +1580,18 @@ var FaceHandleController = class {
     this.box.getSize(size);
     const diag = size.length();
     const radius = Math.max(0.05, Math.min(diag * 0.02, 2));
+    const cos = Math.cos(this._rotationZ);
+    const sin = Math.sin(this._rotationZ);
     for (const h of this.handles) {
-      const pos = center.clone();
+      const offset = new THREE5.Vector3();
       if (h.sign === 1) {
-        pos[h.axis] = this.box.max[h.axis];
+        offset[h.axis] = this.box.max[h.axis] - center[h.axis];
       } else {
-        pos[h.axis] = this.box.min[h.axis];
+        offset[h.axis] = this.box.min[h.axis] - center[h.axis];
       }
-      h.mesh.position.copy(pos);
+      const rx = offset.x * cos - offset.y * sin;
+      const ry = offset.x * sin + offset.y * cos;
+      h.mesh.position.set(center.x + rx, center.y + ry, center.z + offset.z);
       h.mesh.scale.setScalar(radius);
     }
   }
@@ -1598,9 +1613,23 @@ var FaceHandleController = class {
     const startIntersect = new THREE5.Vector3();
     if (!this.raycaster.ray.intersectPlane(plane, startIntersect)) return false;
     const startValue = handle.sign === 1 ? this.box.max[handle.axis] : this.box.min[handle.axis];
-    this.drag = { handle, plane, startIntersect, startValue };
+    this.drag = {
+      handle,
+      plane,
+      startIntersect,
+      startValue,
+      worldAxis: this.worldAxisFor(handle.axis)
+    };
     this.setHandleColor(handle, HANDLE_DRAG_COLOR);
     return true;
+  }
+  /** World-space unit vector for a box-local face axis, rotated by _rotationZ around Z. */
+  worldAxisFor(axis) {
+    const cos = Math.cos(this._rotationZ);
+    const sin = Math.sin(this._rotationZ);
+    if (axis === "x") return new THREE5.Vector3(cos, sin, 0);
+    if (axis === "y") return new THREE5.Vector3(-sin, cos, 0);
+    return new THREE5.Vector3(0, 0, 1);
   }
   /** Update the box during a drag. Call on pointermove. */
   onPointerMove(clientX, clientY) {
@@ -1609,7 +1638,8 @@ var FaceHandleController = class {
     const currentIntersect = new THREE5.Vector3();
     if (!this.raycaster.ray.intersectPlane(this.drag.plane, currentIntersect)) return;
     const axis = this.drag.handle.axis;
-    const delta = currentIntersect[axis] - this.drag.startIntersect[axis];
+    const worldDelta = currentIntersect.clone().sub(this.drag.startIntersect);
+    const delta = worldDelta.dot(this.drag.worldAxis);
     const newValue = this.drag.startValue + delta;
     const MIN_SIZE = 0.1;
     if (this.drag.handle.sign === 1) {
@@ -1623,7 +1653,7 @@ var FaceHandleController = class {
   /** End the drag. Call on pointerup. */
   onPointerUp() {
     if (this.drag) {
-      this.setHandleColor(this.drag.handle, HANDLE_COLOR);
+      this.setHandleColor(this.drag.handle, AXIS_COLOR[this.drag.handle.axis]);
       this.drag = null;
     }
   }
@@ -1633,7 +1663,7 @@ var FaceHandleController = class {
     const hit = this.hitTest(clientX, clientY);
     if (hit !== this.hoveredHandle) {
       if (this.hoveredHandle) {
-        this.setHandleColor(this.hoveredHandle, HANDLE_COLOR);
+        this.setHandleColor(this.hoveredHandle, AXIS_COLOR[this.hoveredHandle.axis]);
       }
       this.hoveredHandle = hit;
       if (hit) {
@@ -1711,7 +1741,8 @@ var ClipManager = class {
       name: name ?? `Box ${this.entries.length + 1}`,
       box: box.clone(),
       mode: "outside",
-      visible: true
+      visible: true,
+      rotationZ: 0
     };
     this.entries.push(entry);
     this.updateHelper(entry);
@@ -1745,6 +1776,7 @@ var ClipManager = class {
     this.pivot = new THREE5.Mesh(geo, mat);
     this.pivot.position.copy(center);
     this.pivot.scale.copy(size);
+    this.pivot.rotation.set(0, 0, entry.rotationZ ?? 0);
     this.pivot.userData.clipId = id;
     this.sm.scene.add(this.pivot);
     controls.attach(this.pivot);
@@ -1756,6 +1788,7 @@ var ClipManager = class {
         this.sm.renderer.domElement
       );
     }
+    this._faceHandles.setRotationZ(entry.rotationZ ?? 0);
     this._faceHandles.attach(entry.box, () => {
       this.updateHelper(entry);
       this.applyAll();
@@ -1787,6 +1820,7 @@ var ClipManager = class {
       if (this._faceHandles && this.selectedId) {
         const entry = this.entries.find((e) => e.id === this.selectedId);
         if (entry && !this._faceHandles.isAttached()) {
+          this._faceHandles.setRotationZ(entry.rotationZ ?? 0);
           this._faceHandles.attach(entry.box, () => {
             this.updateHelper(entry);
             this.applyAll();
@@ -1935,14 +1969,21 @@ var ClipManager = class {
     if (!this.pivot || !this.selectedId) return;
     const entry = this.entries.find((e) => e.id === this.selectedId);
     if (!entry) return;
-    const center = this.pivot.position.clone();
-    const halfSize = new THREE5.Vector3(
-      Math.abs(this.pivot.scale.x) * 0.5,
-      Math.abs(this.pivot.scale.y) * 0.5,
-      Math.abs(this.pivot.scale.z) * 0.5
-    );
-    entry.box.min.copy(center).sub(halfSize);
-    entry.box.max.copy(center).add(halfSize);
+    if (this._transformMode === "rotate") {
+      const zRot = new THREE5.Euler().setFromQuaternion(this.pivot.quaternion, "ZYX").z;
+      entry.rotationZ = zRot;
+      this.pivot.rotation.set(0, 0, zRot);
+      this._faceHandles?.setRotationZ(zRot);
+    } else {
+      const center = this.pivot.position.clone();
+      const halfSize = new THREE5.Vector3(
+        Math.abs(this.pivot.scale.x) * 0.5,
+        Math.abs(this.pivot.scale.y) * 0.5,
+        Math.abs(this.pivot.scale.z) * 0.5
+      );
+      entry.box.min.copy(center).sub(halfSize);
+      entry.box.max.copy(center).add(halfSize);
+    }
     this.updateHelper(entry);
     this.applyAll();
     this.onChange?.(this.getBoxes());
@@ -1959,13 +2000,15 @@ var ClipManager = class {
   }
   updateHelper(entry) {
     if (!this.helpers.has(entry.id)) {
-      const helper = new THREE5.Box3Helper(entry.box, new THREE5.Color(14472518));
-      helper.material.linewidth = 1;
-      helper.renderOrder = 3;
-      helper.visible = entry.visible;
-      this.sm.scene.add(helper);
-      this.helpers.set(entry.id, helper);
+      const helper2 = new THREE5.Box3Helper(entry.box, new THREE5.Color(14472518));
+      helper2.material.linewidth = 1;
+      helper2.renderOrder = 3;
+      helper2.visible = entry.visible;
+      this.sm.scene.add(helper2);
+      this.helpers.set(entry.id, helper2);
     }
+    const helper = this.helpers.get(entry.id);
+    if (helper) helper.rotation.z = entry.rotationZ ?? 0;
     const center = new THREE5.Vector3();
     const size = new THREE5.Vector3();
     entry.box.getCenter(center);
@@ -1974,6 +2017,7 @@ var ClipManager = class {
     if (existingFill) {
       existingFill.position.copy(center);
       existingFill.scale.copy(size);
+      existingFill.rotation.z = entry.rotationZ ?? 0;
     } else {
       const fillGeo = new THREE5.BoxGeometry(1, 1, 1);
       const fillMat = new THREE5.MeshBasicMaterial({
@@ -1986,6 +2030,7 @@ var ClipManager = class {
       const fillMesh = new THREE5.Mesh(fillGeo, fillMat);
       fillMesh.position.copy(center);
       fillMesh.scale.copy(size);
+      fillMesh.rotation.z = entry.rotationZ ?? 0;
       fillMesh.renderOrder = 2;
       fillMesh.visible = entry.visible;
       this.sm.scene.add(fillMesh);
@@ -2007,7 +2052,11 @@ var ClipManager = class {
         const center = new THREE5.Vector3();
         entry.box.getSize(size);
         entry.box.getCenter(center);
-        const matrix = new THREE5.Matrix4().makeScale(size.x, size.y, size.z).setPosition(center);
+        const q = new THREE5.Quaternion().setFromAxisAngle(
+          new THREE5.Vector3(0, 0, 1),
+          entry.rotationZ ?? 0
+        );
+        const matrix = new THREE5.Matrix4().compose(center, q, size);
         const inverse = matrix.clone().invert();
         return {
           box: entry.box.clone(),

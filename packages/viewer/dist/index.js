@@ -1,10 +1,10 @@
 import * as THREE5 from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import React23, { createContext, lazy, useContext, useState, useCallback, useEffect, useRef, useReducer, useMemo, Suspense } from 'react';
+import React24, { createContext, lazy, useContext, useState, useCallback, useEffect, useRef, useReducer, useMemo, Suspense } from 'react';
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { X, ChevronDown, ChevronUp, Check, Download, Sliders, Camera, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, BoxSelect, Scissors, Move, Maximize2, RotateCcw, Search, Navigation, CloudCog, Trash2, Ruler, Eye, EyeOff, Plus, Upload, Bookmark, Play, Tag, ChevronLeft, ChevronRight, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, Settings, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Check, Download, Sliders, Camera, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, BoxSelect, Scissors, Move, Maximize2, RotateCcw, Plus, Trash2, Eye, EyeOff, RotateCw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Tag, ChevronLeft, ChevronRight, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, Settings, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cva } from 'class-variance-authority';
 import * as SliderPrimitive from '@radix-ui/react-slider';
@@ -150,7 +150,7 @@ function createAdapter(source) {
       return new S3SourceAdapter(source.basePath);
   }
 }
-var SceneManager, PointCloudLoader, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, ExportManager, MinimapRenderer, HANDLE_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId, ClipManager, AxisWidget, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
+var SceneManager, PointCloudLoader, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, ExportManager, MinimapRenderer, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId, ClipManager, AxisWidget, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
 var init_dist = __esm({
   "../core/dist/index.js"() {
     SceneManager = class {
@@ -1545,7 +1545,11 @@ var init_dist = __esm({
         this.container = null;
       }
     };
-    HANDLE_COLOR = 14472518;
+    AXIS_COLOR = {
+      x: 15680580,
+      y: 2278750,
+      z: 3900150
+    };
     HANDLE_HOVER_COLOR = 16777215;
     HANDLE_DRAG_COLOR = 16347926;
     FaceHandleController = class {
@@ -1560,6 +1564,8 @@ var init_dist = __esm({
       raycaster = new THREE5.Raycaster();
       group;
       disposed = false;
+      /** Rotation of the box about the world Z axis, in radians. */
+      _rotationZ = 0;
       constructor(scene, camera, domElement) {
         this.scene = scene;
         this.camera = camera;
@@ -1576,7 +1582,7 @@ var init_dist = __esm({
         for (const axis of axes) {
           for (const sign of signs) {
             const mat = new THREE5.MeshBasicMaterial({
-              color: HANDLE_COLOR,
+              color: AXIS_COLOR[axis],
               transparent: true,
               opacity: 0.7,
               depthTest: false
@@ -1595,6 +1601,11 @@ var init_dist = __esm({
         this.onChange = onChange;
         this.updatePositions();
         for (const h of this.handles) h.mesh.visible = true;
+      }
+      /** Set the box's rotation about the world Z axis (radians) so handles follow it. */
+      setRotationZ(r) {
+        this._rotationZ = r;
+        if (this.box) this.updatePositions();
       }
       detach() {
         this.box = null;
@@ -1621,14 +1632,18 @@ var init_dist = __esm({
         this.box.getSize(size);
         const diag = size.length();
         const radius = Math.max(0.05, Math.min(diag * 0.02, 2));
+        const cos = Math.cos(this._rotationZ);
+        const sin = Math.sin(this._rotationZ);
         for (const h of this.handles) {
-          const pos = center.clone();
+          const offset = new THREE5.Vector3();
           if (h.sign === 1) {
-            pos[h.axis] = this.box.max[h.axis];
+            offset[h.axis] = this.box.max[h.axis] - center[h.axis];
           } else {
-            pos[h.axis] = this.box.min[h.axis];
+            offset[h.axis] = this.box.min[h.axis] - center[h.axis];
           }
-          h.mesh.position.copy(pos);
+          const rx = offset.x * cos - offset.y * sin;
+          const ry = offset.x * sin + offset.y * cos;
+          h.mesh.position.set(center.x + rx, center.y + ry, center.z + offset.z);
           h.mesh.scale.setScalar(radius);
         }
       }
@@ -1650,9 +1665,23 @@ var init_dist = __esm({
         const startIntersect = new THREE5.Vector3();
         if (!this.raycaster.ray.intersectPlane(plane, startIntersect)) return false;
         const startValue = handle.sign === 1 ? this.box.max[handle.axis] : this.box.min[handle.axis];
-        this.drag = { handle, plane, startIntersect, startValue };
+        this.drag = {
+          handle,
+          plane,
+          startIntersect,
+          startValue,
+          worldAxis: this.worldAxisFor(handle.axis)
+        };
         this.setHandleColor(handle, HANDLE_DRAG_COLOR);
         return true;
+      }
+      /** World-space unit vector for a box-local face axis, rotated by _rotationZ around Z. */
+      worldAxisFor(axis) {
+        const cos = Math.cos(this._rotationZ);
+        const sin = Math.sin(this._rotationZ);
+        if (axis === "x") return new THREE5.Vector3(cos, sin, 0);
+        if (axis === "y") return new THREE5.Vector3(-sin, cos, 0);
+        return new THREE5.Vector3(0, 0, 1);
       }
       /** Update the box during a drag. Call on pointermove. */
       onPointerMove(clientX, clientY) {
@@ -1661,7 +1690,8 @@ var init_dist = __esm({
         const currentIntersect = new THREE5.Vector3();
         if (!this.raycaster.ray.intersectPlane(this.drag.plane, currentIntersect)) return;
         const axis = this.drag.handle.axis;
-        const delta = currentIntersect[axis] - this.drag.startIntersect[axis];
+        const worldDelta = currentIntersect.clone().sub(this.drag.startIntersect);
+        const delta = worldDelta.dot(this.drag.worldAxis);
         const newValue = this.drag.startValue + delta;
         const MIN_SIZE = 0.1;
         if (this.drag.handle.sign === 1) {
@@ -1675,7 +1705,7 @@ var init_dist = __esm({
       /** End the drag. Call on pointerup. */
       onPointerUp() {
         if (this.drag) {
-          this.setHandleColor(this.drag.handle, HANDLE_COLOR);
+          this.setHandleColor(this.drag.handle, AXIS_COLOR[this.drag.handle.axis]);
           this.drag = null;
         }
       }
@@ -1685,7 +1715,7 @@ var init_dist = __esm({
         const hit = this.hitTest(clientX, clientY);
         if (hit !== this.hoveredHandle) {
           if (this.hoveredHandle) {
-            this.setHandleColor(this.hoveredHandle, HANDLE_COLOR);
+            this.setHandleColor(this.hoveredHandle, AXIS_COLOR[this.hoveredHandle.axis]);
           }
           this.hoveredHandle = hit;
           if (hit) {
@@ -1758,7 +1788,8 @@ var init_dist = __esm({
           name: name ?? `Box ${this.entries.length + 1}`,
           box: box.clone(),
           mode: "outside",
-          visible: true
+          visible: true,
+          rotationZ: 0
         };
         this.entries.push(entry);
         this.updateHelper(entry);
@@ -1792,6 +1823,7 @@ var init_dist = __esm({
         this.pivot = new THREE5.Mesh(geo, mat);
         this.pivot.position.copy(center);
         this.pivot.scale.copy(size);
+        this.pivot.rotation.set(0, 0, entry.rotationZ ?? 0);
         this.pivot.userData.clipId = id;
         this.sm.scene.add(this.pivot);
         controls.attach(this.pivot);
@@ -1803,6 +1835,7 @@ var init_dist = __esm({
             this.sm.renderer.domElement
           );
         }
+        this._faceHandles.setRotationZ(entry.rotationZ ?? 0);
         this._faceHandles.attach(entry.box, () => {
           this.updateHelper(entry);
           this.applyAll();
@@ -1834,6 +1867,7 @@ var init_dist = __esm({
           if (this._faceHandles && this.selectedId) {
             const entry = this.entries.find((e) => e.id === this.selectedId);
             if (entry && !this._faceHandles.isAttached()) {
+              this._faceHandles.setRotationZ(entry.rotationZ ?? 0);
               this._faceHandles.attach(entry.box, () => {
                 this.updateHelper(entry);
                 this.applyAll();
@@ -1982,14 +2016,21 @@ var init_dist = __esm({
         if (!this.pivot || !this.selectedId) return;
         const entry = this.entries.find((e) => e.id === this.selectedId);
         if (!entry) return;
-        const center = this.pivot.position.clone();
-        const halfSize = new THREE5.Vector3(
-          Math.abs(this.pivot.scale.x) * 0.5,
-          Math.abs(this.pivot.scale.y) * 0.5,
-          Math.abs(this.pivot.scale.z) * 0.5
-        );
-        entry.box.min.copy(center).sub(halfSize);
-        entry.box.max.copy(center).add(halfSize);
+        if (this._transformMode === "rotate") {
+          const zRot = new THREE5.Euler().setFromQuaternion(this.pivot.quaternion, "ZYX").z;
+          entry.rotationZ = zRot;
+          this.pivot.rotation.set(0, 0, zRot);
+          this._faceHandles?.setRotationZ(zRot);
+        } else {
+          const center = this.pivot.position.clone();
+          const halfSize = new THREE5.Vector3(
+            Math.abs(this.pivot.scale.x) * 0.5,
+            Math.abs(this.pivot.scale.y) * 0.5,
+            Math.abs(this.pivot.scale.z) * 0.5
+          );
+          entry.box.min.copy(center).sub(halfSize);
+          entry.box.max.copy(center).add(halfSize);
+        }
         this.updateHelper(entry);
         this.applyAll();
         this.onChange?.(this.getBoxes());
@@ -2006,13 +2047,15 @@ var init_dist = __esm({
       }
       updateHelper(entry) {
         if (!this.helpers.has(entry.id)) {
-          const helper = new THREE5.Box3Helper(entry.box, new THREE5.Color(14472518));
-          helper.material.linewidth = 1;
-          helper.renderOrder = 3;
-          helper.visible = entry.visible;
-          this.sm.scene.add(helper);
-          this.helpers.set(entry.id, helper);
+          const helper2 = new THREE5.Box3Helper(entry.box, new THREE5.Color(14472518));
+          helper2.material.linewidth = 1;
+          helper2.renderOrder = 3;
+          helper2.visible = entry.visible;
+          this.sm.scene.add(helper2);
+          this.helpers.set(entry.id, helper2);
         }
+        const helper = this.helpers.get(entry.id);
+        if (helper) helper.rotation.z = entry.rotationZ ?? 0;
         const center = new THREE5.Vector3();
         const size = new THREE5.Vector3();
         entry.box.getCenter(center);
@@ -2021,6 +2064,7 @@ var init_dist = __esm({
         if (existingFill) {
           existingFill.position.copy(center);
           existingFill.scale.copy(size);
+          existingFill.rotation.z = entry.rotationZ ?? 0;
         } else {
           const fillGeo = new THREE5.BoxGeometry(1, 1, 1);
           const fillMat = new THREE5.MeshBasicMaterial({
@@ -2033,6 +2077,7 @@ var init_dist = __esm({
           const fillMesh = new THREE5.Mesh(fillGeo, fillMat);
           fillMesh.position.copy(center);
           fillMesh.scale.copy(size);
+          fillMesh.rotation.z = entry.rotationZ ?? 0;
           fillMesh.renderOrder = 2;
           fillMesh.visible = entry.visible;
           this.sm.scene.add(fillMesh);
@@ -2054,7 +2099,11 @@ var init_dist = __esm({
             const center = new THREE5.Vector3();
             entry.box.getSize(size);
             entry.box.getCenter(center);
-            const matrix = new THREE5.Matrix4().makeScale(size.x, size.y, size.z).setPosition(center);
+            const q = new THREE5.Quaternion().setFromAxisAngle(
+              new THREE5.Vector3(0, 0, 1),
+              entry.rotationZ ?? 0
+            );
+            const matrix = new THREE5.Matrix4().compose(center, q, size);
             const inverse = matrix.clone().invert();
             return {
               box: entry.box.clone(),
@@ -2706,6 +2755,19 @@ var init_en = __esm({
         professional: "Professional",
         lite: "Lite",
         modeLabel: "Mode"
+      },
+      clipToolbar: {
+        title: "Clipping",
+        addBox: "Add box",
+        clearAll: "Clear all",
+        keepInside: "Keep inside (all)",
+        keepOutside: "Keep outside (all)",
+        show: "Show",
+        hide: "Hide",
+        delete: "Delete",
+        move: "Move",
+        scale: "Scale",
+        rotateZ: "Rotate (Z)"
       }
     };
   }
@@ -2742,7 +2804,7 @@ function Viewport({ className }) {
   const containerRef = useRef(null);
   const minimapContainerRef = useRef(null);
   const initialized = useRef(false);
-  const [minimapSize, setMinimapSize] = React23.useState(176);
+  const [minimapSize, setMinimapSize] = React24.useState(176);
   const t = useLocale().viewport;
   const {
     config,
@@ -2785,7 +2847,8 @@ function Viewport({ className }) {
   const clipRef = useRef(null);
   const animRef = useRef(null);
   const axisRef = useRef(null);
-  const clipDragRef = useRef(null);
+  const clipDraftRef = useRef(null);
+  const clipDownRef = useRef(null);
   const volumeDragRef = useRef(null);
   useEffect(() => {
     if (!containerRef.current || initialized.current) return;
@@ -2920,6 +2983,11 @@ function Viewport({ className }) {
       volumeDragRef.current = null;
       measureRef.current?.setVolumeDraft(null);
     }
+    if (activeTool !== "section-box") {
+      clipDraftRef.current = null;
+      clipDownRef.current = null;
+      clipRef.current?.setDraft(null);
+    }
   }, [activeTool]);
   useEffect(() => {
     smRef.current?.setNavigationMode(navigationMode);
@@ -2940,6 +3008,25 @@ function Viewport({ className }) {
     const hit = new THREE5.Vector3();
     return raycaster.ray.intersectPlane(plane, hit) ? hit : null;
   }, []);
+  const buildClipDraftAt = useCallback((nx, ny) => {
+    const sm = smRef.current;
+    if (!sm) return null;
+    const zMid = metaZRef.current ? (metaZRef.current.min + metaZRef.current.max) / 2 : sm.controls.target.z;
+    const center = projectToPlaneZ(nx, ny, zMid);
+    if (!center) return null;
+    const wb = loaderRef.current?.worldBox;
+    const bounds = new THREE5.Vector3(20, 20, 20);
+    if (wb && !wb.isEmpty()) wb.getSize(bounds);
+    const half = new THREE5.Vector3(
+      Math.max(0.1, Math.min(bounds.x, bounds.x / 3)) / 2,
+      Math.max(0.1, Math.min(bounds.y, bounds.y / 3)) / 2,
+      Math.max(0.1, Math.min(bounds.z, bounds.z / 3)) / 2
+    );
+    return new THREE5.Box3(
+      center.clone().sub(half),
+      center.clone().add(half)
+    );
+  }, [projectToPlaneZ]);
   const getNDC = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     return {
@@ -2979,24 +3066,17 @@ function Viewport({ className }) {
       }
       e.preventDefault();
       sm.controls.enabled = false;
-      const { nx: nx2, ny: ny2 } = getNDC(e);
-      const planeZ2 = sm.controls.target.z;
-      const startWorld2 = projectToPlaneZ(nx2, ny2, planeZ2);
-      if (startWorld2) {
-        volumeDragRef.current = { phase: "footprint", startWorld: startWorld2, planeZ: planeZ2 };
+      const { nx, ny } = getNDC(e);
+      const planeZ = sm.controls.target.z;
+      const startWorld = projectToPlaneZ(nx, ny, planeZ);
+      if (startWorld) {
+        volumeDragRef.current = { phase: "footprint", startWorld, planeZ };
       }
       return;
     }
     if (activeTool !== "section-box" || e.button !== 0) return;
-    e.preventDefault();
-    sm.controls.enabled = false;
-    const { nx, ny } = getNDC(e);
-    const planeZ = sm.controls.target.z;
-    const startWorld = projectToPlaneZ(nx, ny, planeZ);
-    if (startWorld) {
-      clipDragRef.current = { startWorld, planeZ };
-    }
-  }, [activeTool, projectToPlaneZ]);
+    clipDownRef.current = { x: e.clientX, y: e.clientY };
+  }, [activeTool]);
   const handleMouseMove = useCallback((e) => {
     const fh = clipRef.current?.faceHandles;
     if (fh && fh.isDragging()) {
@@ -3033,19 +3113,10 @@ function Viewport({ className }) {
       }
       return;
     }
-    if (clipDragRef.current && activeTool === "section-box") {
+    if (activeTool === "section-box") {
       const { nx, ny } = getNDC(e);
-      const endWorld = projectToPlaneZ(nx, ny, clipDragRef.current.planeZ);
-      if (!endWorld) return;
-      const { startWorld } = clipDragRef.current;
-      const sm = smRef.current;
-      if (!sm) return;
-      const zMin = metaZRef.current?.min ?? sm.controls.target.z - 50;
-      const zMax = metaZRef.current?.max ?? sm.controls.target.z + 50;
-      const box = new THREE5.Box3(
-        new THREE5.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
-        new THREE5.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
-      );
+      const box = buildClipDraftAt(nx, ny);
+      clipDraftRef.current = box;
       clipRef.current?.setDraft(box);
       return;
     }
@@ -3058,7 +3129,7 @@ function Viewport({ className }) {
         measureRef.current.updateSnap(hit);
       }
     }
-  }, [activeTool, projectToPlaneZ]);
+  }, [activeTool, projectToPlaneZ, buildClipDraftAt]);
   const handleMouseUp = useCallback((e) => {
     const sm = smRef.current;
     const fh = clipRef.current?.faceHandles;
@@ -3069,15 +3140,15 @@ function Viewport({ className }) {
     }
     const vdUp = volumeDragRef.current;
     if (vdUp && vdUp.phase === "footprint" && activeTool === "measure-volume") {
-      const { nx: nx2, ny: ny2 } = getNDC(e);
-      const endWorld2 = projectToPlaneZ(nx2, ny2, vdUp.planeZ);
-      if (endWorld2) {
+      const { nx, ny } = getNDC(e);
+      const endWorld = projectToPlaneZ(nx, ny, vdUp.planeZ);
+      if (endWorld) {
         const { startWorld } = vdUp;
         const zMin = metaZRef.current?.min ?? vdUp.planeZ - 10;
         const zMax = metaZRef.current?.max ?? vdUp.planeZ + 10;
         const box = new THREE5.Box3(
-          new THREE5.Vector3(Math.min(startWorld.x, endWorld2.x), Math.min(startWorld.y, endWorld2.y), zMin),
-          new THREE5.Vector3(Math.max(startWorld.x, endWorld2.x), Math.max(startWorld.y, endWorld2.y), zMax)
+          new THREE5.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
+          new THREE5.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
         );
         if (!box.isEmpty()) {
           volumeDragRef.current = {
@@ -3098,24 +3169,25 @@ function Viewport({ className }) {
       return;
     }
     if (sm) sm.controls.enabled = true;
-    if (!clipDragRef.current || activeTool !== "section-box") {
-      clipDragRef.current = null;
+    if (activeTool === "section-box" && e.button === 0) {
+      const down = clipDownRef.current;
+      clipDownRef.current = null;
+      const DRAG_THRESHOLD = 5;
+      const moved = down ? Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_THRESHOLD : true;
+      if (!moved) {
+        const { nx, ny } = getNDC(e);
+        const box = clipDraftRef.current ?? buildClipDraftAt(nx, ny);
+        if (box && !box.isEmpty() && clipRef.current) {
+          const entry = clipRef.current.addBox(box);
+          clipRef.current.selectBox(entry.id);
+          clipRef.current.setTransformMode("scale");
+          clipDraftRef.current = null;
+          clipRef.current.setDraft(null);
+        }
+      }
       return;
     }
-    const { nx, ny } = getNDC(e);
-    const endWorld = projectToPlaneZ(nx, ny, clipDragRef.current.planeZ);
-    if (endWorld && sm) {
-      const { startWorld } = clipDragRef.current;
-      const zMin = sm.controls.target.z - 50;
-      const zMax = sm.controls.target.z + 50;
-      const box = new THREE5.Box3(
-        new THREE5.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
-        new THREE5.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
-      );
-      if (!box.isEmpty()) clipRef.current?.addBox(box);
-    }
-    clipDragRef.current = null;
-  }, [activeTool, projectToPlaneZ]);
+  }, [activeTool, buildClipDraftAt]);
   const handleClick = useCallback((e) => {
     if (activeTool === "section-box") return;
     const sm = smRef.current;
@@ -3152,6 +3224,9 @@ function Viewport({ className }) {
       measureRef.current.finish();
     }
     if (activeTool === "section-box") {
+      clipDraftRef.current = null;
+      clipDownRef.current = null;
+      clipRef.current?.setDraft(null);
       clipRef.current?.clear();
     }
   }, [activeTool]);
@@ -3974,6 +4049,217 @@ function ToolRail() {
   ] });
 }
 
+// src/components/toolbar/clip-toolbar.tsx
+init_utils();
+
+// src/hooks/use-clip-actions.ts
+init_viewer_provider();
+function useClipActions() {
+  const { clipManager, loader, clipBoxEntries, selectedClipBoxId, activeTool, setActiveTool } = useViewer();
+  const boxes = clipBoxEntries;
+  const hasClipBox = boxes.length > 0;
+  const clipMode = boxes.find((b) => b.visible)?.mode ?? "outside";
+  const addBox = useCallback(() => {
+    if (!clipManager || !loader) return;
+    const wb = loader.worldBox;
+    if (wb.isEmpty()) return;
+    const entry = clipManager.addBox(wb.clone());
+    clipManager.selectBox(entry.id);
+    clipManager.setTransformMode("scale");
+  }, [clipManager, loader]);
+  const clearAll = useCallback(() => {
+    clipManager?.clear();
+    if (activeTool === "section-box") setActiveTool("none");
+  }, [clipManager, activeTool, setActiveTool]);
+  const toggleMode = useCallback(() => {
+    const next = clipMode === "outside" ? "inside" : "outside";
+    for (const b of boxes) {
+      clipManager?.setBoxMode(b.id, next);
+    }
+  }, [clipManager, boxes, clipMode]);
+  const selectBox = useCallback((id) => {
+    clipManager?.selectBox(id);
+  }, [clipManager]);
+  const setTransformMode = useCallback((mode) => {
+    if (!clipManager) return;
+    const id = clipManager.getSelectedId();
+    if (id) {
+      clipManager.setTransformMode(mode);
+    } else if (boxes[0]) {
+      clipManager.selectBox(boxes[0].id);
+      clipManager.setTransformMode(mode);
+    }
+  }, [clipManager, boxes]);
+  const removeBox = useCallback((id) => {
+    clipManager?.removeBox(id);
+  }, [clipManager]);
+  const setBoxVisible = useCallback((id, visible) => {
+    clipManager?.setBoxVisible(id, visible);
+  }, [clipManager]);
+  const setModeAll = useCallback((mode) => {
+    for (const b of boxes) {
+      clipManager?.setBoxMode(b.id, mode);
+    }
+  }, [clipManager, boxes]);
+  return {
+    boxes,
+    selectedBoxId: selectedClipBoxId,
+    hasClipBox,
+    clipMode,
+    addBox,
+    clearAll,
+    toggleMode,
+    selectBox,
+    setTransformMode,
+    removeBox,
+    setBoxVisible,
+    setModeAll
+  };
+}
+
+// src/components/toolbar/clip-toolbar.tsx
+init_locale_context();
+function ClipToolbar() {
+  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, setTransformMode } = useClipActions();
+  const t = useLocale().clipToolbar;
+  if (boxes.length === 0) return null;
+  const firstVisible = boxes.find((b) => b.visible);
+  const isInside = (firstVisible?.mode ?? "outside") === "inside";
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col w-52 py-2 px-1 select-none", children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between px-1 mb-1.5", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1.5 text-xs font-semibold text-foreground", children: [
+        /* @__PURE__ */ jsx(BoxSelect, { size: 13, className: "text-[hsl(var(--brand))]" }),
+        /* @__PURE__ */ jsx("span", { children: t.title })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-0.5", children: [
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            title: t.addBox,
+            onClick: addBox,
+            className: "flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
+            children: [
+              /* @__PURE__ */ jsx(Plus, { size: 12 }),
+              /* @__PURE__ */ jsx("span", { className: "text-[11px]", children: t.addBox })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            title: t.clearAll,
+            onClick: clearAll,
+            className: "flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-destructive/20 hover:text-destructive transition-colors",
+            children: /* @__PURE__ */ jsx(Trash2, { size: 12 })
+          }
+        )
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "h-px bg-white/10 mx-1 mb-1.5" }),
+    /* @__PURE__ */ jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: () => setModeAll(isInside ? "outside" : "inside"),
+        className: cn(
+          "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors",
+          "border",
+          isInside ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+        ),
+        children: [
+          /* @__PURE__ */ jsx(Scissors, { size: 12 }),
+          /* @__PURE__ */ jsx("span", { children: isInside ? t.keepInside : t.keepOutside })
+        ]
+      }
+    ) }),
+    /* @__PURE__ */ jsx("div", { className: "max-h-40 overflow-y-auto flex flex-col gap-0.5 px-1", children: boxes.map((box) => {
+      const isSelected = box.id === selectedClipBoxId;
+      return /* @__PURE__ */ jsxs(
+        "div",
+        {
+          className: cn(
+            "flex items-center gap-1 rounded px-1 py-0.5 transition-colors",
+            isSelected ? "bg-[hsl(var(--brand)/0.15)]" : "hover:bg-muted/40"
+          ),
+          children: [
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                title: box.visible ? t.hide : t.show,
+                onClick: () => setBoxVisible(box.id, !box.visible),
+                className: "flex-shrink-0 p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors",
+                children: box.visible ? /* @__PURE__ */ jsx(Eye, { size: 12 }) : /* @__PURE__ */ jsx(EyeOff, { size: 12 })
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                title: box.name,
+                onClick: () => selectBox(isSelected ? null : box.id),
+                className: cn(
+                  "flex-1 text-left text-xs truncate rounded transition-colors",
+                  isSelected ? "text-[hsl(var(--brand))]" : "text-muted-foreground hover:text-foreground"
+                ),
+                children: box.name
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                title: t.delete,
+                onClick: () => removeBox(box.id),
+                className: "flex-shrink-0 p-0.5 rounded text-muted-foreground hover:text-destructive transition-colors",
+                children: /* @__PURE__ */ jsx(Trash2, { size: 12 })
+              }
+            )
+          ]
+        },
+        box.id
+      );
+    }) }),
+    selectedClipBoxId && /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsx("div", { className: "h-px bg-white/10 mx-1 mt-1.5 mb-1.5" }),
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1 px-1", children: [
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            title: t.move,
+            onClick: () => setTransformMode("translate"),
+            className: "flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
+            children: [
+              /* @__PURE__ */ jsx(Move, { size: 12 }),
+              /* @__PURE__ */ jsx("span", { className: "text-[10px]", children: t.move })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            title: t.scale,
+            onClick: () => setTransformMode("scale"),
+            className: "flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
+            children: [
+              /* @__PURE__ */ jsx(Maximize2, { size: 12 }),
+              /* @__PURE__ */ jsx("span", { className: "text-[10px]", children: t.scale })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            title: t.rotateZ,
+            onClick: () => setTransformMode("rotate"),
+            className: "flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
+            children: [
+              /* @__PURE__ */ jsx(RotateCw, { size: 12 }),
+              /* @__PURE__ */ jsx("span", { className: "text-[10px]", children: t.rotateZ })
+            ]
+          }
+        )
+      ] })
+    ] })
+  ] });
+}
+
 // src/components/sidebar/sidebar.tsx
 init_locale_context();
 init_viewer_provider();
@@ -4749,9 +5035,62 @@ function PanoViewer() {
 // src/components/overlays/rendering-settings.tsx
 init_viewer_provider();
 init_locale_context();
+function useDraggable(options) {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const positionRef = useRef({ x: 0, y: 0 });
+  const boundsRef = useRef(options?.bounds);
+  boundsRef.current = options?.bounds;
+  const moveRef = useRef(null);
+  const upRef = useRef(null);
+  const endDrag = useCallback(() => {
+    if (moveRef.current) window.removeEventListener("mousemove", moveRef.current);
+    if (upRef.current) window.removeEventListener("mouseup", upRef.current);
+    moveRef.current = null;
+    upRef.current = null;
+  }, []);
+  useEffect(() => endDrag, [endDrag]);
+  const reset = useCallback(() => {
+    positionRef.current = { x: 0, y: 0 };
+    setPosition({ x: 0, y: 0 });
+  }, []);
+  const onDragStart = useCallback(
+    (e) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const baseX = positionRef.current.x;
+      const baseY = positionRef.current.y;
+      const rect = boundsRef.current?.current?.getBoundingClientRect() ?? null;
+      const onMove = (ev) => {
+        let dx = ev.clientX - startX;
+        let dy = ev.clientY - startY;
+        if (rect) {
+          const cx = Math.min(rect.right, Math.max(rect.left, ev.clientX));
+          const cy = Math.min(rect.bottom, Math.max(rect.top, ev.clientY));
+          dx = cx - startX;
+          dy = cy - startY;
+        }
+        const next = { x: baseX + dx, y: baseY + dy };
+        positionRef.current = next;
+        setPosition(next);
+      };
+      moveRef.current = onMove;
+      upRef.current = endDrag;
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", endDrag);
+    },
+    [endDrag]
+  );
+  return { position, onDragStart, reset };
+}
 function RenderingSettings({ open, onClose }) {
   const { loader } = useViewer();
   const t = useLocale().renderingSettings;
+  const pcvRoot = usePcvRoot();
+  const { position, onDragStart, reset } = useDraggable({ bounds: pcvRoot ?? void 0 });
+  useEffect(() => {
+    if (!open) reset();
+  }, [open, reset]);
   const [rgbGamma, setRgbGamma] = useState(1);
   const [rgbBrightness, setRgbBrightness] = useState(0);
   const [rgbContrast, setRgbContrast] = useState(0);
@@ -4808,171 +5147,193 @@ function RenderingSettings({ open, onClose }) {
   const zMin = wb && !wb.isEmpty() ? wb.min.z : -100;
   const zMax = wb && !wb.isEmpty() ? wb.max.z : 100;
   const zRange = zMax - zMin;
-  return /* @__PURE__ */ jsxs("div", { className: "absolute top-12 left-12 z-50 w-80 max-h-[calc(100vh-6rem)] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl", children: [
-    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--border))]", children: [
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
-        /* @__PURE__ */ jsx(Sliders, { size: 14, className: "text-[hsl(var(--brand))]" }),
-        /* @__PURE__ */ jsx("span", { className: "text-xs font-semibold", children: t.title })
-      ] }),
-      /* @__PURE__ */ jsx("button", { onClick: onClose, className: "text-muted-foreground hover:text-foreground transition-colors p-0.5", children: /* @__PURE__ */ jsx(X, { size: 14 }) })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "p-3 space-y-4 text-xs", children: [
-      /* @__PURE__ */ jsxs(Section, { title: t.rgbSection, children: [
-        /* @__PURE__ */ jsx(
-          Slider,
+  return /* @__PURE__ */ jsxs(
+    "div",
+    {
+      className: "absolute top-12 left-12 z-50 w-80 max-h-[calc(100vh-6rem)] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl",
+      style: { transform: `translate(${position.x}px, ${position.y}px)` },
+      children: [
+        /* @__PURE__ */ jsxs(
+          "div",
           {
-            label: t.gamma,
-            value: rgbGamma,
-            min: 0.1,
-            max: 4,
-            step: 0.05,
-            onChange: (v) => apply(setRgbGamma, "rgbGamma", v)
+            className: "flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--border))] cursor-move select-none",
+            onMouseDown: onDragStart,
+            children: [
+              /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+                /* @__PURE__ */ jsx(Sliders, { size: 14, className: "text-[hsl(var(--brand))]" }),
+                /* @__PURE__ */ jsx("span", { className: "text-xs font-semibold", children: t.title })
+              ] }),
+              /* @__PURE__ */ jsx(
+                "button",
+                {
+                  onClick: onClose,
+                  onMouseDown: (e) => e.stopPropagation(),
+                  className: "text-muted-foreground hover:text-foreground transition-colors p-0.5",
+                  children: /* @__PURE__ */ jsx(X, { size: 14 })
+                }
+              )
+            ]
           }
         ),
-        /* @__PURE__ */ jsx(
-          Slider,
-          {
-            label: t.brightness,
-            value: rgbBrightness,
-            min: -1,
-            max: 1,
-            step: 0.02,
-            onChange: (v) => apply(setRgbBrightness, "rgbBrightness", v)
-          }
-        ),
-        /* @__PURE__ */ jsx(
-          Slider,
-          {
-            label: t.contrast,
-            value: rgbContrast,
-            min: -1,
-            max: 1,
-            step: 0.02,
-            onChange: (v) => apply(setRgbContrast, "rgbContrast", v)
-          }
-        )
-      ] }),
-      /* @__PURE__ */ jsxs(Section, { title: t.intensitySection, children: [
-        /* @__PURE__ */ jsx(
-          Slider,
-          {
-            label: t.gamma,
-            value: intensityGamma,
-            min: 0.1,
-            max: 4,
-            step: 0.05,
-            onChange: (v) => apply(setIntensityGamma, "intensityGamma", v)
-          }
-        ),
-        /* @__PURE__ */ jsx(
-          Slider,
-          {
-            label: t.brightness,
-            value: intensityBrightness,
-            min: -1,
-            max: 1,
-            step: 0.02,
-            onChange: (v) => apply(setIntensityBrightness, "intensityBrightness", v)
-          }
-        ),
-        /* @__PURE__ */ jsx(
-          Slider,
-          {
-            label: t.contrast,
-            value: intensityContrast,
-            min: -1,
-            max: 1,
-            step: 0.02,
-            onChange: (v) => apply(setIntensityContrast, "intensityContrast", v)
-          }
-        ),
-        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
-          /* @__PURE__ */ jsx("span", { className: "w-16 text-muted-foreground", children: t.range }),
-          /* @__PURE__ */ jsx(
-            "input",
+        /* @__PURE__ */ jsxs("div", { className: "p-3 space-y-4 text-xs", children: [
+          /* @__PURE__ */ jsxs(Section, { title: t.rgbSection, children: [
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: t.gamma,
+                value: rgbGamma,
+                min: 0.1,
+                max: 4,
+                step: 0.05,
+                onChange: (v) => apply(setRgbGamma, "rgbGamma", v)
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: t.brightness,
+                value: rgbBrightness,
+                min: -1,
+                max: 1,
+                step: 0.02,
+                onChange: (v) => apply(setRgbBrightness, "rgbBrightness", v)
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: t.contrast,
+                value: rgbContrast,
+                min: -1,
+                max: 1,
+                step: 0.02,
+                onChange: (v) => apply(setRgbContrast, "rgbContrast", v)
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxs(Section, { title: t.intensitySection, children: [
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: t.gamma,
+                value: intensityGamma,
+                min: 0.1,
+                max: 4,
+                step: 0.05,
+                onChange: (v) => apply(setIntensityGamma, "intensityGamma", v)
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: t.brightness,
+                value: intensityBrightness,
+                min: -1,
+                max: 1,
+                step: 0.02,
+                onChange: (v) => apply(setIntensityBrightness, "intensityBrightness", v)
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: t.contrast,
+                value: intensityContrast,
+                min: -1,
+                max: 1,
+                step: 0.02,
+                onChange: (v) => apply(setIntensityContrast, "intensityContrast", v)
+              }
+            ),
+            /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+              /* @__PURE__ */ jsx("span", { className: "w-16 text-muted-foreground", children: t.range }),
+              /* @__PURE__ */ jsx(
+                "input",
+                {
+                  type: "number",
+                  value: intensityRange[0],
+                  min: 0,
+                  max: 65535,
+                  onChange: (e) => applyIntensityRange(Number(e.target.value), intensityRange[1]),
+                  className: "w-16 bg-muted/40 border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] font-mono"
+                }
+              ),
+              /* @__PURE__ */ jsx("span", { className: "text-muted-foreground", children: "\u2013" }),
+              /* @__PURE__ */ jsx(
+                "input",
+                {
+                  type: "number",
+                  value: intensityRange[1],
+                  min: 0,
+                  max: 65535,
+                  onChange: (e) => applyIntensityRange(intensityRange[0], Number(e.target.value)),
+                  className: "w-16 bg-muted/40 border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] font-mono"
+                }
+              )
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxs(Section, { title: t.elevationSection, children: [
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: t.elevMin,
+                value: heightMin,
+                min: zMin - zRange * 0.1,
+                max: zMax + zRange * 0.1,
+                step: zRange / 200,
+                onChange: (v) => apply(setHeightMin, "heightMin", v),
+                display: (v) => v.toFixed(1) + "m"
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: t.elevMax,
+                value: heightMax,
+                min: zMin - zRange * 0.1,
+                max: zMax + zRange * 0.1,
+                step: zRange / 200,
+                onChange: (v) => apply(setHeightMax, "heightMax", v),
+                display: (v) => v.toFixed(1) + "m"
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsx(Section, { title: t.generalSection, children: /* @__PURE__ */ jsx(
+            Slider,
             {
-              type: "number",
-              value: intensityRange[0],
+              label: t.opacity,
+              value: opacity,
               min: 0,
-              max: 65535,
-              onChange: (e) => applyIntensityRange(Number(e.target.value), intensityRange[1]),
-              className: "w-16 bg-muted/40 border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] font-mono"
+              max: 1,
+              step: 0.02,
+              onChange: (v) => apply(setOpacity, "opacity", v)
             }
-          ),
-          /* @__PURE__ */ jsx("span", { className: "text-muted-foreground", children: "\u2013" }),
+          ) }),
           /* @__PURE__ */ jsx(
-            "input",
+            "button",
             {
-              type: "number",
-              value: intensityRange[1],
-              min: 0,
-              max: 65535,
-              onChange: (e) => applyIntensityRange(intensityRange[0], Number(e.target.value)),
-              className: "w-16 bg-muted/40 border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] font-mono"
+              onClick: () => {
+                apply(setRgbGamma, "rgbGamma", 1);
+                apply(setRgbBrightness, "rgbBrightness", 0);
+                apply(setRgbContrast, "rgbContrast", 0);
+                apply(setIntensityGamma, "intensityGamma", 1);
+                apply(setIntensityBrightness, "intensityBrightness", 0);
+                apply(setIntensityContrast, "intensityContrast", 0);
+                apply(setOpacity, "opacity", 1);
+                if (wb && !wb.isEmpty()) {
+                  apply(setHeightMin, "heightMin", wb.min.z);
+                  apply(setHeightMax, "heightMax", wb.max.z);
+                }
+                applyIntensityRange(0, 65535);
+              },
+              className: "w-full py-1.5 text-center rounded bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors text-[10px] font-mono",
+              children: t.reset
             }
           )
         ] })
-      ] }),
-      /* @__PURE__ */ jsxs(Section, { title: t.elevationSection, children: [
-        /* @__PURE__ */ jsx(
-          Slider,
-          {
-            label: t.elevMin,
-            value: heightMin,
-            min: zMin - zRange * 0.1,
-            max: zMax + zRange * 0.1,
-            step: zRange / 200,
-            onChange: (v) => apply(setHeightMin, "heightMin", v),
-            display: (v) => v.toFixed(1) + "m"
-          }
-        ),
-        /* @__PURE__ */ jsx(
-          Slider,
-          {
-            label: t.elevMax,
-            value: heightMax,
-            min: zMin - zRange * 0.1,
-            max: zMax + zRange * 0.1,
-            step: zRange / 200,
-            onChange: (v) => apply(setHeightMax, "heightMax", v),
-            display: (v) => v.toFixed(1) + "m"
-          }
-        )
-      ] }),
-      /* @__PURE__ */ jsx(Section, { title: t.generalSection, children: /* @__PURE__ */ jsx(
-        Slider,
-        {
-          label: t.opacity,
-          value: opacity,
-          min: 0,
-          max: 1,
-          step: 0.02,
-          onChange: (v) => apply(setOpacity, "opacity", v)
-        }
-      ) }),
-      /* @__PURE__ */ jsx(
-        "button",
-        {
-          onClick: () => {
-            apply(setRgbGamma, "rgbGamma", 1);
-            apply(setRgbBrightness, "rgbBrightness", 0);
-            apply(setRgbContrast, "rgbContrast", 0);
-            apply(setIntensityGamma, "intensityGamma", 1);
-            apply(setIntensityBrightness, "intensityBrightness", 0);
-            apply(setIntensityContrast, "intensityContrast", 0);
-            apply(setOpacity, "opacity", 1);
-            if (wb && !wb.isEmpty()) {
-              apply(setHeightMin, "heightMin", wb.min.z);
-              apply(setHeightMax, "heightMax", wb.max.z);
-            }
-            applyIntensityRange(0, 65535);
-          },
-          className: "w-full py-1.5 text-center rounded bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors text-[10px] font-mono",
-          children: t.reset
-        }
-      )
-    ] })
-  ] });
+      ]
+    }
+  );
 }
 function Section({ title, children }) {
   return /* @__PURE__ */ jsxs("div", { children: [
@@ -5023,7 +5384,7 @@ function GlassCard({ children, className }) {
 function WorkspaceLayout({ className }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
-  const { fps, pointBudget, activeTool, selectedCamera, uiMode } = useViewer();
+  const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
   const { metadata } = useData();
   const t = useLocale().viewport;
   const isPro = uiMode === "professional";
@@ -5052,6 +5413,7 @@ function WorkspaceLayout({ className }) {
         children: sidebarOpen && /* @__PURE__ */ jsx(GlassCard, { className: "h-full overflow-hidden", children: /* @__PURE__ */ jsx(Sidebar, {}) })
       }
     ),
+    isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsx("div", { className: "absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none", children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(ClipToolbar, {}) }) }),
     /* @__PURE__ */ jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-white/50 select-none", children: [
       metadata && /* @__PURE__ */ jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
       /* @__PURE__ */ jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
@@ -5086,7 +5448,7 @@ var buttonVariants = cva(
     }
   }
 );
-var Button = React23.forwardRef(
+var Button = React24.forwardRef(
   ({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
     "button",
     {
@@ -5100,7 +5462,7 @@ Button.displayName = "Button";
 
 // src/ui/slider.tsx
 init_utils();
-var Slider2 = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxs(
+var Slider2 = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxs(
   SliderPrimitive.Root,
   {
     ref,
@@ -5122,7 +5484,7 @@ init_utils();
 var Dialog = DialogPrimitive.Root;
 var DialogTrigger = DialogPrimitive.Trigger;
 var DialogPortal = DialogPrimitive.Portal;
-var DialogOverlay = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogOverlay = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Overlay,
   {
     ref,
@@ -5131,21 +5493,29 @@ var DialogOverlay = React23.forwardRef(({ className, ...props }, ref) => /* @__P
   }
 ));
 DialogOverlay.displayName = "DialogOverlay";
-var DialogContent = React23.forwardRef(({ className, children, container, ...props }, ref) => /* @__PURE__ */ jsxs(DialogPortal, { container: container ?? void 0, children: [
-  /* @__PURE__ */ jsx(DialogOverlay, {}),
-  /* @__PURE__ */ jsx(
-    DialogPrimitive.Content,
-    {
-      ref,
-      className: cn(
-        "fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] shadow-xl",
-        className
-      ),
-      ...props,
-      children
-    }
-  )
-] }));
+var DialogContent = React24.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
+  const dx = dragOffset?.x ?? 0;
+  const dy = dragOffset?.y ?? 0;
+  return /* @__PURE__ */ jsxs(DialogPortal, { container: container ?? void 0, children: [
+    /* @__PURE__ */ jsx(DialogOverlay, {}),
+    /* @__PURE__ */ jsx(
+      DialogPrimitive.Content,
+      {
+        ref,
+        className: cn(
+          "fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] shadow-xl",
+          className
+        ),
+        style: {
+          ...style,
+          transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px)`
+        },
+        ...props,
+        children
+      }
+    )
+  ] });
+});
 DialogContent.displayName = "DialogContent";
 var DialogHeader = ({
   className,
@@ -5161,7 +5531,7 @@ var DialogHeader = ({
   }
 );
 DialogHeader.displayName = "DialogHeader";
-var DialogTitle = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogTitle = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Title,
   {
     ref,
@@ -5170,7 +5540,7 @@ var DialogTitle = React23.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 DialogTitle.displayName = "DialogTitle";
-var DialogClose = React23.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogClose = React24.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Close,
   {
     ref,
@@ -5187,7 +5557,7 @@ DialogClose.displayName = "DialogClose";
 // src/ui/tabs.tsx
 init_utils();
 var Tabs = TabsPrimitive.Root;
-var TabsList = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsList = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.List,
   {
     ref,
@@ -5199,7 +5569,7 @@ var TabsList = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__
   }
 ));
 TabsList.displayName = "TabsList";
-var TabsTrigger = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsTrigger = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.Trigger,
   {
     ref,
@@ -5214,7 +5584,7 @@ var TabsTrigger = React23.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 TabsTrigger.displayName = "TabsTrigger";
-var TabsContent = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsContent = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.Content,
   {
     ref,
@@ -5232,7 +5602,7 @@ init_utils();
 var Popover = PopoverPrimitive.Root;
 var PopoverTrigger = PopoverPrimitive.Trigger;
 var PopoverAnchor = PopoverPrimitive.Anchor;
-var PopoverContent = React23.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(PopoverPrimitive.Portal, { children: /* @__PURE__ */ jsx(
+var PopoverContent = React24.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(PopoverPrimitive.Portal, { children: /* @__PURE__ */ jsx(
   PopoverPrimitive.Content,
   {
     ref,
@@ -5257,7 +5627,7 @@ init_utils();
 var TooltipProvider = TooltipPrimitive.Provider;
 var Tooltip = TooltipPrimitive.Root;
 var TooltipTrigger = TooltipPrimitive.Trigger;
-var TooltipContent = React23.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(TooltipPrimitive.Portal, { children: /* @__PURE__ */ jsx(
+var TooltipContent = React24.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(TooltipPrimitive.Portal, { children: /* @__PURE__ */ jsx(
   TooltipPrimitive.Content,
   {
     ref,
@@ -5297,7 +5667,7 @@ var toggleVariants = cva(
     }
   }
 );
-var Toggle = React23.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
+var Toggle = React24.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
   TogglePrimitive.Root,
   {
     ref,
@@ -5312,7 +5682,7 @@ init_utils();
 var Select = SelectPrimitive.Root;
 var SelectGroup = SelectPrimitive.Group;
 var SelectValue = SelectPrimitive.Value;
-var SelectTrigger = React23.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+var SelectTrigger = React24.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
   SelectPrimitive.Trigger,
   {
     ref,
@@ -5332,7 +5702,7 @@ var SelectTrigger = React23.forwardRef(({ className, children, ...props }, ref) 
   }
 ));
 SelectTrigger.displayName = "SelectTrigger";
-var SelectScrollUpButton = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectScrollUpButton = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.ScrollUpButton,
   {
     ref,
@@ -5345,7 +5715,7 @@ var SelectScrollUpButton = React23.forwardRef(({ className, ...props }, ref) => 
   }
 ));
 SelectScrollUpButton.displayName = "SelectScrollUpButton";
-var SelectScrollDownButton = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectScrollDownButton = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.ScrollDownButton,
   {
     ref,
@@ -5358,7 +5728,7 @@ var SelectScrollDownButton = React23.forwardRef(({ className, ...props }, ref) =
   }
 ));
 SelectScrollDownButton.displayName = "SelectScrollDownButton";
-var SelectContent = React23.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Portal, { children: /* @__PURE__ */ jsxs(
+var SelectContent = React24.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Portal, { children: /* @__PURE__ */ jsxs(
   SelectPrimitive.Content,
   {
     ref,
@@ -5391,7 +5761,7 @@ var SelectContent = React23.forwardRef(({ className, children, position = "poppe
   }
 ) }));
 SelectContent.displayName = "SelectContent";
-var SelectLabel = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectLabel = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.Label,
   {
     ref,
@@ -5403,7 +5773,7 @@ var SelectLabel = React23.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 SelectLabel.displayName = "SelectLabel";
-var SelectItem = React23.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+var SelectItem = React24.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
   SelectPrimitive.Item,
   {
     ref,
@@ -5421,7 +5791,7 @@ var SelectItem = React23.forwardRef(({ className, children, ...props }, ref) => 
   }
 ));
 SelectItem.displayName = "SelectItem";
-var SelectSeparator = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectSeparator = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.Separator,
   {
     ref,
@@ -6401,109 +6771,128 @@ function DisplaySettingsDialog({
   const setSettings = viewer.setDisplaySettings ?? setLocalSettings;
   const t = useLocale().displaySettings;
   const pcvRoot = usePcvRoot();
+  const { position, onDragStart, reset } = useDraggable();
+  useEffect(() => {
+    if (!open) reset();
+  }, [open, reset]);
   const applyPreset = (preset) => {
     setSettings({ ...DISPLAY_PRESETS[preset] });
   };
   const updateField = (key, value) => {
     setSettings({ ...settings, [key]: value, preset: settings.preset });
   };
-  return /* @__PURE__ */ jsx(Dialog2, { open, onOpenChange, children: /* @__PURE__ */ jsxs(DialogContent2, { className: "w-[420px]", container: pcvRoot?.current ?? void 0, children: [
-    /* @__PURE__ */ jsxs(DialogHeader2, { children: [
-      /* @__PURE__ */ jsx(DialogTitle2, { children: t.title }),
-      /* @__PURE__ */ jsx(DialogClose2, { children: /* @__PURE__ */ jsx(X, { size: 14 }) })
-    ] }),
-    /* @__PURE__ */ jsxs(Tabs2, { defaultValue: "presets", className: "px-4 py-3", children: [
-      /* @__PURE__ */ jsxs(TabsList2, { className: "mb-4", children: [
-        /* @__PURE__ */ jsx(TabsTrigger2, { value: "presets", children: t.presetsTab }),
-        /* @__PURE__ */ jsx(TabsTrigger2, { value: "advanced", children: t.advancedTab })
-      ] }),
-      /* @__PURE__ */ jsx(TabsContent2, { value: "presets", children: /* @__PURE__ */ jsx("div", { className: "grid grid-cols-3 gap-3", children: ["compact", "standard", "prominent"].map(
-        (preset) => /* @__PURE__ */ jsx(
-          PresetCard,
+  return /* @__PURE__ */ jsx(Dialog2, { open, onOpenChange, children: /* @__PURE__ */ jsxs(
+    DialogContent2,
+    {
+      className: "w-[420px]",
+      container: pcvRoot?.current ?? void 0,
+      dragOffset: position,
+      children: [
+        /* @__PURE__ */ jsxs(
+          DialogHeader2,
           {
-            preset,
-            label: t[`preset_${preset}`] ?? preset,
-            description: t[`preset_${preset}_desc`] ?? "",
-            active: settings.preset === preset,
-            onClick: () => applyPreset(preset)
-          },
-          preset
-        )
-      ) }) }),
-      /* @__PURE__ */ jsx(TabsContent2, { value: "advanced", children: /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
-        /* @__PURE__ */ jsxs(SettingsSection, { title: t.measurementsSection, children: [
-          /* @__PURE__ */ jsx(
-            SliderRow,
-            {
-              label: t.lineWidth,
-              min: 1,
-              max: 6,
-              step: 0.5,
-              value: settings.measurementLineWidth,
-              onChange: (v) => updateField("measurementLineWidth", v)
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            SliderRow,
-            {
-              label: t.labelScale,
-              min: 0.3,
-              max: 2.5,
-              step: 0.1,
-              value: settings.measurementLabelScale,
-              onChange: (v) => updateField("measurementLabelScale", v)
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            SliderRow,
-            {
-              label: t.sphereRadius,
-              min: 0.02,
-              max: 0.5,
-              step: 0.01,
-              value: settings.measurementSphereRadius,
-              onChange: (v) => updateField("measurementSphereRadius", v)
-            }
-          )
-        ] }),
-        /* @__PURE__ */ jsxs(SettingsSection, { title: t.markersSection, children: [
-          /* @__PURE__ */ jsx(
-            SliderRow,
-            {
-              label: t.markerScale,
-              min: 0.2,
-              max: 3,
-              step: 0.1,
-              value: settings.markerSphereScale,
-              onChange: (v) => updateField("markerSphereScale", v)
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            SliderRow,
-            {
-              label: t.markerOpacity,
-              min: 0.1,
-              max: 1,
-              step: 0.05,
-              value: settings.markerSphereOpacity,
-              onChange: (v) => updateField("markerSphereOpacity", v)
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            SliderRow,
-            {
-              label: t.markerLabelScale,
-              min: 0.3,
-              max: 2.5,
-              step: 0.1,
-              value: settings.markerLabelScale,
-              onChange: (v) => updateField("markerLabelScale", v)
-            }
-          )
+            className: "cursor-move select-none",
+            onMouseDown: onDragStart,
+            children: [
+              /* @__PURE__ */ jsx(DialogTitle2, { children: t.title }),
+              /* @__PURE__ */ jsx(DialogClose2, { onMouseDown: (e) => e.stopPropagation(), children: /* @__PURE__ */ jsx(X, { size: 14 }) })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs(Tabs2, { defaultValue: "presets", className: "px-4 py-3", children: [
+          /* @__PURE__ */ jsxs(TabsList2, { className: "mb-4", children: [
+            /* @__PURE__ */ jsx(TabsTrigger2, { value: "presets", children: t.presetsTab }),
+            /* @__PURE__ */ jsx(TabsTrigger2, { value: "advanced", children: t.advancedTab })
+          ] }),
+          /* @__PURE__ */ jsx(TabsContent2, { value: "presets", children: /* @__PURE__ */ jsx("div", { className: "grid grid-cols-3 gap-3", children: ["compact", "standard", "prominent"].map(
+            (preset) => /* @__PURE__ */ jsx(
+              PresetCard,
+              {
+                preset,
+                label: t[`preset_${preset}`] ?? preset,
+                description: t[`preset_${preset}_desc`] ?? "",
+                active: settings.preset === preset,
+                onClick: () => applyPreset(preset)
+              },
+              preset
+            )
+          ) }) }),
+          /* @__PURE__ */ jsx(TabsContent2, { value: "advanced", children: /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
+            /* @__PURE__ */ jsxs(SettingsSection, { title: t.measurementsSection, children: [
+              /* @__PURE__ */ jsx(
+                SliderRow,
+                {
+                  label: t.lineWidth,
+                  min: 1,
+                  max: 6,
+                  step: 0.5,
+                  value: settings.measurementLineWidth,
+                  onChange: (v) => updateField("measurementLineWidth", v)
+                }
+              ),
+              /* @__PURE__ */ jsx(
+                SliderRow,
+                {
+                  label: t.labelScale,
+                  min: 0.3,
+                  max: 2.5,
+                  step: 0.1,
+                  value: settings.measurementLabelScale,
+                  onChange: (v) => updateField("measurementLabelScale", v)
+                }
+              ),
+              /* @__PURE__ */ jsx(
+                SliderRow,
+                {
+                  label: t.sphereRadius,
+                  min: 0.02,
+                  max: 0.5,
+                  step: 0.01,
+                  value: settings.measurementSphereRadius,
+                  onChange: (v) => updateField("measurementSphereRadius", v)
+                }
+              )
+            ] }),
+            /* @__PURE__ */ jsxs(SettingsSection, { title: t.markersSection, children: [
+              /* @__PURE__ */ jsx(
+                SliderRow,
+                {
+                  label: t.markerScale,
+                  min: 0.2,
+                  max: 3,
+                  step: 0.1,
+                  value: settings.markerSphereScale,
+                  onChange: (v) => updateField("markerSphereScale", v)
+                }
+              ),
+              /* @__PURE__ */ jsx(
+                SliderRow,
+                {
+                  label: t.markerOpacity,
+                  min: 0.1,
+                  max: 1,
+                  step: 0.05,
+                  value: settings.markerSphereOpacity,
+                  onChange: (v) => updateField("markerSphereOpacity", v)
+                }
+              ),
+              /* @__PURE__ */ jsx(
+                SliderRow,
+                {
+                  label: t.markerLabelScale,
+                  min: 0.3,
+                  max: 2.5,
+                  step: 0.1,
+                  value: settings.markerLabelScale,
+                  onChange: (v) => updateField("markerLabelScale", v)
+                }
+              )
+            ] })
+          ] }) })
         ] })
-      ] }) })
-    ] })
-  ] }) });
+      ]
+    }
+  ) });
 }
 
 // src/hooks/use-navigation-actions.ts
@@ -6585,57 +6974,6 @@ function useMeasurementActions() {
     remove,
     rename,
     exportCSV
-  };
-}
-
-// src/hooks/use-clip-actions.ts
-init_viewer_provider();
-function useClipActions() {
-  const { clipManager, loader, clipBoxEntries, selectedClipBoxId, activeTool, setActiveTool } = useViewer();
-  const boxes = clipBoxEntries;
-  const hasClipBox = boxes.length > 0;
-  const clipMode = boxes[0]?.mode ?? "outside";
-  const addBox = useCallback(() => {
-    if (!clipManager || !loader) return;
-    const wb = loader.worldBox;
-    if (wb.isEmpty()) return;
-    const entry = clipManager.addBox(wb.clone());
-    clipManager.selectBox(entry.id);
-    clipManager.setTransformMode("scale");
-  }, [clipManager, loader]);
-  const clearAll = useCallback(() => {
-    clipManager?.clear();
-    if (activeTool === "section-box") setActiveTool("none");
-  }, [clipManager, activeTool, setActiveTool]);
-  const toggleMode = useCallback(() => {
-    const next = clipMode === "outside" ? "inside" : "outside";
-    for (const b of boxes) {
-      clipManager?.setBoxMode(b.id, next);
-    }
-  }, [clipManager, boxes, clipMode]);
-  const selectBox = useCallback((id) => {
-    clipManager?.selectBox(id);
-  }, [clipManager]);
-  const setTransformMode = useCallback((mode) => {
-    if (!clipManager) return;
-    const id = clipManager.getSelectedId();
-    if (id) {
-      clipManager.setTransformMode(mode);
-    } else if (boxes[0]) {
-      clipManager.selectBox(boxes[0].id);
-      clipManager.setTransformMode(mode);
-    }
-  }, [clipManager, boxes]);
-  return {
-    boxes,
-    selectedBoxId: selectedClipBoxId,
-    hasClipBox,
-    clipMode,
-    addBox,
-    clearAll,
-    toggleMode,
-    selectBox,
-    setTransformMode
   };
 }
 
@@ -6960,9 +7298,22 @@ var de = createLocale(en, {
     professional: "Professionell",
     lite: "Lite",
     modeLabel: "Modus"
+  },
+  clipToolbar: {
+    title: "Schnitte",
+    addBox: "Box hinzuf\xFCgen",
+    clearAll: "Alle entfernen",
+    keepInside: "Innen behalten (alle)",
+    keepOutside: "Au\xDFen behalten (alle)",
+    show: "Anzeigen",
+    hide: "Ausblenden",
+    delete: "L\xF6schen",
+    move: "Verschieben",
+    scale: "Skalieren",
+    rotateZ: "Drehen (Z)"
   }
 });
 
-export { AboutDialog, AxisWidget, Button, CameraAnimator, ClassificationPanel, ClipManager, CollapsibleSidebar, ComponentsProvider, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, DisplaySettingsDialog, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, MinimapRenderer, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider2 as Slider, Tabs, TabsContent, TabsList, TabsTrigger, ThemeProvider, Toggle, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, AxisWidget, Button, CameraAnimator, ClassificationPanel, ClipManager, ClipToolbar, CollapsibleSidebar, ComponentsProvider, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, DisplaySettingsDialog, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, MinimapRenderer, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider2 as Slider, Tabs, TabsContent, TabsList, TabsTrigger, ThemeProvider, Toggle, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map
