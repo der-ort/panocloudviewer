@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 
 const PanoCloudViewer = dynamic(
   () => import("@der-ort/pano-cloud-viewer").then((m) => m.PanoCloudViewer),
@@ -34,8 +35,30 @@ const SOURCE = {
 
 export default function Page() {
   return (
-    <div style={{ width: "100vw", height: "100vh" }}>
+    <div style={{ width: "100vw", height: "100vh", position: "relative" }}>
       <PanoCloudViewer source={SOURCE} theme="dark" />
+      <Link
+        href="/gallery"
+        style={{
+          position: "absolute",
+          bottom: 16,
+          right: 16,
+          zIndex: 1000,
+          padding: "6px 14px",
+          fontSize: 12,
+          fontFamily: "ui-sans-serif, system-ui, sans-serif",
+          fontWeight: 500,
+          color: "rgba(255,255,255,0.8)",
+          background: "rgba(0,0,0,0.55)",
+          border: "1px solid rgba(255,255,255,0.15)",
+          borderRadius: 6,
+          textDecoration: "none",
+          backdropFilter: "blur(6px)",
+          transition: "background 0.15s",
+        }}
+      >
+        View demo gallery →
+      </Link>
     </div>
   );
 }
