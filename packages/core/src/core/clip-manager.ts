@@ -52,7 +52,7 @@ export class ClipManager {
     tc.addEventListener("dragging-changed", (e: { value: boolean }) => {
       this.sm.controls.enabled = !e.value;
     });
-    this.sm.scene.add(tc);
+    this.sm.scene.add(tc.getHelper());
     this.transformControls = tc;
     this._raiseGizmo();
   }
@@ -67,9 +67,10 @@ export class ClipManager {
   private _raiseGizmo(): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tc = this.transformControls as any;
-    if (!tc) return;
+    const helper = tc?.getHelper?.();
+    if (!helper) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tc.traverse((child: any) => {
+    helper.traverse((child: any) => {
       if (!child.material) return;
       const mats = Array.isArray(child.material) ? child.material : [child.material];
       for (const m of mats) {
@@ -364,7 +365,7 @@ export class ClipManager {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tc = this.transformControls as any;
     if (tc) {
-      this.sm.scene.remove(tc);
+      this.sm.scene.remove(tc.getHelper());
       tc.dispose();
       this.transformControls = null;
     }
