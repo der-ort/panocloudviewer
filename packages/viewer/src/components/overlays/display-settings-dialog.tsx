@@ -7,6 +7,7 @@ import { X, Minus, Circle, Plus } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
+import { usePcvRoot } from "../pano-cloud-viewer";
 import { DISPLAY_PRESETS } from "@der-ort/pano-cloud-viewer-core";
 import type { DisplayPreset, DisplaySettings } from "@der-ort/pano-cloud-viewer-core";
 
@@ -142,6 +143,7 @@ export function DisplaySettingsDialog({
     (viewer as any).setDisplaySettings ?? setLocalSettings;
 
   const t = useLocale().displaySettings;
+  const pcvRoot = usePcvRoot();
 
   const applyPreset = (preset: DisplayPreset) => {
     setSettings({ ...DISPLAY_PRESETS[preset] });
@@ -156,7 +158,7 @@ export function DisplaySettingsDialog({
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
+      <Dialog.Portal container={pcvRoot?.current ?? undefined}>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
         <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-[420px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] shadow-xl">
           {/* Header */}

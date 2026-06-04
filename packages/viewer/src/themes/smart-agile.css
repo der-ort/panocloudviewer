@@ -27,7 +27,7 @@
 */
 
 /* ── Light theme overrides ──────────────────────────────────── */
-:root {
+.pcv {
   --background:     72 19% 92%;   /* #EEF0E4 */
   --foreground:     0 0% 8%;
 
@@ -69,7 +69,8 @@
 }
 
 /* ── Dark theme overrides ───────────────────────────────────── */
-.dark {
+.pcv.dark,
+.pcv[data-theme="dark"] {
   --background:     0 0% 4%;      /* ~#0A0A0A */
   --foreground:     0 0% 95%;
 

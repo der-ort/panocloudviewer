@@ -1,7 +1,7 @@
 "use client";
 
-import React, { Suspense, lazy } from "react";
-import { ThemeProvider } from "../providers/theme-provider";
+import React, { createContext, useContext, useRef, useCallback, Suspense, lazy } from "react";
+import { ThemeProvider, useTheme } from "../providers/theme-provider";
 import { ViewerProvider, useViewer } from "../providers/viewer-provider";
 import { DataProvider } from "../providers/data-provider";
 import { LocaleProvider } from "../i18n/locale-context";
@@ -10,8 +10,34 @@ import { PanoViewer } from "./overlays/pano-viewer";
 import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
 import type { PointCloudSource } from "@der-ort/pano-cloud-viewer-core";
 import type { ViewerLocale } from "../i18n/types";
+import { cn } from "../lib/utils";
 
 const Viewport = lazy(() => import("./viewport").then(m => ({ default: m.Viewport })));
+
+/**
+ * Context that exposes the `.pcv` root element so portalled content
+ * (Radix Dialog.Portal, createPortal) can render inside the scoped CSS boundary.
+ */
+const PcvRootContext = createContext<React.RefObject<HTMLDivElement | null> | null>(null);
+
+/**
+ * Returns a ref to the `.pcv` root element.
+ * Use this as the `container` prop for Radix Portal and createPortal so that
+ * portalled content inherits the viewer's scoped CSS custom properties.
+ *
+ * @example
+ * function MyDialog() {
+ *   const pcvRef = usePcvRoot();
+ *   return (
+ *     <Dialog.Portal container={pcvRef?.current ?? undefined}>
+ *       ...
+ *     </Dialog.Portal>
+ *   );
+ * }
+ */
+export function usePcvRoot(): React.RefObject<HTMLDivElement | null> | null {
+  return useContext(PcvRootContext);
+}
 
 export interface PanoCloudViewerProps {
   /** Data source: S3 bucket, local path, or Electron IPC */
@@ -64,6 +90,35 @@ function PanoOverlayBridge() {
   return <PanoViewer />;
 }
 
+interface PcvRootProps {
+  className?: string;
+  children: React.ReactNode;
+}
+
+/**
+ * Inner wrapper rendered inside ThemeProvider so it can read `useTheme()`.
+ * Applies the `pcv` scoping class and the resolved theme class to the root div,
+ * ensuring all CSS tokens and Tailwind `dark:` variants are scoped to this element.
+ * Also exposes a ref to this element via PcvRootContext so portalled content
+ * (Radix Dialog.Portal, createPortal) can be anchored inside the CSS scope.
+ */
+function PcvRoot({ className, children }: PcvRootProps) {
+  const { resolvedTheme } = useTheme();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  return (
+    <PcvRootContext.Provider value={rootRef}>
+      <div
+        ref={rootRef}
+        className={cn("pcv", resolvedTheme, "w-full h-full", className)}
+        data-theme={resolvedTheme}
+      >
+        {children}
+      </div>
+    </PcvRootContext.Provider>
+  );
+}
+
 /**
  * Drop-in PanoCloud Viewer component.
  *
@@ -87,7 +142,7 @@ export function PanoCloudViewer({ source, theme = "dark", className, locale, chi
       <ThemeProvider defaultTheme={theme}>
         <DataProvider adapter={adapter}>
           <ViewerProvider config={config}>
-            <div className={`w-full h-full ${className ?? ""}`}>
+            <PcvRoot className={className}>
               {children ? (
                 <>
                   {children(
@@ -100,7 +155,7 @@ export function PanoCloudViewer({ source, theme = "dark", className, locale, chi
               ) : (
                 <WorkspaceLayout />
               )}
-            </div>
+            </PcvRoot>
           </ViewerProvider>
         </DataProvider>
       </ThemeProvider>

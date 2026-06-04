@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import React, { createContext, useContext, useEffect, useState, useReducer, type ReactNode } from "react";
 import type { Theme } from "@der-ort/pano-cloud-viewer-core";
 
 interface ThemeContextValue {
@@ -34,16 +34,22 @@ export function ThemeProvider({
     return (localStorage.getItem(storageKey) as Theme) ?? defaultTheme;
   });
 
+  // Incrementing counter forces a re-render when OS preference changes while
+  // theme === "system". Using a counter avoids the React bail-out that occurs
+  // when setState is called with the same primitive value ("system" → "system").
+  const [, forceUpdate] = useReducer((n: number) => n + 1, 0);
+
   const resolvedTheme: "dark" | "light" = theme === "system"
     ? (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
     : theme;
 
+  // Listen for system preference changes when theme === "system"
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.remove("dark", "light");
-    root.classList.add(resolvedTheme);
-    root.setAttribute("data-theme", resolvedTheme);
-  }, [resolvedTheme]);
+    if (theme !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", forceUpdate);
+    return () => mq.removeEventListener("change", forceUpdate);
+  }, [theme]);
 
   const setTheme = (t: Theme) => {
     setThemeState(t);
