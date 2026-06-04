@@ -22,3 +22,6 @@ Thumbs.db
 # Claude Code local settings
 .claude/settings.local.json
 .claude/worktrees/
+
+# VitePress build cache
+docs/.vitepress/cache/

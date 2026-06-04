@@ -225,7 +225,7 @@ See [Custom UI](/guide/custom-ui) for a full walkthrough.
 ## Next Steps
 
 - [Data Format](/guide/data-format) — expected folder structure and `cameras.json` schema
-- [Navigation](/guide/navigation) — orbit, fly, and earth modes explained
+- [Navigation](/guide/navigation) — orbit, free, and pan modes explained
 - [Custom UI](/guide/custom-ui) — render prop, action hooks, packaged layout components
 - [Theming](/guide/theming) — CSS variables, dark/light mode, shadcn integration
 - [API Reference](/api) — complete component and hook documentation

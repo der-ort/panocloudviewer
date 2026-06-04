@@ -555,7 +555,7 @@ Manages the Three.js scene, camera, renderer, and animation loop.
 | `camera` | `THREE.PerspectiveCamera` | The main perspective camera |
 | `renderer` | `THREE.WebGLRenderer` | The WebGL renderer |
 | `controls` | `OrbitControls` | OrbitControls instance (always alive, enabled/disabled per mode) |
-| `flySpeed` | `number` | Movement speed for fly mode (auto-set after cloud loads) |
+| `flySpeed` | `number` | Legacy field, retained for API compatibility — no longer drives navigation |
 | `potree` | `unknown` | potree-core Potree instance (set after lazy import) |
 | `pointClouds` | `unknown[]` | Array of loaded potree-core point cloud objects |
 | `navigationMode` | `NavigationMode` | Read-only getter for current mode |
@@ -806,7 +806,7 @@ interface ExportOptions {
 ```typescript
 type Theme = "dark" | "light" | "system";
 
-type NavigationMode = "orbit" | "fly" | "earth";
+type NavigationMode = "orbit" | "free" | "pan";
 type CameraProjection = "perspective" | "orthographic";
 
 type ActiveTool =

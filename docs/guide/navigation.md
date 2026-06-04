@@ -1,6 +1,6 @@
 # Navigation Modes
 
-PanoCloudViewer supports three navigation modes that control how the camera responds to mouse and keyboard input.
+PanoCloudViewer ships CAD/Blender-style camera navigation. There are three modes, all driven by a **single `OrbitControls` instance** that is reconfigured per mode — so the orbit target stays the one source of truth for clipping, the minimap, camera animation, and the orthographic-camera sync. There is no flight-simulator / WASD mode.
 
 ---
 
@@ -8,9 +8,15 @@ PanoCloudViewer supports three navigation modes that control how the camera resp
 
 | Mode | Best for | Primary action |
 |---|---|---|
-| `orbit` | General inspection, CAD-style review | Left-drag to rotate around a target |
-| `fly` | Walkthrough, interior exploration | WASD moves, mouse-drag looks |
-| `earth` | Top-down / map-style view | Left-drag pans, scroll zooms |
+| `orbit` | General inspection, CAD-style review | Left-drag rotates around a target (turntable) |
+| `free` | Free look, inspecting from any angle | Left/middle-drag rotates in any direction (Blender-ish) |
+| `pan` | Top-down / map-style review | Left-drag pans, horizon stays level |
+
+All three modes share:
+
+- **Zoom-to-cursor** — the scroll wheel zooms toward the point under the cursor (`OrbitControls.zoomToCursor = true`).
+- **Damping** — smooth, inertial motion (`enableDamping = true`).
+- **Natural rotate direction** — `rotateSpeed` is positive (no inverted feel).
 
 Switch the mode programmatically:
 
@@ -20,131 +26,89 @@ import { useNavigationActions } from '@der-ort/pano-cloud-viewer';
 const { setNavigationMode } = useNavigationActions();
 
 setNavigationMode('orbit');
-setNavigationMode('fly');
-setNavigationMode('earth');
+setNavigationMode('free');
+setNavigationMode('pan');
 ```
 
 Or via `setNavigationMode` from `useViewer()`:
 
 ```tsx
 const { setNavigationMode } = useViewer();
-setNavigationMode('fly');
+setNavigationMode('pan');
 ```
 
 ---
 
 ## Orbit mode (default)
 
-Uses `OrbitControls` with `screenSpacePanning=true` and `maxPolarAngle=π` (full sphere).
-
-The camera tumbles around a fixed **target point**. All rotation is relative to that target, which stays at the center of the screen.
+CAD-style turntable. The camera rotates around a fixed **target point** that stays at the center of the screen, with the Z axis kept up. Full-sphere rotation is allowed (`maxPolarAngle = π`).
 
 ### Mouse mappings
 
 | Input | Action |
 |---|---|
 | Left-drag | Rotate / tumble around the target |
+| Middle-drag | Dolly (zoom in/out) |
 | Right-drag | Pan (translate camera + target) |
-| Middle-drag | Dolly (zoom) |
-| Scroll wheel | Zoom toward cursor (zoom-to-cursor) |
-
-The `rotateSpeed` is set to `-1` (negative) so that dragging up moves the camera up — this feels natural in a Z-up point cloud scene where the "up" axis is Z.
-
-`maxPolarAngle=π` means the camera can go fully inverted (below the scene). There is no floor clamp in orbit mode.
+| Scroll wheel | Zoom toward cursor |
 
 ---
 
-## Fly mode
+## Free mode
 
-Uses a custom `FpsControls` implementation. `OrbitControls` is disabled while fly mode is active.
-
-The camera moves freely in 3D space with no fixed target point. It is first-person / walkthrough style.
-
-### Controls
-
-| Input | Action |
-|---|---|
-| `W` / `S` | Move forward / backward |
-| `A` / `D` | Strafe left / right |
-| `Q` / `E` | Move down / up |
-| Left-drag | Look (rotate view) |
-
-Mouse movement only rotates the view while a mouse button is held (`dragToLook=true`). This prevents accidental view rotation when clicking UI elements.
-
-### Speed scaling
-
-Movement speed (`movementSpeed`) is automatically set proportional to the loaded point cloud's bounding box size after `PointCloudLoader.load()` completes:
-
-```
-flySpeed = maxDim / 20
-```
-
-This makes movement feel natural at any cloud scale — a building-sized cloud and a city-sized cloud both feel traversable at a reasonable speed.
-
-### First-frame delta cap
-
-On the first animation frame after switching to fly mode, the elapsed `delta` since the last frame may be large (e.g. if the browser tab was hidden). Without protection, FpsControls would compute a large position jump.
-
-The frame loop caps the delta at 100ms:
-```typescript
-fpsControls.update(Math.min(delta / 1000, 0.1)); // cap at 100ms
-```
-
-This limits the first-frame movement to at most `movementSpeed * 0.1` units, preventing camera jumps.
-
----
-
-## Earth mode
-
-Uses `OrbitControls` configured for a map/top-down workflow.
-
-`maxPolarAngle=Math.PI / 2.05` (just above 90°) prevents the camera from going below the horizontal plane. This keeps the camera above the scene like a traditional GIS or mapping tool.
+Blender-style free orbit. Like orbit, but rotation is mapped to **both** the left and middle mouse buttons and the camera can swing fully around the target — handy for quickly inspecting a feature from any angle without re-centering.
 
 ### Mouse mappings
 
 | Input | Action |
 |---|---|
-| Left-drag | Orbit (tilt slightly around target) |
+| Left-drag | Rotate (full sphere) |
+| Middle-drag | Rotate (full sphere) |
 | Right-drag | Pan |
-| Scroll wheel | Zoom |
+| Scroll wheel | Zoom toward cursor |
 
-The combination of the polar angle clamp and `screenSpacePanning=true` produces a feel similar to Google Maps or Google Earth: scroll to zoom, drag to pan, and limited tilt.
+---
+
+## Pan mode
+
+Map / top-down workflow. `maxPolarAngle = π / 2.05` (just under 90°) keeps the camera above the horizon, and left-drag pans the scene like a GIS/mapping tool.
+
+### Mouse mappings
+
+| Input | Action |
+|---|---|
+| Left-drag | Pan the scene |
+| Middle-drag | Dolly (zoom) |
+| Right-drag | Rotate (limited tilt, horizon-locked) |
+| Scroll wheel | Zoom toward cursor |
 
 ---
 
 ## Setting the default navigation mode
 
-Pass `navigationMode` in `ViewerConfig` or set it before Viewport mounts. Since `ViewerProvider` initialises with `"orbit"`, and Viewport syncs the provider's `navigationMode` to `SceneManager` on mount, you can set a different default by keeping state in a parent component:
+`ViewerProvider` initialises with `"orbit"`, and Viewport syncs the provider's `navigationMode` to `SceneManager` on mount. To start in another mode, set it imperatively from a child of `ViewerProvider`:
 
 ```tsx
-import { useState } from 'react';
-import { PanoCloudViewer, ViewerProvider, useViewer } from '@der-ort/pano-cloud-viewer';
+import { useEffect } from 'react';
+import { useViewer } from '@der-ort/pano-cloud-viewer';
 
-// Option 1 — programmatic after mount
-function OnMountNav() {
+function DefaultPanMode() {
   const { setNavigationMode } = useViewer();
-  React.useEffect(() => { setNavigationMode('earth'); }, []);
+  useEffect(() => { setNavigationMode('pan'); }, [setNavigationMode]);
   return null;
 }
-
-// Option 2 — use the WorkspaceLayout default controls
-// (DisplayControls has nav mode buttons that default to orbit)
 ```
 
-> **Note**: `ViewerConfig` does not yet have a `defaultNavigationMode` field — set the mode imperatively in a `useEffect` inside a child component of `ViewerProvider`.
+The default `WorkspaceLayout` also exposes orbit/free/pan buttons in its display controls.
 
 ---
 
-## What happened to the flight-sim / WASD-always mode?
+## What happened to the flight-sim / WASD mode?
 
-The previous `fly` mode used Three.js `FlyControls` which moved continuously while keys were held and tracked mouse position at all times. This has been replaced with the new `FpsControls` implementation (`fly` mode) which:
-
-- Only looks when a mouse button is held (`dragToLook=true`)
-- Does not require a pointer lock
-- Works better alongside React UI (mouse can reach buttons without affecting the view)
-
-The old `fly` (`FlyControls`) and `earth` (`OrbitControls` with Google-Maps feel) naming has been retained in the `NavigationMode` type for compatibility:
+Earlier versions had a `fly` mode (custom `FpsControls`: WASD movement + drag-to-look) and an `earth` mode. Both are gone. The flight-sim feel was replaced with the robust single-`OrbitControls` design above:
 
 ```typescript
-type NavigationMode = "orbit" | "fly" | "earth";
+type NavigationMode = "orbit" | "free" | "pan";
 ```
+
+Using one controller for every mode means there is never more than one controller responding to input, and the orbit target never desyncs from the rest of the system (clipping, minimap click-to-navigate, `CameraAnimator.flyTo`, and the ortho-camera frustum all read `controls.target`).

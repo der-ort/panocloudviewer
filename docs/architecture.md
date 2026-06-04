@@ -84,7 +84,7 @@ Because the committed `dist/` is self-contained (core bundled in), consumers **n
 │  Three.js / WebGL                                             │
 │                                                               │
 │  THREE.WebGLRenderer  THREE.Scene  THREE.PerspectiveCamera    │
-│  OrbitControls  FpsControls  TransformControls                │
+│  OrbitControls · TransformControls                │
 │  potree-core: Potree.updatePointClouds() (octree LOD)         │
 └───────────────────────────────────────────────────────────────┘
 ```
@@ -104,8 +104,7 @@ requestAnimationFrame(loop)
   │      renderer.setScissorTest(false); renderer.clear()
   │
   ├─ 2. Controls update
-  │      if fly mode:  fpsControls.update(min(delta/1000, 0.1))
-  │      else:         orbitControls.update()
+  │      orbitControls.update()   // single instance for all nav modes
   │
   ├─ 3. potree-core LOD update
   │      potree.updatePointClouds(pointClouds, camera, renderer)
@@ -174,7 +173,7 @@ Provides the active `ViewerLocale` object via context. If no `locale` prop is pa
 
 ### SceneManager
 
-The foundation everything else builds on. Owns the Three.js scene graph, camera, renderer, and both control systems. The `OrbitControls` instance is always created and kept alive even in fly mode — it is simply `enabled = false` while fly mode is active. This avoids teardown/recreation cost on mode switches.
+The foundation everything else builds on. Owns the Three.js scene graph, camera, renderer, and controls. A **single `OrbitControls` instance** drives all three navigation modes (orbit/free/pan) — `setNavigationMode` just reconfigures its mouse-button map and polar limits. Keeping one controller means its `target` stays authoritative for clipping, the minimap, `CameraAnimator`, and the ortho-camera sync, with no multi-controller desync.
 
 The ResizeObserver on the canvas container handles responsive resizing automatically — there is no need for external resize event listeners.
 
@@ -313,21 +312,19 @@ After initialisation, Viewport watches specific provider state changes and syncs
 
 ## 9. Navigation Modes
 
-Three navigation modes are implemented in `SceneManager.setNavigationMode()`:
+All three navigation modes are implemented in `SceneManager.setNavigationMode()` on **one** `OrbitControls` instance (`zoomToCursor=true`, damping, natural rotate). Each mode only changes the mouse-button map and polar limits — see [Navigation Modes](/guide/navigation) for the full mouse tables.
 
-### Orbit (`OrbitControls`)
+### Orbit (default — CAD turntable)
 
-Default mode. `OrbitControls` with `screenSpacePanning=true` and `maxPolarAngle=π`. Left-drag rotates (negative `rotateSpeed` for natural Z-up feel), middle-drag dolly, right-drag pan, scroll to zoom-to-cursor. Full-sphere tumble — the camera can go above or below the scene.
+`maxPolarAngle=π`, `mouseButtons = { LEFT: ROTATE, MIDDLE: DOLLY, RIGHT: PAN }`. Left-drag tumbles around the target, scroll zooms toward the cursor. Full-sphere.
 
-### Fly (`FpsControls`)
+### Free (Blender-ish)
 
-Free-flight mode. `OrbitControls` is disabled (`enabled = false`) and a lazily-created `FpsControls` instance takes over. WASD moves forward/back/left/right, mouse-drag looks. `dragToLook=true` means mouse movement only looks when a button is held.
+`maxPolarAngle=π`, `mouseButtons = { LEFT: ROTATE, MIDDLE: ROTATE, RIGHT: PAN }`. Rotation on both left and middle drag for quick free-angle inspection.
 
-`movementSpeed` is set to `SceneManager.flySpeed`, which Viewport scales to the bounding box after load. Delta time is capped at 100ms to prevent the "first-frame jump".
+### Pan (map / top-down)
 
-### Earth (`OrbitControls` configured for pan-primary)
-
-Configured OrbitControls to behave like a map viewer. `maxPolarAngle=π/2.05` (just above 90°) prevents the camera from going below the horizontal plane. The result is a top-down friendly navigation: scroll to zoom, left-drag to orbit, right-drag to pan.
+`maxPolarAngle=π/2.05` (horizon-locked), `mouseButtons = { LEFT: PAN, MIDDLE: DOLLY, RIGHT: ROTATE }`. Left-drag pans like a GIS/mapping tool.
 
 ---
 

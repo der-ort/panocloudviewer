@@ -87,7 +87,7 @@ pnpm lint                                             # TypeScript check across 
 ├─────────────────────────────────────────────────────┤
 │  LAYER 3 — Renderer / WebGL                         │
 │  THREE.WebGLRenderer · potree-core · OrbitControls  │
-│  FpsControls · TransformControls                    │
+│  TransformControls                                  │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -108,7 +108,7 @@ Central Three.js scene, camera, renderer, and animation loop.
 
 - **Constructor**: `{ canvas, onFpsUpdate?, onPointsUpdate? }` — creates Scene, PerspectiveCamera, WebGLRenderer, OrbitControls, lights, ResizeObserver.
 - **`start()`**: Starts `requestAnimationFrame` loop. Each frame: explicit clear → updates active controls → calls `potree.updatePointClouds()` → fires pre-render frame callbacks → renders → resets scissor/viewport → fires post-render callbacks → counts FPS.
-- **`setNavigationMode(mode)`**: Switches between `"orbit"`, `"fly"`, `"earth"`. Orbit = full-sphere OrbitControls (negative `rotateSpeed` for Z-up feel). Fly = FpsControls (WASD + drag-to-look), orbit disabled. Earth = OrbitControls with `maxPolarAngle=π/2.05` (camera stays above horizon).
+- **`setNavigationMode(mode)`**: Switches between `"orbit"`, `"free"`, `"pan"` by reconfiguring the single `OrbitControls` (mouse-button map + `maxPolarAngle`). Orbit = CAD turntable; Free = Blender-ish (rotate on left+middle); Pan = map/top-down (left-drag pans, `maxPolarAngle=π/2.05`). `zoomToCursor=true` and damping throughout.
 - **`setProjection(mode)`**: Switches between `"perspective"` and `"orthographic"`. Orthographic uses a synced ortho camera derived from the perspective camera's FOV each frame.
 - **`addPostRenderCallback(cb)` / `removePostRenderCallback(cb)`**: Register callbacks that run after the main render (used by AxisWidget for scissor-test overlay pass).
 - **`addFrameCallback(cb)` / `removeFrameCallback(cb)`**: Register arbitrary callbacks run every frame before render. Used by MinimapRenderer.
@@ -330,12 +330,8 @@ potree-core is a heavy, WebGL-only bundle. Importing it at module load time woul
 ### `"use client"` on all components
 Three.js uses `window`, `document`, `requestAnimationFrame`, `WebGLRenderingContext` — none of which exist in Node.js. All viewer components carry the `"use client"` directive to prevent Next.js from attempting server-side rendering of any part of the tree.
 
-### FpsControls delta capping at 100ms
-In `SceneManager.start()`, the fly controls update call is:
-```ts
-this._fpsControls.update(Math.min(delta / 1000, 0.1)); // cap at 100ms
-```
-On the first animation frame after switching to fly mode, the `delta` since the last frame can be hundreds of milliseconds (tab was hidden, navigation mode just changed, etc.). Without the cap, FpsControls would compute a huge movement and the camera would jump. The 100ms cap limits the maximum first-frame movement to 10% of `movementSpeed`.
+### Single OrbitControls for all navigation modes
+`SceneManager` keeps **one** `OrbitControls` instance for orbit/free/pan. `setNavigationMode` only swaps `controls.mouseButtons` and `maxPolarAngle`; the frame loop always calls `this.controls.update()`. This is deliberate: clipping, the minimap, `CameraAnimator.flyTo`, and the ortho-camera sync all read `controls.target`, so introducing a second controller (e.g. TrackballControls/MapControls with its own target) would desync them. Keep navigation on the single instance.
 
 ### Managers stored in React state (not refs)
 Manager instances are stored via `useState` in `ViewerProvider`. If they were stored in `useRef`, toolbar and sidebar components would not re-render when managers become available after Viewport initialises, and conditional renders like `loader && <SomePanel />` would never show. State storage triggers the necessary re-render cascade.
@@ -344,11 +340,13 @@ Manager instances are stored via `useState` in `ViewerProvider`. If they were st
 
 ## Navigation Modes
 
-| Mode | Implementation | Behaviour |
+All three modes use the same `OrbitControls` instance (`zoomToCursor=true`, damping, positive/natural `rotateSpeed`); `setNavigationMode` only changes `mouseButtons` + `maxPolarAngle`.
+
+| Mode | Config | Behaviour |
 |---|---|---|
-| `orbit` (default) | `OrbitControls`, `screenSpacePanning=true`, `maxPolarAngle=π`, `rotateSpeed=-1` | Tumble around a target point; full sphere; negative rotate speed for natural Z-up feel |
-| `fly` | `FpsControls` (custom), `dragToLook=true`, OrbitControls disabled | WASD moves, mouse-drag looks; no target point; delta capped at 100ms |
-| `earth` | `OrbitControls`, `screenSpacePanning=true`, `maxPolarAngle=π/2.05` | Camera stays above horizon; like Google Maps / GIS |
+| `orbit` (default) | `maxPolarAngle=π`, buttons `{LEFT:ROTATE, MIDDLE:DOLLY, RIGHT:PAN}` | CAD turntable; rotate around target; full sphere; zoom-to-cursor |
+| `free` | `maxPolarAngle=π`, buttons `{LEFT:ROTATE, MIDDLE:ROTATE, RIGHT:PAN}` | Blender-ish; rotate on left+middle drag; free angle |
+| `pan` | `maxPolarAngle=π/2.05`, buttons `{LEFT:PAN, MIDDLE:DOLLY, RIGHT:ROTATE}` | Map / top-down; left-drag pans; horizon-locked |
 
 Switch via `setNavigationMode(mode)` in `ViewerProvider` — Viewport syncs to `SceneManager` via `useEffect`.
 
@@ -418,9 +416,9 @@ project/
 - **Never add `"use server"` or remove `"use client"`** from viewer components — Three.js is browser-only.
 - **After any `setColorMode()`** — `outputColorEncoding=1` must be re-applied or RGB clouds will show incorrect brightness.
 - **`renderer.outputColorSpace`** — must stay `THREE.LinearSRGBColorSpace`. Changing to `SRGBColorSpace` whitewashes the cloud.
-- **`SceneManager.flySpeed`** is set proportionally to the cloud bounding box after `PointCloudLoader.load()` completes. Do not set it before load or it will be overwritten.
+- **`SceneManager.flySpeed`** is a legacy field retained for API compatibility — it no longer drives navigation (orbit/free/pan use a single OrbitControls). Don't rely on it.
 - **`PresentationManager`** is not in `ViewerProvider` — it is instantiated directly by `ScenesPanel`. If you need it elsewhere, instantiate it yourself with the source key.
 - **`ClipManager.applyAll()`** uses `visible[0].mode` for the global `clipMode` — all boxes share one clip mode. Multiple boxes with different modes is not currently supported.
-- **FpsControls delta cap** — always pass `Math.min(delta/1000, 0.1)` to `_fpsControls.update()`, not the raw delta.
+- **Navigation uses one OrbitControls** — don't add a second controller (Trackball/Map) per mode; `controls.target` is shared by clipping, minimap, camera-animator and ortho sync, so a separate target would desync them.
 - **Marker sprites** use `depthTest=false` — they always render on top. Do not change this or they will disappear behind the point cloud.
 - **`DataProvider`** resolves image URLs via `adapter.resolveUrl()` at fetch time. The `CameraData.image` field in context is always a full URL, not a relative path.
