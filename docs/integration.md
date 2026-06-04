@@ -151,6 +151,8 @@ import './your-theme.css';
 | `--font-mono` | Mono font family | Azeret Mono |
 | `--radius` | Border radius | `0.375rem` |
 
+> **Readability rule:** whenever you override a background token (`--background`, `--card`, or the viewer-specific `--toolbar-bg` / `--sidebar-bg` / `--statusbar-bg`), also set the matching foreground token (`--foreground`, `--card-foreground`, `--muted-foreground`) so text contrast is preserved.
+
 ---
 
 ## Custom UI (Composable API)

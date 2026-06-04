@@ -141,8 +141,8 @@ Smooth camera fly-to animations, no external tween library.
 ### `ClipManager` (`core/clip-manager.ts`)
 Manages multiple named axis-aligned clip boxes with TransformControls support.
 
-- **`addBox(box, name?)`**: Adds a `ClipBoxEntry`, creates a yellow `Box3Helper` in the scene, applies clipping to all point clouds. Returns the entry.
-- **`selectBox(id)` / `setTransformMode(mode)`**: Lazy-initialises TransformControls, attaches an invisible pivot mesh. Disables OrbitControls while dragging.
+- **`addBox(box, name?)`**: Adds a `ClipBoxEntry`, creates a yellow `Box3Helper` in the scene, applies clipping to all point clouds. Returns the entry. Default post-create transform mode is `scale` (the `FaceHandleController` shows the 6 axis-colored resize handles); Move shows translate arrows; Rotate shows a single world-Z ring.
+- **`selectBox(id)` / `setTransformMode(mode)`**: Lazy-initialises TransformControls, attaches an invisible pivot mesh. Disables OrbitControls while dragging. **three r170**: `TransformControls` extends `Controls`/`EventDispatcher` (not `Object3D`), so its visual gizmo is added to the scene via `tc.getHelper()` (which returns the internal `_root` Object3D), never `scene.add(tc)`. The `_raiseGizmo()` helper (which forces the gizmo to render over the dense cloud via `depthTest=false` + high `renderOrder`) must traverse `tc.getHelper()`, not the controls object — the controls object has no `traverse`.
 - **`removeBox(id)` / `setBoxMode(id, mode)` / `setBoxVisible(id, visible)` / `renameBox(id, name)`**: Mutate entries and call `applyAll()`.
 - **`setDraft(box)`**: Shows a live preview helper during drag (no clip applied).
 - **`clear()`**: Removes all boxes and disables clipping.
@@ -159,11 +159,12 @@ Renders orthographic views to image files.
 - **View directions**: `top`, `front`, `side`, `back` (fixed directions), `custom` (uses top direction).
 
 ### `MarkerManager` (`core/marker-manager.ts`)
-Renders 3D panorama camera markers as billboard sprites.
+Renders panorama camera markers as constant on-screen-size pins.
 
-- **`build(cameras, worldBox?)`**: Clears existing markers, auto-scales `baseScale` to ~2% of scene size, creates `THREE.Sprite` per camera using a `CanvasTexture` (glow + circle + camera icon + label). Sprites have `depthTest=false` so they are always visible through the point cloud.
+- **`build(cameras, worldBox?)`**: Clears existing markers, creates a `THREE.Sprite` per camera using a `CanvasTexture` (glow + circle + camera icon + label). Sprites use `sizeAttenuation:false` so they stay a **constant screen size** (pins) and do not grow/shrink with zoom — they are no longer world-sized sphere meshes. Sprites have `depthTest=false` so they are always visible through the point cloud.
+- **Labels**: Subtle and shown on hover/selection only by default. Governed by `markerLabelMode: "hover" | "always" | "hidden"` on `DisplaySettings` (in `DISPLAY_PRESETS`; compact/standard → `"hover"`, prominent → `"always"`). `markerSphereScale` / `markerSphereOpacity` / `markerLabelScale` still tune pin size / opacity / label size.
 - **`getMeshes()`**: Returns sprites for raycasting.
-- **`setHovered(idx)` / `setSelected(idx)`**: Recolors the sprite texture (default=yellow, hover=white, selected=orange-red).
+- **`setHovered(idx)` / `setSelected(idx)`**: Recolors the sprite texture (default=yellow, hover=white, selected=orange-red); also reveals the label when `markerLabelMode="hover"`.
 - **`setVisible(visible)`**: Shows/hides the entire group.
 - **`dispose()`**: Disposes textures and materials, removes group from scene.
 
@@ -264,6 +265,8 @@ Core state store. Exposes:
 - UI state: `activeTool`, `pointBudget`, `pointSize`, `fps`, `pointCount`, `measurementList`, `showMarkers`, `showMinimap`, `selectedCamera`, `clipBoxEntries`, `selectedClipBoxId`, `colorMode`, `navigationMode`, `projection`, `displaySettings`
 - `config: ViewerConfig`
 
+**`uiScale?: number` prop (chrome-only scaling)**: `PanoCloudViewer` accepts an optional `uiScale` (default `1`) that scales only the UI **chrome** — toolbars, tool-rail, sidebar, floating palettes, dialogs — by setting a `--pcv-scale` CSS variable plus `zoom` on the chrome wrapper. The 3D viewport/canvas is deliberately left at full device resolution so point-cloud rendering stays crisp. Use values like `1.25` to enlarge controls on large/high-DPI displays or `0.85` to compact them.
+
 Managers are stored in React `useState` (not `useRef`) so that toolbar/sidebar components re-render when managers become available.
 
 ### `DataProvider` + `useData()`
@@ -336,6 +339,15 @@ Three.js uses `window`, `document`, `requestAnimationFrame`, `WebGLRenderingCont
 ### Managers stored in React state (not refs)
 Manager instances are stored via `useState` in `ViewerProvider`. If they were stored in `useRef`, toolbar and sidebar components would not re-render when managers become available after Viewport initialises, and conditional renders like `loader && <SomePanel />` would never show. State storage triggers the necessary re-render cascade.
 
+### `TransformControls` in three r170 extends `Controls`, not `Object3D`
+As of three r170, `TransformControls` no longer **is** an `Object3D` — it extends `Controls` / `EventDispatcher`. Its visual gizmo lives in an internal `_root` Object3D obtained via `tc.getHelper()`. The clip-box transform handles must therefore be added to the scene with `scene.add(tc.getHelper())` — `scene.add(tc)` would add nothing visible. Likewise the `_raiseGizmo()` helper (which sets `depthTest=false` + a high `renderOrder` so the gizmo draws over the dense point cloud) must call `tc.getHelper().traverse(...)`; the controls object itself has no `traverse` method and would throw.
+
+### Marker pins are constant on-screen size
+Panorama markers are `THREE.Sprite`s with `sizeAttenuation:false`, so they keep a fixed pixel size regardless of zoom (map-pin behaviour) rather than scaling with distance like world-sized meshes. Labels are subtle and gated by `DisplaySettings.markerLabelMode` (`"hover" | "always" | "hidden"`) so dense camera sets don't drown the view in text.
+
+### `uiScale` scales chrome only, not the canvas
+The `uiScale` prop scales the UI chrome (toolbars, tool-rail, sidebar, floating palettes, dialogs) via a `--pcv-scale` CSS variable plus `zoom`, while the 3D viewport/canvas stays at full device resolution. This keeps point-cloud rendering crisp on high-DPI / large displays while letting the surrounding controls be enlarged or shrunk independently.
+
 ---
 
 ## Navigation Modes
@@ -395,6 +407,9 @@ Viewer-specific variables: `--toolbar-bg`, `--toolbar-border`, `--sidebar-bg`, `
 
 To integrate with a host shadcn/ui app, map the host's tokens to PanoCloudViewer's variables in a bridge CSS file.
 
+### Readability rule (foreground must follow background)
+Any theme or brand preset that overrides `--background` (or the card / toolbar / sidebar background tokens `--card`, `--toolbar-bg`, `--sidebar-bg`, `--statusbar-bg`) **MUST also set the matching `--foreground` / `--card-foreground` / `--muted-foreground`** so text contrast is preserved. Overriding only the background — e.g. flipping to a dark surface while leaving the default dark text — produces unreadable, low-contrast UI. Always change foreground and background tokens together.
+
 ---
 
 ## Data Format
@@ -420,5 +435,8 @@ project/
 - **`PresentationManager`** is not in `ViewerProvider` — it is instantiated directly by `ScenesPanel`. If you need it elsewhere, instantiate it yourself with the source key.
 - **`ClipManager.applyAll()`** uses `visible[0].mode` for the global `clipMode` — all boxes share one clip mode. Multiple boxes with different modes is not currently supported.
 - **Navigation uses one OrbitControls** — don't add a second controller (Trackball/Map) per mode; `controls.target` is shared by clipping, minimap, camera-animator and ortho sync, so a separate target would desync them.
-- **Marker sprites** use `depthTest=false` — they always render on top. Do not change this or they will disappear behind the point cloud.
+- **`TransformControls` (three r170) is not an `Object3D`** — add its gizmo with `scene.add(tc.getHelper())`, never `scene.add(tc)`, and traverse `tc.getHelper()` (not `tc`) when raising the gizmo's `renderOrder`/`depthTest`. `tc` has no `traverse`.
+- **Marker sprites** use `sizeAttenuation:false` (constant on-screen pin size) and `depthTest=false` (always render on top). Don't switch `sizeAttenuation` back on (pins would scale with zoom) or remove `depthTest=false` (pins would hide behind the cloud).
+- **Marker labels** are gated by `DisplaySettings.markerLabelMode` — default `"hover"`. Don't hardcode always-on labels; respect the setting.
+- **`uiScale` must not scale the canvas** — it scales chrome via `--pcv-scale` + `zoom` only. Applying `zoom`/scale to the viewport/canvas would degrade WebGL resolution and break pointer-to-NDC math.
 - **`DataProvider`** resolves image URLs via `adapter.resolveUrl()` at fetch time. The `CameraData.image` field in context is always a full URL, not a relative path.

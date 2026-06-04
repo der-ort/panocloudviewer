@@ -189,7 +189,9 @@ Uses a quartic ease-out curve (`1 - (1-t)^4`) that matches the feel of the origi
 
 ### MarkerManager
 
-Camera markers use `THREE.Sprite` (camera-facing billboards) rather than `THREE.Mesh` because sprites automatically face the camera without needing to track camera orientation. The `depthTest: false` / `depthWrite: false` material settings ensure markers are always visible through the dense point cloud.
+Camera markers are constant on-screen-size pins: `THREE.Sprite`s configured with `sizeAttenuation: false`, so they keep a fixed pixel size regardless of zoom (map-pin behaviour) instead of growing/shrinking like world-sized sphere meshes. Sprites are used (rather than `THREE.Mesh`) because they automatically face the camera without tracking camera orientation. The `depthTest: false` / `depthWrite: false` material settings ensure markers are always visible through the dense point cloud.
+
+Labels are subtle and shown on hover/selection only by default, governed by `DisplaySettings.markerLabelMode` (`"hover" | "always" | "hidden"`; compact/standard presets use `"hover"`, prominent uses `"always"`). `markerSphereScale` / `markerSphereOpacity` / `markerLabelScale` continue to tune pin size, opacity, and label size.
 
 Textures are generated at runtime on `<canvas>` elements rather than loaded from files, eliminating network requests for marker assets.
 
@@ -208,6 +210,8 @@ Area calculation uses the 2D shoelace formula on the XY plane. Volume is approxi
 Clip boxes are applied to potree-core's material via `mat.setClipBoxes()`. potree-core expects the clip box array in a specific format: each entry needs `{ box, inverse, matrix, position }`. The `inverse` matrix is what the shader uses to transform world-space points into box-local space for the inside/outside test.
 
 `TransformControls` are lazy-initialised (only imported and created when the user first selects a clip box) because they are a moderately heavy module and most sessions never use them.
+
+**three r170 gotcha:** since r170 `TransformControls` extends `Controls`/`EventDispatcher` and is **not** an `Object3D`. The visual gizmo lives in an internal `_root` Object3D exposed by `tc.getHelper()`, so it is added to the scene with `scene.add(tc.getHelper())` — `scene.add(tc)` adds nothing visible. The `_raiseGizmo()` helper (forcing the handles to render over the dense cloud via `depthTest=false` + high `renderOrder`) must traverse `tc.getHelper()`; the controls object has no `traverse` method. The default post-create transform mode is `scale` (the `FaceHandleController` shows 6 axis-colored resize handles); Move shows translate arrows and Rotate a single world-Z ring.
 
 ### ExportManager
 

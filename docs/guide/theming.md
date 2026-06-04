@@ -60,6 +60,9 @@ All variables follow the [shadcn/ui](https://ui.shadcn.com/docs/theming) token n
 | `--sidebar-width` | Sidebar width (default `280px`) |
 | `--statusbar-bg` | Bottom status bar background |
 | `--viewport-bg` | 3D viewport background (behind the WebGL canvas) |
+| `--pcv-scale` | Chrome scale factor set by the `uiScale` prop (default `1`). Scales UI chrome only — the 3D canvas stays at full resolution. |
+
+> **Readability rule:** any theme or brand preset that overrides `--background` — or the card / toolbar / sidebar / status-bar background tokens (`--card`, `--toolbar-bg`, `--sidebar-bg`, `--statusbar-bg`) — **must also set the matching foreground token** (`--foreground`, `--card-foreground`, `--muted-foreground`) so text contrast is preserved. Changing a surface color without updating its foreground produces low-contrast, unreadable UI. Always change foreground and background together.
 
 ### Typography tokens
 
@@ -143,6 +146,8 @@ Import `smart-agile.css` first, then override specific tokens in your own styles
 import '@der-ort/pano-cloud-viewer/themes/smart-agile.css';
 import './override.css';
 ```
+
+If your override changes a **background** token (e.g. `--background`, `--card`, `--toolbar-bg`, `--sidebar-bg`, `--statusbar-bg`), remember the readability rule above: set the matching `--foreground` / `--card-foreground` / `--muted-foreground` in the same block so text stays legible.
 
 ---
 
