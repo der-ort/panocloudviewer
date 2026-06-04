@@ -12,11 +12,41 @@ A deep dive into the design decisions, rendering pipeline, and extension points 
 2. **Overlay interactive tools** — measurements, clip boxes, panorama camera markers — on top of the 3D scene.
 3. **Expose a composable React API** so consumers can either use the drop-in `<PanoCloudViewer>` component or assemble a custom layout from individual pieces.
 
-The library targets developers who embed it into larger React/Next.js applications and architects who want to extend its capabilities.
+---
+
+## 2. Two-Package Architecture
+
+The library is split across two packages:
+
+| Package | Role |
+|---|---|
+| `@der-ort/pano-cloud-viewer-core` | Headless engine: Three.js manager classes, data adapters, shared types, format helpers. **Zero React / UI dependencies.** |
+| `@der-ort/pano-cloud-viewer` | React UI: providers, hooks, shadcn-style components, layouts, themes, i18n. **Depends on core.** |
+
+### Why the split?
+
+- **Core** can be used without React: server-side tooling, Electron helpers, or alternative UI frameworks only need to install the core package.
+- **Viewer** bundles core into its `dist` at build time (`tsup noExternal` + `dts.resolve`), so every consumer import resolves without having to separately install `@der-ort/pano-cloud-viewer-core`.
+- Existing imports from `@der-ort/pano-cloud-viewer` continue to work unchanged because the viewer package re-exports everything from core:
+  ```ts
+  export * from "@der-ort/pano-cloud-viewer-core";
+  ```
+
+### Git-dependency install
+
+The library is consumed as a git dependency pointing directly at the monorepo subfolder:
+
+```json
+{
+  "@der-ort/pano-cloud-viewer": "github:der-ort/panocloudviewer&path:packages/viewer"
+}
+```
+
+Because the committed `dist/` is self-contained (core bundled in), consumers **never** need to separately install `@der-ort/pano-cloud-viewer-core` or run a build step.
 
 ---
 
-## 2. System Diagram
+## 3. System Diagram
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
@@ -27,15 +57,15 @@ The library targets developers who embed it into larger React/Next.js applicatio
 │    <ThemeProvider>   ← dark/light CSS class on <html>         │
 │    <DataProvider>    ← cameras.json + metadata.json           │
 │    <ViewerProvider>  ← all viewer state + manager refs        │
-│      <WorkspaceLayout>                                        │
+│      <WorkspaceLayout>  (default, or custom via children)     │
 │        <MainToolbar>  <ToolRail>  <Sidebar>                   │
-│        <Viewport [lazy]>  ← THREE.js init lives here          │
+│        <Viewport [lazy]>  ← Three.js init lives here          │
 │          <MinimapOverlay>  <ToolHintBar>                      │
 └───────────────────────────────────────────────────────────────┘
                 │  creates & stores refs to
                 ▼
 ┌───────────────────────────────────────────────────────────────┐
-│  Manager layer (plain TypeScript classes)                     │
+│  Manager layer (plain TypeScript classes — packages/core)     │
 │                                                               │
 │  SceneManager       → owns THREE.Scene, camera, renderer      │
 │  PointCloudLoader   → potree-core wrapper, octree streaming   │
@@ -46,6 +76,7 @@ The library targets developers who embed it into larger React/Next.js applicatio
 │  ExportManager      → orthographic capture to image           │
 │  MinimapRenderer    → secondary WebGL renderer (top-down)     │
 │  PresentationManager→ localStorage scene persistence          │
+│  AxisWidget         → world-axis indicator overlay            │
 └───────────────────────────────────────────────────────────────┘
                 │  drives
                 ▼
@@ -53,7 +84,7 @@ The library targets developers who embed it into larger React/Next.js applicatio
 │  Three.js / WebGL                                             │
 │                                                               │
 │  THREE.WebGLRenderer  THREE.Scene  THREE.PerspectiveCamera    │
-│  OrbitControls  FlyControls  TransformControls                │
+│  OrbitControls  FpsControls  TransformControls                │
 │  potree-core: Potree.updatePointClouds() (octree LOD)         │
 └───────────────────────────────────────────────────────────────┘
 ```
@@ -62,32 +93,42 @@ Data flows up through callbacks: managers call `onChange` / `onFpsUpdate` / `onP
 
 ---
 
-## 3. The Render Pipeline
+## 4. The Render Pipeline
 
 The render loop lives entirely in `SceneManager.start()`. Each animation frame proceeds in this order:
 
 ```
 requestAnimationFrame(loop)
   │
-  ├─ 1. Controls update
-  │      if fly mode:  flyControls.update(min(delta/1000, 0.1))
+  ├─ 1. Explicit clear
+  │      renderer.setScissorTest(false); renderer.clear()
+  │
+  ├─ 2. Controls update
+  │      if fly mode:  fpsControls.update(min(delta/1000, 0.1))
   │      else:         orbitControls.update()
   │
-  ├─ 2. potree-core LOD update
+  ├─ 3. potree-core LOD update
   │      potree.updatePointClouds(pointClouds, camera, renderer)
   │      → determines which octree nodes to load/unload
   │      → issues background fetch requests via RequestManager
   │
-  ├─ 3. Frame callbacks
+  ├─ 4. Pre-render frame callbacks
   │      forEach(frameCallbacks, cb => cb())
   │      → MinimapRenderer.update() is registered here
   │         → every 6th frame: render scene top-down to minimap GL canvas
   │         → every 2nd frame: draw camera frustum overlay on 2D canvas
   │
-  ├─ 4. Main render
-  │      renderer.render(scene, camera)
+  ├─ 5. Main render
+  │      renderer.render(scene, activeCamera)
+  │      (uses ortho camera when projection === "orthographic")
   │
-  └─ 5. FPS counter
+  ├─ 6. Reset scissor/viewport state
+  │
+  ├─ 7. Post-render callbacks
+  │      forEach(postRenderCallbacks, cb => cb())
+  │      → AxisWidget scissor pass renders here
+  │
+  └─ 8. FPS counter
          if elapsed >= 1000ms: onFpsUpdate(frameCount)
 ```
 
@@ -97,7 +138,7 @@ The minimap runs in the same frame callback system, throttled to avoid burning G
 
 ---
 
-## 4. Provider Layer
+## 5. Provider Layer
 
 ### Why managers are stored in React state
 
@@ -113,7 +154,7 @@ Owns two categories of state:
 `sceneManager`, `loader`, `measurementManager`, `markerManager`, `cameraAnimator`, `exporter`, `minimap`, `clipManager`
 
 **UI state** (immediately available):
-`activeTool`, `pointBudget`, `pointSize`, `fps`, `pointCount`, `measurementList`, `showMarkers`, `showMinimap`, `selectedCamera`, `clipBoxEntries`, `selectedClipBoxId`, `colorMode`, `navigationMode`, `config`
+`activeTool`, `pointBudget`, `pointSize`, `fps`, `pointCount`, `measurementList`, `showMarkers`, `showMinimap`, `selectedCamera`, `clipBoxEntries`, `selectedClipBoxId`, `colorMode`, `navigationMode`, `projection`, `displaySettings`, `config`
 
 ### `DataProvider`
 
@@ -121,15 +162,15 @@ Fetches project metadata from the adapter using `Promise.allSettled` — if `cam
 
 ### `ThemeProvider`
 
-Applies the resolved theme as a class on `document.documentElement` (`dark` or `light`) and as `data-theme` attribute. CSS variables in the themes are scoped to `:root` with overrides in `.dark {}`. The `system` theme value reads `window.matchMedia("(prefers-color-scheme: dark)")` at render time; it does not subscribe to changes (add a `matchMedia` listener if live system theme switching is needed).
+Applies the resolved theme as a class on `document.documentElement` (`dark` or `light`) and as `data-theme` attribute. CSS variables in the themes are scoped to `:root` with overrides in `.dark {}`. The `system` theme value reads `window.matchMedia("(prefers-color-scheme: dark)")` at render time.
 
 ### `LocaleProvider`
 
-Provides the active `ViewerLocale` object via context. If no `locale` prop is passed to `<PanoCloudViewer>`, the English locale (`en`) is used by default (set in `LocaleProvider`'s implementation). Components destructure specific sections: `const t = useLocale().toolbar` to avoid re-rendering when unrelated sections change.
+Provides the active `ViewerLocale` object via context. If no `locale` prop is passed to `<PanoCloudViewer>`, the English locale (`en`) is used by default. Components destructure specific sections: `const t = useLocale().toolbar` to avoid re-rendering when unrelated sections change.
 
 ---
 
-## 5. Manager Layer
+## 6. Manager Layer
 
 ### SceneManager
 
@@ -141,8 +182,6 @@ The ResizeObserver on the canvas container handles responsive resizing automatic
 
 The only class that touches `potree-core`. It builds a `requestManager` object that proxies fetch calls through the active `FileSourceAdapter`, giving potree-core the ability to send requests with custom headers (e.g. S3 auth tokens) or use Electron's IPC bridge.
 
-Metadata inspection for RGB detection reads `metadata.json` a second time via `adapter.fetchJson()` — this is acceptable because the browser caches the response from the initial load.
-
 The `worldBox` property is the reliable way to get scene bounds after load — it accounts for potree-core's internal coordinate offset (`pcoGeometry.offset`) which is applied to translate the cloud to a local coordinate system.
 
 ### CameraAnimator
@@ -151,7 +190,7 @@ Uses a quartic ease-out curve (`1 - (1-t)^4`) that matches the feel of the origi
 
 ### MarkerManager
 
-Camera markers use `THREE.Sprite` (camera-facing billboards) rather than `THREE.Mesh` because sprites automatically face the camera without needing to track camera orientation. The `depthTest: false` / `depthWrite: false` material settings ensure markers are always visible through the dense point cloud, following the same approach as the original Potree viewer.
+Camera markers use `THREE.Sprite` (camera-facing billboards) rather than `THREE.Mesh` because sprites automatically face the camera without needing to track camera orientation. The `depthTest: false` / `depthWrite: false` material settings ensure markers are always visible through the dense point cloud.
 
 Textures are generated at runtime on `<canvas>` elements rather than loaded from files, eliminating network requests for marker assets.
 
@@ -161,9 +200,9 @@ Measurements are drawn in two phases:
 1. **Active phase**: while `activeMeasurement` is set, `rebuildPreview()` is called after each point to draw a semi-transparent preview line from the accumulated points.
 2. **Finalized phase**: `finish()` computes the value, builds permanent geometry (spheres at vertices, lines between them, text sprite label), and stores everything in a `Map<id, { data, objects }>` for clean removal later.
 
-All geometry is rendered with `depthTest: false` and elevated `renderOrder` values (1, 2, 3) to ensure measurements always draw on top of the point cloud regardless of depth.
+All geometry is rendered with `depthTest: false` and elevated `renderOrder` values to ensure measurements always draw on top of the point cloud.
 
-Area calculation uses the 2D shoelace formula on XY plane. Volume is approximated as bounding box volume — a deliberate simplification suitable for initial estimates.
+Area calculation uses the 2D shoelace formula on the XY plane. Volume is approximated as bounding box volume — a deliberate simplification suitable for initial estimates.
 
 ### ClipManager
 
@@ -173,11 +212,11 @@ Clip boxes are applied to potree-core's material via `mat.setClipBoxes()`. potre
 
 ### ExportManager
 
-The export pipeline temporarily hijacks the renderer — it sets a `WebGLRenderTarget`, renders at the requested scale, reads pixels, then restores the render target to `null`. This means the main viewport briefly renders off-screen during capture. The viewport is restored before the function returns, so the user sees no visual glitch in practice.
+The export pipeline temporarily hijacks the renderer — it sets a `WebGLRenderTarget`, renders at the requested scale, reads pixels, then restores the render target to `null`. The viewport is restored before the function returns, so the user sees no visual glitch in practice.
 
 ### MinimapRenderer
 
-Uses a *separate* `WebGLRenderer` instance (with `alpha: false` and `antialias: false` for performance) attached to its own `<canvas>` element. This avoids contention with the main renderer's render target state. A `try/catch` around renderer creation handles the browser's WebGL context limit gracefully — if context creation fails, the minimap falls back to the 2D overlay-only mode.
+Uses a *separate* `WebGLRenderer` instance (with `alpha: false` and `antialias: false` for performance) attached to its own `<canvas>` element. This avoids contention with the main renderer's render target state. A `try/catch` around renderer creation handles the browser's WebGL context limit gracefully.
 
 ### PresentationManager
 
@@ -185,7 +224,7 @@ Intentionally not part of `ViewerProvider` — it is instantiated by the `Scenes
 
 ---
 
-## 6. Adapter Pattern
+## 7. Adapter Pattern
 
 ### Why it exists
 
@@ -213,14 +252,14 @@ interface FileSourceAdapter {
 ### Adding a new adapter
 
 1. Create a class that implements `FileSourceAdapter`.
-2. Add a new variant to the `PointCloudSource` union type in `types.ts`.
-3. Add a `case` in `createAdapter()` in `data/file-source-adapter.ts`.
+2. Add a new variant to the `PointCloudSource` union type in `packages/core/src/types.ts`.
+3. Add a `case` in `createAdapter()` in `packages/core/src/data/file-source-adapter.ts`.
 
 No other files need changing.
 
 ---
 
-## 7. Viewport.tsx — Central Wiring Component
+## 8. Viewport.tsx — Central Wiring Component
 
 `Viewport` is the single most important component in the codebase. It is the bridge between the React provider layer and the Three.js manager layer.
 
@@ -243,9 +282,6 @@ useEffect(() => {
   clip.onChange    = setClipBoxEntries
   clip.onSelectChange = setSelectedClipBoxId
 
-  // Store local refs (for event handlers, which can't read state)
-  smRef.current = sm; loaderRef.current = loader; ...
-
   // Push managers up to ViewerProvider
   setSceneManager(sm); setLoader(loader); ...
 
@@ -256,57 +292,106 @@ useEffect(() => {
   sm.start()
 
   // Load the point cloud
-  loader.load("metadata.json", pointBudget).then(() => {
-    sm.flySpeed = cloudSize / 20
-    minimap.setBounds(worldBox)
-  })
+  loader.load("metadata.json", pointBudget).then(...)
 
   // Cleanup
   return () => { sm.dispose(); measure.dispose(); ... }
 }, []) // empty deps — runs once
 ```
 
-The empty dependency array (`[]`) is intentional and necessary. Re-running this effect would create duplicate Three.js renderers. The eslint disable comment acknowledges this.
+The empty dependency array (`[]`) is intentional and necessary. Re-running this effect would create duplicate Three.js renderers.
 
 ### State sync effects (secondary useEffects)
 
 After initialisation, Viewport watches specific provider state changes and syncs them to managers:
 
 - `[cameras, showMarkers]` → `marker.build(cameras, worldBox)` and `marker.setVisible(showMarkers)`
-- `[showMarkers]` → `marker.setVisible(showMarkers)` (visibility-only sync)
 - `[navigationMode]` → `sm.setNavigationMode(navigationMode)`
 - `[showMinimap]` → `minimap.attach(minimapContainerRef.current)` (re-attaches after show)
 
-### Event handling
-
-Mouse events on the main canvas are handled by Viewport:
-
-- **`onClick`**: If `activeTool === "none"`, raycasts against marker sprites and fires `onCameraSelect`. If `activeTool.startsWith("measure-")`, projects the click onto a horizontal plane at the camera target Z and adds a measurement point.
-- **`onMouseDown/Move/Up`**: When `activeTool === "section-box"`, these implement a drag-to-draw clip box. The drag projects start and end points onto the horizontal plane and calls `clipManager.setDraft()` during drag, then `clipManager.addBox()` on release.
-- **`onContextMenu`**: Right-click finalizes an in-progress measurement (`measure.finish()`) or clears all clip boxes.
-
 ---
 
-## 8. Navigation Modes
+## 9. Navigation Modes
 
 Three navigation modes are implemented in `SceneManager.setNavigationMode()`:
 
 ### Orbit (`OrbitControls`)
-Default mode. Left-drag tumbles around the target point, right-drag pans, scroll zooms. `maxPolarAngle=π` allows the camera to go fully inverted (look up from below the scene). `screenSpacePanning=false` means right-drag pans in the orbit plane, not screen space.
 
-### Fly (`FlyControls`)
-Free-flight mode. OrbitControls is disabled (`enabled = false`) and a lazily-created `FlyControls` instance takes over. The key binding is standard: W/S forward/back, A/D strafe, hold mouse button and drag to look. `dragToLook=true` means mouse movement only looks when a button is held (rather than always tracking mouse position).
+Default mode. `OrbitControls` with `screenSpacePanning=true` and `maxPolarAngle=π`. Left-drag rotates (negative `rotateSpeed` for natural Z-up feel), middle-drag dolly, right-drag pan, scroll to zoom-to-cursor. Full-sphere tumble — the camera can go above or below the scene.
 
-`movementSpeed` is set to `SceneManager.flySpeed`, which Viewport scales to the bounding box after load: `flySpeed = maxDim / 20`. This makes movement feel natural regardless of cloud scale.
+### Fly (`FpsControls`)
 
-Delta time is capped at 100ms to prevent the "first-frame jump" — see design decisions in CLAUDE.md.
+Free-flight mode. `OrbitControls` is disabled (`enabled = false`) and a lazily-created `FpsControls` instance takes over. WASD moves forward/back/left/right, mouse-drag looks. `dragToLook=true` means mouse movement only looks when a button is held.
 
-### Earth (`OrbitControls` configured differently)
-Configured OrbitControls to behave like a map viewer. `screenSpacePanning=true` makes left-drag pan in screen space rather than orbit. `maxPolarAngle=π/2.05` (just above 90°) prevents the camera from going below the horizontal plane. The result is Google Maps-style navigation: drag to pan, scroll to zoom, right-drag to tilt slightly.
+`movementSpeed` is set to `SceneManager.flySpeed`, which Viewport scales to the bounding box after load. Delta time is capped at 100ms to prevent the "first-frame jump".
+
+### Earth (`OrbitControls` configured for pan-primary)
+
+Configured OrbitControls to behave like a map viewer. `maxPolarAngle=π/2.05` (just above 90°) prevents the camera from going below the horizontal plane. The result is a top-down friendly navigation: scroll to zoom, left-drag to orbit, right-drag to pan.
 
 ---
 
-## 9. Color Rendering
+## 10. UI Composition
+
+### Default `WorkspaceLayout`
+
+When `<PanoCloudViewer>` is used without a `children` render prop, it renders the built-in `WorkspaceLayout`: a full toolbar at the top, a left tool rail (measure/section), a right collapsible sidebar with tabs, and the 3D viewport in the center. This layout suits professional desktop-style workflows.
+
+### Custom UI via render prop
+
+Pass a `children` function to `<PanoCloudViewer>` to completely replace the default shell. The function receives the viewport element (already wrapped in `Suspense`) and must render it somewhere:
+
+```tsx
+<PanoCloudViewer source={source}>
+  {(viewport) => (
+    <div className="relative w-full h-full">
+      {viewport}
+      <MyCustomToolbar />
+    </div>
+  )}
+</PanoCloudViewer>
+```
+
+All providers (`ViewerProvider`, `DataProvider`, `ThemeProvider`, `LocaleProvider`) are set up by `PanoCloudViewer` regardless of whether a custom `children` function is used. Action hooks and `useViewer()` work inside any component rendered as a descendant.
+
+### Packaged layout components
+
+Two alternative layouts are exported for common patterns:
+
+| Component | Description |
+|---|---|
+| `<MinimalLayout viewport={vp}>` | Viewport full-screen with a minimal floating toolbar (fit-to-view, nav mode, theme toggle). Good for embed widgets. |
+| `<WorkstationLayout viewport={vp}>` | Viewport with a collapsible side-panel housing floating tool palettes (tools, display, view settings, export) and a bottom status bar. |
+| `<FloatingPalette>` | Standalone glass-morphism floating panel — compose your own layout from palettes. |
+| `<CollapsibleSidebar>` | A side panel that collapses to an icon rail, used inside `WorkstationLayout`. |
+
+Usage with the render prop:
+
+```tsx
+import { PanoCloudViewer, MinimalLayout } from '@der-ort/pano-cloud-viewer';
+
+<PanoCloudViewer source={source}>
+  {(viewport) => <MinimalLayout viewport={viewport} />}
+</PanoCloudViewer>
+```
+
+### Action hooks
+
+For fully custom UIs, use the action hooks instead of wiring `useViewer()` manually. Each hook encapsulates a logical group of actions and returns stable callbacks:
+
+| Hook | Returns |
+|---|---|
+| `useNavigationActions()` | `fitToView`, `flyToView(preset)`, `navigationMode`, `setNavigationMode`, `projection`, `setProjection` |
+| `useMeasurementActions()` | `startTool(type)`, `cancelTool`, `measurements`, `clearAll`, `remove(id)`, `rename(id, name)`, `exportCSV` |
+| `useClipActions()` | `addBox`, `clearAll`, `toggleMode`, `selectBox(id)`, `setTransformMode(mode)`, `boxes`, `clipMode`, `hasClipBox` |
+| `useDisplayActions()` | `colorMode`, `setColorMode`, `pointBudget`, `setPointBudget`, `pointSize`, `setPointSize`, `setQualityPreset` |
+| `useExportActions()` | `capture(options)`, `download(dataUrl, filename)` |
+| `useVisibilityActions()` | `showMarkers`, `toggleMarkers`, `showMinimap`, `toggleMinimap` |
+| `useDisplaySettings()` | `settings`, `presets`, `applyPreset(preset)`, `updateSetting(key, value)` |
+
+---
+
+## 11. Color Rendering
 
 ### sRGB pipeline
 
@@ -341,11 +426,11 @@ pointCloud.material.outputColorEncoding = 1; // ColorEncoding.SRGB
 ```
 Tells potree-core's shader that its output is sRGB, which disables the `fromLinear()` conversion. sRGB data from the attribute buffer passes through to the output as-is.
 
-Both fixes are necessary. The renderer setting ensures the WebGL framebuffer is not double-encoded. The material setting ensures the shader does not internally gamma-compress values that are already sRGB.
+Both fixes are necessary.
 
 ---
 
-## 10. i18n
+## 12. i18n
 
 The i18n system is a simple context-provided dictionary, with no runtime locale detection or message formatting library.
 
@@ -389,36 +474,33 @@ const myLocale = createLocale(en, {
 
 ---
 
-## 11. Adding a New Feature — Developer Checklist
+## 13. Adding a New Feature — Developer Checklist
 
 Follow these steps to add a new feature (e.g. a new measurement type, a new panel, a new tool):
 
 **If it requires new Three.js scene logic:**
-- [ ] Create a new Manager class in `packages/viewer/src/core/`.
+- [ ] Create a new Manager class in `packages/core/src/core/`.
 - [ ] Keep it framework-agnostic: no React imports, use callback props for state output.
 - [ ] Add `dispose()` method that removes all scene objects and disposes geometry/materials.
-- [ ] Instantiate it in `Viewport.tsx` inside the one-time `useEffect`.
-- [ ] Add a ref to hold the instance in Viewport (`const myMgrRef = useRef<MyManager | null>(null)`).
+- [ ] Instantiate it in `packages/viewer/src/components/viewport.tsx` inside the one-time `useEffect`.
 - [ ] Wire its callbacks to provider state setters.
 - [ ] If other components need it, add `myManager: MyManager | null` and `setMyManager` to `ViewerProvider`.
-- [ ] Call `setMyManager(mgr)` in Viewport after construction.
-- [ ] Export the class from `index.ts`.
+- [ ] Export the class from `packages/core/src/index.ts`.
 
 **If it requires new UI state:**
 - [ ] Add state variables to `ViewerProvider` and expose them in `ViewerContextValue`.
-- [ ] Add to the `value` object in `ViewerProvider`.
 
 **If it requires new UI components:**
 - [ ] Add `"use client"` directive at the top.
 - [ ] Use `useViewer()` to access state and managers.
 - [ ] Use Radix UI primitives for interactive elements (buttons, dialogs, sliders).
 - [ ] Style with Tailwind CSS classes and `hsl(var(--brand))` color references.
-- [ ] Use `useLocale()` for all user-visible strings — add keys to `ViewerLocale` in `i18n/types.ts` and both `en.ts` and `de.ts`.
-- [ ] Export from `index.ts`.
+- [ ] Use `useLocale()` for all user-visible strings.
+- [ ] Export from `packages/viewer/src/index.ts`.
 
 **If it requires new types:**
-- [ ] Add to `packages/viewer/src/types.ts`.
-- [ ] Export from `index.ts` under the types section.
+- [ ] Add to `packages/core/src/types.ts`.
+- [ ] Export from `packages/core/src/index.ts`.
 
 **If it requires a new source adapter capability:**
 - [ ] Add the optional method to the `FileSourceAdapter` interface.

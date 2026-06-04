@@ -25,6 +25,14 @@ export default defineConfig({
         ],
       },
       {
+        text: 'UI & Customisation',
+        items: [
+          { text: 'Custom UI', link: '/guide/custom-ui' },
+          { text: 'Theming', link: '/guide/theming' },
+          { text: 'Navigation Modes', link: '/guide/navigation' },
+        ],
+      },
+      {
         text: 'Developer Guide',
         items: [
           { text: 'Development Setup', link: '/guide/development' },
