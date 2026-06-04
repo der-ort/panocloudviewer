@@ -1,13 +1,19 @@
-import * as THREE6 from 'three';
+import * as THREE5 from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import React14, { createContext, lazy, useContext, useState, useCallback, useEffect, useRef, useMemo, Suspense } from 'react';
+import React23, { createContext, lazy, useContext, useState, useCallback, useEffect, useRef, useReducer, useMemo, Suspense } from 'react';
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Download, Sliders, Camera, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, X, BoxSelect, Scissors, Move, Maximize2, RotateCcw, Search, Navigation, CloudCog, Trash2, Ruler, Eye, EyeOff, Plus, Upload, Bookmark, Play, Tag, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Globe, Maximize, Settings, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Check, Download, Sliders, Camera, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, BoxSelect, Scissors, Move, Maximize2, RotateCcw, Search, Navigation, CloudCog, Trash2, Ruler, Eye, EyeOff, Plus, Upload, Bookmark, Play, Tag, ChevronLeft, ChevronRight, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, Settings, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import * as Dialog from '@radix-ui/react-dialog';
-import * as Tabs from '@radix-ui/react-tabs';
+import { cva } from 'class-variance-authority';
+import * as SliderPrimitive from '@radix-ui/react-slider';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import * as TabsPrimitive from '@radix-ui/react-tabs';
+import * as PopoverPrimitive from '@radix-ui/react-popover';
+import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+import * as TogglePrimitive from '@radix-ui/react-toggle';
+import * as SelectPrimitive from '@radix-ui/react-select';
 
 var __defProp = Object.defineProperty;
 var __getOwnPropNames = Object.getOwnPropertyNames;
@@ -144,121 +150,18 @@ function createAdapter(source) {
       return new S3SourceAdapter(source.basePath);
   }
 }
-var FpsControls, SceneManager, PointCloudLoader, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, ExportManager, MinimapRenderer, HANDLE_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId, ClipManager, AxisWidget, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
+var SceneManager, PointCloudLoader, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, ExportManager, MinimapRenderer, HANDLE_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId, ClipManager, AxisWidget, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
 var init_dist = __esm({
   "../core/dist/index.js"() {
-    FpsControls = class {
-      camera;
-      domElement;
-      movementSpeed = 10;
-      lookSpeed = 2e-3;
-      enabled = true;
-      _euler = new THREE6.Euler(0, 0, 0, "YXZ");
-      _keys = /* @__PURE__ */ new Set();
-      _dragging = false;
-      _prevX = 0;
-      _prevY = 0;
-      _disposed = false;
-      // Bound listeners for cleanup
-      _onKeyDown;
-      _onKeyUp;
-      _onMouseDown;
-      _onMouseMove;
-      _onMouseUp;
-      _onContextMenu;
-      constructor(camera, domElement) {
-        this.camera = camera;
-        this.domElement = domElement;
-        this._euler.setFromQuaternion(camera.quaternion, "YXZ");
-        this._onKeyDown = (e) => this._handleKeyDown(e);
-        this._onKeyUp = (e) => this._handleKeyUp(e);
-        this._onMouseDown = (e) => this._handleMouseDown(e);
-        this._onMouseMove = (e) => this._handleMouseMove(e);
-        this._onMouseUp = () => this._handleMouseUp();
-        this._onContextMenu = (e) => e.preventDefault();
-        document.addEventListener("keydown", this._onKeyDown);
-        document.addEventListener("keyup", this._onKeyUp);
-        domElement.addEventListener("mousedown", this._onMouseDown);
-        document.addEventListener("mousemove", this._onMouseMove);
-        document.addEventListener("mouseup", this._onMouseUp);
-        domElement.addEventListener("contextmenu", this._onContextMenu);
-      }
-      /** Sync euler from current camera orientation (call when switching to fly mode) */
-      syncFromCamera() {
-        this._euler.setFromQuaternion(this.camera.quaternion, "YXZ");
-      }
-      _handleKeyDown(e) {
-        if (!this.enabled) return;
-        this._keys.add(e.code);
-      }
-      _handleKeyUp(e) {
-        this._keys.delete(e.code);
-      }
-      _handleMouseDown(e) {
-        if (!this.enabled) return;
-        if (e.button === 2 || e.button === 1) {
-          this._dragging = true;
-          this._prevX = e.clientX;
-          this._prevY = e.clientY;
-        }
-      }
-      _handleMouseMove(e) {
-        if (!this.enabled || !this._dragging) return;
-        const dx = e.clientX - this._prevX;
-        const dy = e.clientY - this._prevY;
-        this._prevX = e.clientX;
-        this._prevY = e.clientY;
-        this._euler.y -= dx * this.lookSpeed;
-        this._euler.x -= dy * this.lookSpeed;
-        this._euler.x = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this._euler.x));
-        this.camera.quaternion.setFromEuler(this._euler);
-      }
-      _handleMouseUp() {
-        this._dragging = false;
-      }
-      /**
-       * Update camera position based on held keys.
-       * @param delta Time in seconds since last frame
-       */
-      update(delta) {
-        if (!this.enabled) return;
-        const speed = this.movementSpeed * delta * (this._keys.has("ShiftLeft") || this._keys.has("ShiftRight") ? 2 : 1);
-        const forward = new THREE6.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-        const right = new THREE6.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
-        const up = new THREE6.Vector3(0, 0, 1);
-        const move = new THREE6.Vector3();
-        if (this._keys.has("KeyW")) move.add(forward);
-        if (this._keys.has("KeyS")) move.sub(forward);
-        if (this._keys.has("KeyA")) move.sub(right);
-        if (this._keys.has("KeyD")) move.add(right);
-        if (this._keys.has("KeyE")) move.add(up);
-        if (this._keys.has("KeyQ")) move.sub(up);
-        if (move.lengthSq() > 0) {
-          move.normalize().multiplyScalar(speed);
-          this.camera.position.add(move);
-        }
-      }
-      dispose() {
-        if (this._disposed) return;
-        this._disposed = true;
-        document.removeEventListener("keydown", this._onKeyDown);
-        document.removeEventListener("keyup", this._onKeyUp);
-        this.domElement.removeEventListener("mousedown", this._onMouseDown);
-        document.removeEventListener("mousemove", this._onMouseMove);
-        document.removeEventListener("mouseup", this._onMouseUp);
-        this.domElement.removeEventListener("contextmenu", this._onContextMenu);
-      }
-    };
     SceneManager = class {
       scene;
       camera;
       renderer;
       controls;
-      _fpsControls = null;
       _navMode = "orbit";
       _projection = "perspective";
       _orthoCamera = null;
-      /** Movement speed for fly mode — auto-scaled when point cloud loads */
+      /** Kept for API compatibility — no longer drives navigation */
       flySpeed = 10;
       animationId = null;
       lastTime = 0;
@@ -275,18 +178,18 @@ var init_dist = __esm({
       constructor({ canvas, onFpsUpdate, onPointsUpdate }) {
         this.onFpsUpdate = onFpsUpdate;
         this.onPointsUpdate = onPointsUpdate;
-        this.scene = new THREE6.Scene();
-        this.scene.background = new THREE6.Color(657930);
+        this.scene = new THREE5.Scene();
+        this.scene.background = new THREE5.Color(657930);
         const { clientWidth: w, clientHeight: h } = canvas;
-        this.camera = new THREE6.PerspectiveCamera(60, w / h, 0.01, 1e5);
+        this.camera = new THREE5.PerspectiveCamera(60, w / h, 0.01, 1e5);
         this.camera.position.set(0, 0, 50);
-        this.renderer = new THREE6.WebGLRenderer({
+        this.renderer = new THREE5.WebGLRenderer({
           antialias: true,
           logarithmicDepthBuffer: true
         });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         this.renderer.setSize(w, h);
-        this.renderer.outputColorSpace = THREE6.LinearSRGBColorSpace;
+        this.renderer.outputColorSpace = THREE5.LinearSRGBColorSpace;
         this.renderer.autoClear = false;
         canvas.appendChild(this.renderer.domElement);
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -295,9 +198,15 @@ var init_dist = __esm({
         this.controls.screenSpacePanning = true;
         this.controls.maxPolarAngle = Math.PI;
         this.controls.zoomSpeed = 1.5;
-        this.controls.rotateSpeed = -1;
-        this.scene.add(new THREE6.AmbientLight(16777215, 0.5));
-        const dir = new THREE6.DirectionalLight(16777215, 1);
+        this.controls.rotateSpeed = 0.8;
+        this.controls.zoomToCursor = true;
+        this.controls.mouseButtons = {
+          LEFT: THREE5.MOUSE.ROTATE,
+          MIDDLE: THREE5.MOUSE.DOLLY,
+          RIGHT: THREE5.MOUSE.PAN
+        };
+        this.scene.add(new THREE5.AmbientLight(16777215, 0.5));
+        const dir = new THREE5.DirectionalLight(16777215, 1);
         dir.position.set(1, 2, 3);
         this.scene.add(dir);
         this.resizeObserver = new ResizeObserver(() => this.onResize(canvas));
@@ -315,15 +224,11 @@ var init_dist = __esm({
       start() {
         const loop = (now) => {
           this.animationId = requestAnimationFrame(loop);
-          const delta = this.lastTime === 0 ? 16 : now - this.lastTime;
+          this.lastTime === 0 ? 16 : now - this.lastTime;
           this.lastTime = now;
           this.renderer.setScissorTest(false);
           this.renderer.clear();
-          if (this._navMode === "fly" && this._fpsControls) {
-            this._fpsControls.update(Math.min(delta / 1e3, 0.1));
-          } else {
-            this.controls.update();
-          }
+          this.controls.update();
           if (this.potree && this.pointClouds.length > 0) {
             this.potree.updatePointClouds(
               this.pointClouds,
@@ -381,7 +286,7 @@ var init_dist = __esm({
         if (mode === this._projection) return;
         this._projection = mode;
         if (mode === "orthographic" && !this._orthoCamera) {
-          this._orthoCamera = new THREE6.OrthographicCamera(-1, 1, 1, -1, 0.01, 1e5);
+          this._orthoCamera = new THREE5.OrthographicCamera(-1, 1, 1, -1, 0.01, 1e5);
         }
       }
       /**
@@ -394,7 +299,7 @@ var init_dist = __esm({
         cam.position.copy(this.camera.position);
         cam.quaternion.copy(this.camera.quaternion);
         const dist = this.camera.position.distanceTo(this.controls.target);
-        const h = 2 * dist * Math.tan(THREE6.MathUtils.degToRad(this.camera.fov / 2));
+        const h = 2 * dist * Math.tan(THREE5.MathUtils.degToRad(this.camera.fov / 2));
         const w = h * this.camera.aspect;
         cam.left = -w / 2;
         cam.right = w / 2;
@@ -406,70 +311,75 @@ var init_dist = __esm({
         return cam;
       }
       /**
-       * Switch between navigation modes.
-       * - orbit: standard orbit / tumble around a target point
-       * - fly:   free-flight (WASD + mouse-drag to look), no camera roll
-       * - earth: pan-primary mode (like Google Earth / map view)
+       * Switch between navigation modes. All three reconfigure the SAME OrbitControls
+       * instance (zoom-to-cursor + damping throughout) so the orbit target remains
+       * authoritative for clipping, minimap, camera animation and ortho sync.
+       * - orbit: CAD turntable — left-drag rotate, middle dolly, right pan, full sphere.
+       * - free:  Blender-ish free orbit — left/middle drag rotate, right pan, full sphere.
+       * - pan:   Map / top-down — left-drag pans, horizon-locked, right-drag rotates.
        */
       setNavigationMode(mode) {
         if (mode === this._navMode) return;
         this._navMode = mode;
-        if (mode === "fly") {
-          this.controls.enabled = false;
-          if (!this._fpsControls) {
-            this._fpsControls = new FpsControls(this.camera, this.renderer.domElement);
-          }
-          this._fpsControls.syncFromCamera();
-          this._fpsControls.movementSpeed = this.flySpeed;
-          this._fpsControls.enabled = true;
+        const c = this.controls;
+        c.enableRotate = true;
+        c.screenSpacePanning = true;
+        c.minPolarAngle = 0;
+        if (mode === "pan") {
+          c.maxPolarAngle = Math.PI / 2.05;
+          c.mouseButtons = {
+            LEFT: THREE5.MOUSE.PAN,
+            MIDDLE: THREE5.MOUSE.DOLLY,
+            RIGHT: THREE5.MOUSE.ROTATE
+          };
+        } else if (mode === "free") {
+          c.maxPolarAngle = Math.PI;
+          c.mouseButtons = {
+            LEFT: THREE5.MOUSE.ROTATE,
+            MIDDLE: THREE5.MOUSE.ROTATE,
+            RIGHT: THREE5.MOUSE.PAN
+          };
         } else {
-          if (this._fpsControls) this._fpsControls.enabled = false;
-          this.controls.enabled = true;
-          if (mode === "orbit") {
-            this.controls.screenSpacePanning = true;
-            this.controls.maxPolarAngle = Math.PI;
-            this.controls.enableRotate = true;
-          } else {
-            this.controls.screenSpacePanning = true;
-            this.controls.maxPolarAngle = Math.PI / 2.05;
-            this.controls.enableRotate = true;
-          }
+          c.maxPolarAngle = Math.PI;
+          c.mouseButtons = {
+            LEFT: THREE5.MOUSE.ROTATE,
+            MIDDLE: THREE5.MOUSE.DOLLY,
+            RIGHT: THREE5.MOUSE.PAN
+          };
         }
+        c.update();
       }
       /**
-       * Set fly movement speed. Propagates to active FlyControls if instantiated.
-       * Call this instead of setting flySpeed directly when fly mode is active.
+       * Set fly movement speed. Kept for API compatibility.
        */
       setFlySpeed(speed) {
         this.flySpeed = speed;
-        if (this._fpsControls) this._fpsControls.movementSpeed = speed;
       }
       /** Stop animation loop and dispose resources */
       dispose() {
         if (this.animationId !== null) cancelAnimationFrame(this.animationId);
         this.resizeObserver.disconnect();
         this.controls.dispose();
-        this._fpsControls?.dispose();
         this.renderer.dispose();
         this.renderer.domElement.remove();
       }
       /** Fit camera to bounding box */
       fitToBox(box) {
-        const center = new THREE6.Vector3();
-        const size = new THREE6.Vector3();
+        const center = new THREE5.Vector3();
+        const size = new THREE5.Vector3();
         box.getCenter(center);
         box.getSize(size);
         const maxDim = Math.max(size.x, size.y, size.z);
         const fov = this.camera.fov * (Math.PI / 180);
         const dist = maxDim / (2 * Math.tan(fov / 2)) * 1.5;
-        this.camera.position.copy(center).add(new THREE6.Vector3(0, 0, dist));
+        this.camera.position.copy(center).add(new THREE5.Vector3(0, 0, dist));
         this.controls.target.copy(center);
         this.controls.update();
       }
       /** Raycast against objects in scene */
       raycast(normalizedX, normalizedY, objects) {
-        const raycaster = new THREE6.Raycaster();
-        const pointer = new THREE6.Vector2(normalizedX, normalizedY);
+        const raycaster = new THREE5.Raycaster();
+        const pointer = new THREE5.Vector2(normalizedX, normalizedY);
         raycaster.setFromCamera(pointer, this.camera);
         return raycaster.intersectObjects(objects, true);
       }
@@ -480,8 +390,8 @@ var init_dist = __esm({
        */
       pickPoint(normalizedX, normalizedY) {
         if (this.pointClouds.length === 0) return null;
-        const raycaster = new THREE6.Raycaster();
-        raycaster.setFromCamera(new THREE6.Vector2(normalizedX, normalizedY), this.camera);
+        const raycaster = new THREE5.Raycaster();
+        raycaster.setFromCamera(new THREE5.Vector2(normalizedX, normalizedY), this.camera);
         for (const pc of this.pointClouds) {
           const octree = pc;
           if (typeof octree.pick !== "function") continue;
@@ -501,7 +411,7 @@ var init_dist = __esm({
       currentClouds = [];
       hasRgb = false;
       /** World-space bounding box of the loaded point cloud (available after load) */
-      worldBox = new THREE6.Box3();
+      worldBox = new THREE5.Box3();
       constructor(sceneManager, adapter) {
         this.sceneManager = sceneManager;
         this.adapter = adapter;
@@ -552,7 +462,7 @@ var init_dist = __esm({
         const box = pointCloud.pcoGeometry?.boundingBox ?? pointCloud.boundingBox;
         const tightBox = pointCloud.pcoGeometry?.tightBoundingBox ?? box;
         const offset = pointCloud.pcoGeometry?.offset;
-        const worldBox = new THREE6.Box3();
+        const worldBox = new THREE5.Box3();
         if (tightBox && offset) {
           worldBox.copy(tightBox);
           worldBox.min.add(offset);
@@ -720,9 +630,9 @@ var init_dist = __esm({
       }
       /** Fly to a camera marker position (offset behind the camera by `offset` units) */
       flyToCamera(camPos, yawDeg = 0, offset = 5, duration = 800) {
-        const pos = Array.isArray(camPos) ? new THREE6.Vector3(camPos[0], camPos[1], camPos[2]) : camPos;
+        const pos = Array.isArray(camPos) ? new THREE5.Vector3(camPos[0], camPos[1], camPos[2]) : camPos;
         const yaw = yawDeg * Math.PI / 180;
-        const viewerPos = new THREE6.Vector3(
+        const viewerPos = new THREE5.Vector3(
           pos.x - Math.sin(yaw) * offset,
           pos.y - Math.cos(yaw) * offset,
           pos.z + 2
@@ -780,7 +690,7 @@ var init_dist = __esm({
       _worldBox;
       constructor(scene) {
         this.scene = scene;
-        this.group = new THREE6.Group();
+        this.group = new THREE5.Group();
         this.group.name = "pano-markers";
         this.scene.add(this.group);
       }
@@ -797,7 +707,7 @@ var init_dist = __esm({
         this._worldBox = worldBox;
         this.clear();
         if (worldBox && !worldBox.isEmpty()) {
-          const size = new THREE6.Vector3();
+          const size = new THREE5.Vector3();
           worldBox.getSize(size);
           const maxDim = Math.max(size.x, size.y, size.z);
           this.sphereRadius = Math.max(0.25, Math.min(5, maxDim * 8e-3));
@@ -818,8 +728,8 @@ var init_dist = __esm({
       }
       _makeSphere(color) {
         const scaledRadius = this.sphereRadius * this._displaySettings.markerSphereScale;
-        const geo = new THREE6.SphereGeometry(scaledRadius, 16, 16);
-        const mat = new THREE6.MeshBasicMaterial({
+        const geo = new THREE5.SphereGeometry(scaledRadius, 16, 16);
+        const mat = new THREE5.MeshBasicMaterial({
           color,
           depthTest: false,
           // Always visible through the point cloud
@@ -827,7 +737,7 @@ var init_dist = __esm({
           transparent: true,
           opacity: this._displaySettings.markerSphereOpacity
         });
-        return new THREE6.Mesh(geo, mat);
+        return new THREE5.Mesh(geo, mat);
       }
       _makeLabel(text) {
         const canvas = document.createElement("canvas");
@@ -843,14 +753,14 @@ var init_dist = __esm({
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(text.substring(0, 20), 128, 34);
-        const tex = new THREE6.CanvasTexture(canvas);
-        const mat = new THREE6.SpriteMaterial({
+        const tex = new THREE5.CanvasTexture(canvas);
+        const mat = new THREE5.SpriteMaterial({
           map: tex,
           depthTest: false,
           depthWrite: false,
           transparent: true
         });
-        const sprite = new THREE6.Sprite(mat);
+        const sprite = new THREE5.Sprite(mat);
         const ls = this._displaySettings.markerLabelScale;
         sprite.scale.set(this.sphereRadius * 8 * ls, this.sphereRadius * 2 * ls, 1);
         return sprite;
@@ -930,7 +840,7 @@ var init_dist = __esm({
       _snapLine = null;
       constructor(scene) {
         this.scene = scene;
-        this.group = new THREE6.Group();
+        this.group = new THREE5.Group();
         this.group.name = "measurements";
         this.scene.add(this.group);
       }
@@ -947,9 +857,9 @@ var init_dist = __esm({
         for (const [id, entry] of this.measurements) {
           this._disposeObjects(entry.objects);
           const m = entry.data;
-          const newObjects = m.box ? this.buildVolumeBoxObjects(m, new THREE6.Box3(
-            new THREE6.Vector3(m.box.min[0], m.box.min[1], m.box.min[2]),
-            new THREE6.Vector3(m.box.max[0], m.box.max[1], m.box.max[2])
+          const newObjects = m.box ? this.buildVolumeBoxObjects(m, new THREE5.Box3(
+            new THREE5.Vector3(m.box.min[0], m.box.min[1], m.box.min[2]),
+            new THREE5.Vector3(m.box.max[0], m.box.max[1], m.box.max[2])
           )) : this.buildObjects(m);
           this.measurements.set(id, { data: m, objects: newObjects });
         }
@@ -957,10 +867,10 @@ var init_dist = __esm({
       /** Dispose geometry/materials and remove objects from the group */
       _disposeObjects(objects) {
         objects.forEach((o) => {
-          if (o instanceof THREE6.Mesh || o instanceof THREE6.Line || o instanceof THREE6.LineSegments) {
+          if (o instanceof THREE5.Mesh || o instanceof THREE5.Line || o instanceof THREE5.LineSegments) {
             o.geometry.dispose();
             o.material.dispose();
-          } else if (o instanceof THREE6.Sprite) {
+          } else if (o instanceof THREE5.Sprite) {
             o.material.map?.dispose();
             o.material.dispose();
           }
@@ -1016,16 +926,16 @@ var init_dist = __esm({
        *  - A rubber-band line from the last placed point to the snap position
        */
       updateSnap(worldPos, color) {
-        const c = new THREE6.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
+        const c = new THREE5.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
         if (!this._snapSphere) {
-          const geo = new THREE6.SphereGeometry(this._displaySettings.measurementSphereRadius * 0.8, 10, 8);
-          const mat = new THREE6.MeshBasicMaterial({
+          const geo = new THREE5.SphereGeometry(this._displaySettings.measurementSphereRadius * 0.8, 10, 8);
+          const mat = new THREE5.MeshBasicMaterial({
             color: c,
             depthTest: false,
             transparent: true,
             opacity: 0.8
           });
-          this._snapSphere = new THREE6.Mesh(geo, mat);
+          this._snapSphere = new THREE5.Mesh(geo, mat);
           this._snapSphere.renderOrder = 4;
           this.group.add(this._snapSphere);
         }
@@ -1039,8 +949,8 @@ var init_dist = __esm({
             positions.setXYZ(1, worldPos.x, worldPos.y, worldPos.z);
             positions.needsUpdate = true;
           } else {
-            const geo = new THREE6.BufferGeometry().setFromPoints([lastPt, worldPos]);
-            const mat = new THREE6.LineDashedMaterial({
+            const geo = new THREE5.BufferGeometry().setFromPoints([lastPt, worldPos]);
+            const mat = new THREE5.LineDashedMaterial({
               color: c,
               depthTest: false,
               transparent: true,
@@ -1048,7 +958,7 @@ var init_dist = __esm({
               dashSize: 0.3,
               gapSize: 0.15
             });
-            this._snapLine = new THREE6.Line(geo, mat);
+            this._snapLine = new THREE5.Line(geo, mat);
             this._snapLine.computeLineDistances();
             this._snapLine.renderOrder = 3;
             this.group.add(this._snapLine);
@@ -1076,7 +986,7 @@ var init_dist = __esm({
       setVolumeDraft(box) {
         if (this._volumeDraft) {
           this._volumeDraft.traverse((o) => {
-            if (o instanceof THREE6.Mesh || o instanceof THREE6.LineSegments) {
+            if (o instanceof THREE5.Mesh || o instanceof THREE5.LineSegments) {
               o.geometry.dispose();
               o.material.dispose();
             }
@@ -1085,28 +995,28 @@ var init_dist = __esm({
           this._volumeDraft = null;
         }
         if (!box || box.isEmpty()) return;
-        const draftGroup = new THREE6.Group();
-        const center = new THREE6.Vector3();
-        const size = new THREE6.Vector3();
+        const draftGroup = new THREE5.Group();
+        const center = new THREE5.Vector3();
+        const size = new THREE5.Vector3();
         box.getCenter(center);
         box.getSize(size);
-        const c = new THREE6.Color(COLORS.volume);
-        const fillGeo = new THREE6.BoxGeometry(1, 1, 1);
-        const fillMat = new THREE6.MeshBasicMaterial({
+        const c = new THREE5.Color(COLORS.volume);
+        const fillGeo = new THREE5.BoxGeometry(1, 1, 1);
+        const fillMat = new THREE5.MeshBasicMaterial({
           color: c,
           opacity: 0.1,
           transparent: true,
           depthWrite: false,
           depthTest: false
         });
-        const fill = new THREE6.Mesh(fillGeo, fillMat);
+        const fill = new THREE5.Mesh(fillGeo, fillMat);
         fill.position.copy(center);
         fill.scale.copy(size);
         fill.renderOrder = 1;
         draftGroup.add(fill);
-        const edgesGeo = new THREE6.EdgesGeometry(new THREE6.BoxGeometry(1, 1, 1));
-        const edgesMat = new THREE6.LineBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: 0.6 });
-        const edges = new THREE6.LineSegments(edgesGeo, edgesMat);
+        const edgesGeo = new THREE5.EdgesGeometry(new THREE5.BoxGeometry(1, 1, 1));
+        const edgesMat = new THREE5.LineBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: 0.6 });
+        const edges = new THREE5.LineSegments(edgesGeo, edgesMat);
         edges.position.copy(center);
         edges.scale.copy(size);
         edges.renderOrder = 2;
@@ -1118,7 +1028,7 @@ var init_dist = __esm({
       addVolumeMeasurement(box) {
         this.setVolumeDraft(null);
         this.clearSnap();
-        const size = new THREE6.Vector3();
+        const size = new THREE5.Vector3();
         box.getSize(size);
         const volume = size.x * size.y * size.z;
         if (volume <= 0) return null;
@@ -1145,28 +1055,28 @@ var init_dist = __esm({
       }
       buildVolumeBoxObjects(m, box) {
         const objects = [];
-        const color = new THREE6.Color(m.color);
-        const center = new THREE6.Vector3();
-        const size = new THREE6.Vector3();
+        const color = new THREE5.Color(m.color);
+        const center = new THREE5.Vector3();
+        const size = new THREE5.Vector3();
         box.getCenter(center);
         box.getSize(size);
-        const fillGeo = new THREE6.BoxGeometry(1, 1, 1);
-        const fillMat = new THREE6.MeshBasicMaterial({
+        const fillGeo = new THREE5.BoxGeometry(1, 1, 1);
+        const fillMat = new THREE5.MeshBasicMaterial({
           color,
           opacity: 0.12,
           transparent: true,
           depthWrite: false,
           depthTest: false
         });
-        const fill = new THREE6.Mesh(fillGeo, fillMat);
+        const fill = new THREE5.Mesh(fillGeo, fillMat);
         fill.position.copy(center);
         fill.scale.copy(size);
         fill.renderOrder = 1;
         this.group.add(fill);
         objects.push(fill);
-        const edgesGeo = new THREE6.EdgesGeometry(new THREE6.BoxGeometry(1, 1, 1));
-        const edgesMat = new THREE6.LineBasicMaterial({ color, depthTest: false });
-        const edges = new THREE6.LineSegments(edgesGeo, edgesMat);
+        const edgesGeo = new THREE5.EdgesGeometry(new THREE5.BoxGeometry(1, 1, 1));
+        const edgesMat = new THREE5.LineBasicMaterial({ color, depthTest: false });
+        const edges = new THREE5.LineSegments(edgesGeo, edgesMat);
         edges.position.copy(center);
         edges.scale.copy(size);
         edges.renderOrder = 2;
@@ -1174,7 +1084,7 @@ var init_dist = __esm({
         objects.push(edges);
         const text = `${m.value.toFixed(3)} m\xB3`;
         const sprite = this.makeTextSprite(text, m.color);
-        sprite.position.copy(center).add(new THREE6.Vector3(0, 0, size.z / 2 + 0.5));
+        sprite.position.copy(center).add(new THREE5.Vector3(0, 0, size.z / 2 + 0.5));
         const ls = this._displaySettings.measurementLabelScale;
         sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
         sprite.renderOrder = 3;
@@ -1217,20 +1127,20 @@ var init_dist = __esm({
         return Math.abs(area) / 2;
       }
       convexVolume(pts) {
-        const box = new THREE6.Box3();
+        const box = new THREE5.Box3();
         pts.forEach((p) => box.expandByPoint(p));
-        const size = new THREE6.Vector3();
+        const size = new THREE5.Vector3();
         box.getSize(size);
         return size.x * size.y * size.z;
       }
       buildObjects(m) {
         const objects = [];
-        const color = new THREE6.Color(m.color);
+        const color = new THREE5.Color(m.color);
         const pts = m.points;
         pts.forEach((p) => {
-          const geo = new THREE6.SphereGeometry(this._displaySettings.measurementSphereRadius, 8, 6);
-          const mat = new THREE6.MeshBasicMaterial({ color, depthTest: false });
-          const mesh = new THREE6.Mesh(geo, mat);
+          const geo = new THREE5.SphereGeometry(this._displaySettings.measurementSphereRadius, 8, 6);
+          const mat = new THREE5.MeshBasicMaterial({ color, depthTest: false });
+          const mesh = new THREE5.Mesh(geo, mat);
           mesh.position.copy(p);
           mesh.renderOrder = 2;
           this.group.add(mesh);
@@ -1239,28 +1149,28 @@ var init_dist = __esm({
         if (pts.length >= 2) {
           const lineType = m.type === "height" ? "vertical" : "direct";
           if (lineType === "vertical" && m.type === "height") {
-            const geo = new THREE6.BufferGeometry().setFromPoints([
+            const geo = new THREE5.BufferGeometry().setFromPoints([
               pts[0],
-              new THREE6.Vector3(pts[0].x, pts[0].y, pts[1].z)
+              new THREE5.Vector3(pts[0].x, pts[0].y, pts[1].z)
             ]);
-            const mat = new THREE6.LineBasicMaterial({ color, depthTest: false });
-            const line = new THREE6.Line(geo, mat);
+            const mat = new THREE5.LineBasicMaterial({ color, depthTest: false });
+            const line = new THREE5.Line(geo, mat);
             line.renderOrder = 1;
             this.group.add(line);
             objects.push(line);
           } else {
             for (let i = 0; i < pts.length - 1; i++) {
-              const geo = new THREE6.BufferGeometry().setFromPoints([pts[i], pts[i + 1]]);
-              const mat = new THREE6.LineBasicMaterial({ color, depthTest: false });
-              const line = new THREE6.Line(geo, mat);
+              const geo = new THREE5.BufferGeometry().setFromPoints([pts[i], pts[i + 1]]);
+              const mat = new THREE5.LineBasicMaterial({ color, depthTest: false });
+              const line = new THREE5.Line(geo, mat);
               line.renderOrder = 1;
               this.group.add(line);
               objects.push(line);
             }
             if (m.type === "area" && pts.length >= 3) {
-              const geo = new THREE6.BufferGeometry().setFromPoints([pts[pts.length - 1], pts[0]]);
-              const mat = new THREE6.LineBasicMaterial({ color, depthTest: false });
-              this.group.add(new THREE6.Line(geo, mat));
+              const geo = new THREE5.BufferGeometry().setFromPoints([pts[pts.length - 1], pts[0]]);
+              const mat = new THREE5.LineBasicMaterial({ color, depthTest: false });
+              this.group.add(new THREE5.Line(geo, mat));
             }
           }
         }
@@ -1290,8 +1200,8 @@ var init_dist = __esm({
           }
           if (text) {
             const sprite = this.makeTextSprite(text, m.color);
-            const mid = pts.reduce((a, b) => a.clone().add(b), new THREE6.Vector3()).divideScalar(pts.length);
-            sprite.position.copy(mid).add(new THREE6.Vector3(0, 0, 1));
+            const mid = pts.reduce((a, b) => a.clone().add(b), new THREE5.Vector3()).divideScalar(pts.length);
+            sprite.position.copy(mid).add(new THREE5.Vector3(0, 0, 1));
             const ls = this._displaySettings.measurementLabelScale;
             sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
             sprite.renderOrder = 3;
@@ -1314,21 +1224,21 @@ var init_dist = __esm({
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(text, 128, 24);
-        const tex = new THREE6.CanvasTexture(canvas);
-        return new THREE6.Sprite(new THREE6.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+        const tex = new THREE5.CanvasTexture(canvas);
+        return new THREE5.Sprite(new THREE5.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
       }
       rebuildPreview() {
         this.clearPreview();
         if (!this.activeMeasurement || this.activeMeasurement.points.length < 1) return;
         const pts = this.activeMeasurement.points;
-        const geo = new THREE6.BufferGeometry().setFromPoints(pts);
-        const mat = new THREE6.LineBasicMaterial({
-          color: new THREE6.Color(this.activeMeasurement.color),
+        const geo = new THREE5.BufferGeometry().setFromPoints(pts);
+        const mat = new THREE5.LineBasicMaterial({
+          color: new THREE5.Color(this.activeMeasurement.color),
           depthTest: false,
           transparent: true,
           opacity: 0.7
         });
-        this.previewLine = new THREE6.Line(geo, mat);
+        this.previewLine = new THREE5.Line(geo, mat);
         this.previewLine.renderOrder = 1;
         this.group.add(this.previewLine);
       }
@@ -1364,11 +1274,11 @@ var init_dist = __esm({
       }
     };
     VIEW_DIRECTIONS = {
-      top: { pos: new THREE6.Vector3(0, 0, 1), up: new THREE6.Vector3(0, 1, 0) },
-      front: { pos: new THREE6.Vector3(0, -1, 0), up: new THREE6.Vector3(0, 0, 1) },
-      side: { pos: new THREE6.Vector3(1, 0, 0), up: new THREE6.Vector3(0, 0, 1) },
-      back: { pos: new THREE6.Vector3(0, 1, 0), up: new THREE6.Vector3(0, 0, 1) },
-      custom: { pos: new THREE6.Vector3(0, 0, 1), up: new THREE6.Vector3(0, 1, 0) }
+      top: { pos: new THREE5.Vector3(0, 0, 1), up: new THREE5.Vector3(0, 1, 0) },
+      front: { pos: new THREE5.Vector3(0, -1, 0), up: new THREE5.Vector3(0, 0, 1) },
+      side: { pos: new THREE5.Vector3(1, 0, 0), up: new THREE5.Vector3(0, 0, 1) },
+      back: { pos: new THREE5.Vector3(0, 1, 0), up: new THREE5.Vector3(0, 0, 1) },
+      custom: { pos: new THREE5.Vector3(0, 0, 1), up: new THREE5.Vector3(0, 1, 0) }
     };
     ExportManager = class {
       sceneManager;
@@ -1379,17 +1289,17 @@ var init_dist = __esm({
       async capture(options) {
         const { view, scale, background, format, quality = 0.95 } = options;
         const { scene, renderer } = this.sceneManager;
-        const box = new THREE6.Box3();
+        const box = new THREE5.Box3();
         scene.traverse((obj) => {
-          if (obj instanceof THREE6.Mesh || obj.name === "pointcloud") {
+          if (obj instanceof THREE5.Mesh || obj.name === "pointcloud") {
             try {
               box.expandByObject(obj);
             } catch {
             }
           }
         });
-        const size = new THREE6.Vector3();
-        const center = new THREE6.Vector3();
+        const size = new THREE5.Vector3();
+        const center = new THREE5.Vector3();
         box.getSize(size);
         box.getCenter(center);
         const dir = VIEW_DIRECTIONS[view] ?? VIEW_DIRECTIONS.top;
@@ -1400,19 +1310,19 @@ var init_dist = __esm({
         const aspect = outW / outH;
         const halfH = Math.max(size.x, size.y, size.z) * 0.6;
         const halfW = halfH * aspect;
-        const orthoCamera = new THREE6.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 1e5);
+        const orthoCamera = new THREE5.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 1e5);
         orthoCamera.position.copy(center).addScaledVector(dir.pos, halfH * 3);
         orthoCamera.up.copy(dir.up);
         orthoCamera.lookAt(center);
         orthoCamera.updateMatrixWorld();
-        const rt = new THREE6.WebGLRenderTarget(outW, outH, {
-          minFilter: THREE6.LinearFilter,
-          magFilter: THREE6.LinearFilter,
-          format: THREE6.RGBAFormat
+        const rt = new THREE5.WebGLRenderTarget(outW, outH, {
+          minFilter: THREE5.LinearFilter,
+          magFilter: THREE5.LinearFilter,
+          format: THREE5.RGBAFormat
         });
         const prevBg = scene.background;
-        if (background === "white") scene.background = new THREE6.Color(16777215);
-        else if (background === "black") scene.background = new THREE6.Color(0);
+        if (background === "white") scene.background = new THREE5.Color(16777215);
+        else if (background === "black") scene.background = new THREE5.Color(0);
         else scene.background = null;
         renderer.setRenderTarget(rt);
         renderer.setSize(outW, outH);
@@ -1461,7 +1371,7 @@ var init_dist = __esm({
       frameCount = 0;
       constructor(sceneManager) {
         this.sceneManager = sceneManager;
-        this.orthoCamera = new THREE6.OrthographicCamera(-50, 50, 50, -50, -1e4, 1e4);
+        this.orthoCamera = new THREE5.OrthographicCamera(-50, 50, 50, -50, -1e4, 1e4);
         this.orthoCamera.position.set(0, 0, 1e3);
         this.orthoCamera.up.set(0, 1, 0);
         this.orthoCamera.lookAt(0, 0, 0);
@@ -1486,7 +1396,7 @@ var init_dist = __esm({
         this.overlayCanvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;";
         container.appendChild(this.overlayCanvas);
         try {
-          this.miniRenderer = new THREE6.WebGLRenderer({
+          this.miniRenderer = new THREE5.WebGLRenderer({
             canvas: this.glCanvas,
             antialias: false,
             alpha: false
@@ -1502,8 +1412,8 @@ var init_dist = __esm({
       setBounds(bounds) {
         this.bounds = bounds.clone();
         if (bounds.isEmpty()) return;
-        const size = new THREE6.Vector3();
-        const center = new THREE6.Vector3();
+        const size = new THREE5.Vector3();
+        const center = new THREE5.Vector3();
         bounds.getSize(size);
         bounds.getCenter(center);
         const half = Math.max(size.x, size.y) * 0.55;
@@ -1569,13 +1479,13 @@ var init_dist = __esm({
       }
       _drawCamera(ctx, _W, _H) {
         const cam = this.sceneManager.camera;
-        const dir = new THREE6.Vector3();
+        const dir = new THREE5.Vector3();
         cam.getWorldDirection(dir);
         const cx = this._worldToCanvasX(cam.position.x);
         const cy = this._worldToCanvasY(cam.position.y);
         const angle = Math.atan2(-dir.y, dir.x);
         const fovLen = 28;
-        const halfFov = THREE6.MathUtils.degToRad(cam.fov * 0.5 * (1 / Math.max(cam.aspect, 0.1)));
+        const halfFov = THREE5.MathUtils.degToRad(cam.fov * 0.5 * (1 / Math.max(cam.aspect, 0.1)));
         const left = angle - halfFov;
         const right = angle + halfFov;
         ctx.beginPath();
@@ -1599,7 +1509,7 @@ var init_dist = __esm({
         const H = this.overlayCanvas?.height ?? 176;
         const wx = this.worldLeft + cx / W * (this.worldRight - this.worldLeft);
         const wy = this.worldBottom + (1 - cy / H) * (this.worldTop - this.worldBottom);
-        return new THREE6.Vector2(wx, wy);
+        return new THREE5.Vector2(wx, wy);
       }
       /** Handle resize (called by parent when container size changes) */
       resize() {
@@ -1638,14 +1548,14 @@ var init_dist = __esm({
       onChange = null;
       drag = null;
       hoveredHandle = null;
-      raycaster = new THREE6.Raycaster();
+      raycaster = new THREE5.Raycaster();
       group;
       disposed = false;
       constructor(scene, camera, domElement) {
         this.scene = scene;
         this.camera = camera;
         this.domElement = domElement;
-        this.group = new THREE6.Group();
+        this.group = new THREE5.Group();
         this.group.name = "face-handles";
         this.scene.add(this.group);
         this.createHandles();
@@ -1653,16 +1563,16 @@ var init_dist = __esm({
       createHandles() {
         const axes = ["x", "y", "z"];
         const signs = [1, -1];
-        const geo = new THREE6.SphereGeometry(1, 12, 8);
+        const geo = new THREE5.SphereGeometry(1, 12, 8);
         for (const axis of axes) {
           for (const sign of signs) {
-            const mat = new THREE6.MeshBasicMaterial({
+            const mat = new THREE5.MeshBasicMaterial({
               color: HANDLE_COLOR,
               transparent: true,
               opacity: 0.7,
               depthTest: false
             });
-            const mesh = new THREE6.Mesh(geo, mat);
+            const mesh = new THREE5.Mesh(geo, mat);
             mesh.renderOrder = 10;
             mesh.visible = false;
             mesh.userData = { faceHandle: true, axis, sign };
@@ -1696,8 +1606,8 @@ var init_dist = __esm({
       /** Update handle positions and sizes to match the current box */
       updatePositions() {
         if (!this.box) return;
-        const center = new THREE6.Vector3();
-        const size = new THREE6.Vector3();
+        const center = new THREE5.Vector3();
+        const size = new THREE5.Vector3();
         this.box.getCenter(center);
         this.box.getSize(size);
         const diag = size.length();
@@ -1721,14 +1631,14 @@ var init_dist = __esm({
         if (!this.box) return false;
         const handle = this.hitTest(clientX, clientY);
         if (!handle) return false;
-        const cameraDir = new THREE6.Vector3();
+        const cameraDir = new THREE5.Vector3();
         this.camera.getWorldDirection(cameraDir);
-        const plane = new THREE6.Plane().setFromNormalAndCoplanarPoint(
+        const plane = new THREE5.Plane().setFromNormalAndCoplanarPoint(
           cameraDir.negate(),
           handle.mesh.position.clone()
         );
         this.setRaycasterFromClient(clientX, clientY);
-        const startIntersect = new THREE6.Vector3();
+        const startIntersect = new THREE5.Vector3();
         if (!this.raycaster.ray.intersectPlane(plane, startIntersect)) return false;
         const startValue = handle.sign === 1 ? this.box.max[handle.axis] : this.box.min[handle.axis];
         this.drag = { handle, plane, startIntersect, startValue };
@@ -1739,7 +1649,7 @@ var init_dist = __esm({
       onPointerMove(clientX, clientY) {
         if (!this.drag || !this.box) return;
         this.setRaycasterFromClient(clientX, clientY);
-        const currentIntersect = new THREE6.Vector3();
+        const currentIntersect = new THREE5.Vector3();
         if (!this.raycaster.ray.intersectPlane(this.drag.plane, currentIntersect)) return;
         const axis = this.drag.handle.axis;
         const delta = currentIntersect[axis] - this.drag.startIntersect[axis];
@@ -1796,7 +1706,7 @@ var init_dist = __esm({
         const rect = this.domElement.getBoundingClientRect();
         const nx = (clientX - rect.left) / rect.width * 2 - 1;
         const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
-        this.raycaster.setFromCamera(new THREE6.Vector2(nx, ny), this.camera);
+        this.raycaster.setFromCamera(new THREE5.Vector2(nx, ny), this.camera);
       }
       setHandleColor(handle, color) {
         handle.mesh.material.color.setHex(color);
@@ -1864,13 +1774,13 @@ var init_dist = __esm({
         if (!entry) return;
         await this.initTransformControls();
         const controls = this.transformControls;
-        const center = new THREE6.Vector3();
-        const size = new THREE6.Vector3();
+        const center = new THREE5.Vector3();
+        const size = new THREE5.Vector3();
         entry.box.getCenter(center);
         entry.box.getSize(size);
-        const geo = new THREE6.BoxGeometry(1, 1, 1);
-        const mat = new THREE6.MeshBasicMaterial({ visible: false });
-        this.pivot = new THREE6.Mesh(geo, mat);
+        const geo = new THREE5.BoxGeometry(1, 1, 1);
+        const mat = new THREE5.MeshBasicMaterial({ visible: false });
+        this.pivot = new THREE5.Mesh(geo, mat);
         this.pivot.position.copy(center);
         this.pivot.scale.copy(size);
         this.pivot.userData.clipId = id;
@@ -1888,8 +1798,8 @@ var init_dist = __esm({
           this.updateHelper(entry);
           this.applyAll();
           if (this.pivot) {
-            const c = new THREE6.Vector3();
-            const s = new THREE6.Vector3();
+            const c = new THREE5.Vector3();
+            const s = new THREE5.Vector3();
             entry.box.getCenter(c);
             entry.box.getSize(s);
             this.pivot.position.copy(c);
@@ -1919,8 +1829,8 @@ var init_dist = __esm({
                 this.updateHelper(entry);
                 this.applyAll();
                 if (this.pivot) {
-                  const c = new THREE6.Vector3();
-                  const s = new THREE6.Vector3();
+                  const c = new THREE5.Vector3();
+                  const s = new THREE5.Vector3();
                   entry.box.getCenter(c);
                   entry.box.getSize(s);
                   this.pivot.position.copy(c);
@@ -2010,7 +1920,7 @@ var init_dist = __esm({
           this.draftHelper = null;
         }
         if (box && !box.isEmpty()) {
-          this.draftHelper = new THREE6.Box3Helper(box, new THREE6.Color(14472518));
+          this.draftHelper = new THREE5.Box3Helper(box, new THREE5.Color(14472518));
           this.draftHelper.material.transparent = true;
           this.draftHelper.material.opacity = 0.6;
           this.draftHelper.renderOrder = 3;
@@ -2064,7 +1974,7 @@ var init_dist = __esm({
         const entry = this.entries.find((e) => e.id === this.selectedId);
         if (!entry) return;
         const center = this.pivot.position.clone();
-        const halfSize = new THREE6.Vector3(
+        const halfSize = new THREE5.Vector3(
           Math.abs(this.pivot.scale.x) * 0.5,
           Math.abs(this.pivot.scale.y) * 0.5,
           Math.abs(this.pivot.scale.z) * 0.5
@@ -2087,15 +1997,15 @@ var init_dist = __esm({
       }
       updateHelper(entry) {
         if (!this.helpers.has(entry.id)) {
-          const helper = new THREE6.Box3Helper(entry.box, new THREE6.Color(14472518));
+          const helper = new THREE5.Box3Helper(entry.box, new THREE5.Color(14472518));
           helper.material.linewidth = 1;
           helper.renderOrder = 3;
           helper.visible = entry.visible;
           this.sm.scene.add(helper);
           this.helpers.set(entry.id, helper);
         }
-        const center = new THREE6.Vector3();
-        const size = new THREE6.Vector3();
+        const center = new THREE5.Vector3();
+        const size = new THREE5.Vector3();
         entry.box.getCenter(center);
         entry.box.getSize(size);
         const existingFill = this.fills.get(entry.id);
@@ -2103,15 +2013,15 @@ var init_dist = __esm({
           existingFill.position.copy(center);
           existingFill.scale.copy(size);
         } else {
-          const fillGeo = new THREE6.BoxGeometry(1, 1, 1);
-          const fillMat = new THREE6.MeshBasicMaterial({
+          const fillGeo = new THREE5.BoxGeometry(1, 1, 1);
+          const fillMat = new THREE5.MeshBasicMaterial({
             color: 14472518,
             opacity: 0.08,
             transparent: true,
             depthWrite: false,
-            side: THREE6.FrontSide
+            side: THREE5.FrontSide
           });
-          const fillMesh = new THREE6.Mesh(fillGeo, fillMat);
+          const fillMesh = new THREE5.Mesh(fillGeo, fillMat);
           fillMesh.position.copy(center);
           fillMesh.scale.copy(size);
           fillMesh.renderOrder = 2;
@@ -2131,11 +2041,11 @@ var init_dist = __esm({
             continue;
           }
           const clipBoxes = visible.map((entry) => {
-            const size = new THREE6.Vector3();
-            const center = new THREE6.Vector3();
+            const size = new THREE5.Vector3();
+            const center = new THREE5.Vector3();
             entry.box.getSize(size);
             entry.box.getCenter(center);
-            const matrix = new THREE6.Matrix4().makeScale(size.x, size.y, size.z).setPosition(center);
+            const matrix = new THREE5.Matrix4().makeScale(size.x, size.y, size.z).setPosition(center);
             const inverse = matrix.clone().invert();
             return {
               box: entry.box.clone(),
@@ -2157,36 +2067,36 @@ var init_dist = __esm({
       sm;
       constructor(sm) {
         this.sm = sm;
-        this._scene = new THREE6.Scene();
+        this._scene = new THREE5.Scene();
         this._scene.background = null;
-        this._camera = new THREE6.PerspectiveCamera(50, 1, 0.1, 100);
+        this._camera = new THREE5.PerspectiveCamera(50, 1, 0.1, 100);
         this._buildAxes();
       }
       _buildAxes() {
         const axes = [
-          { dir: new THREE6.Vector3(1, 0, 0), color: 15087942, label: "X" },
+          { dir: new THREE5.Vector3(1, 0, 0), color: 15087942, label: "X" },
           // red
-          { dir: new THREE6.Vector3(0, 1, 0), color: 2792847, label: "Y" },
+          { dir: new THREE5.Vector3(0, 1, 0), color: 2792847, label: "Y" },
           // teal
-          { dir: new THREE6.Vector3(0, 0, 1), color: 4553629, label: "Z" }
+          { dir: new THREE5.Vector3(0, 0, 1), color: 4553629, label: "Z" }
           // blue
         ];
         for (const axis of axes) {
-          const mat = new THREE6.MeshBasicMaterial({ color: axis.color });
+          const mat = new THREE5.MeshBasicMaterial({ color: axis.color });
           this._materials.push(mat);
-          const quat = new THREE6.Quaternion().setFromUnitVectors(
-            new THREE6.Vector3(0, 1, 0),
+          const quat = new THREE5.Quaternion().setFromUnitVectors(
+            new THREE5.Vector3(0, 1, 0),
             axis.dir
           );
-          const shaftGeo = new THREE6.CylinderGeometry(0.03, 0.03, 0.65, 6);
+          const shaftGeo = new THREE5.CylinderGeometry(0.03, 0.03, 0.65, 6);
           shaftGeo.translate(0, 0.325, 0);
           shaftGeo.applyQuaternion(quat);
-          this._scene.add(new THREE6.Mesh(shaftGeo, mat));
+          this._scene.add(new THREE5.Mesh(shaftGeo, mat));
           this._disposables.push(shaftGeo);
-          const coneGeo = new THREE6.ConeGeometry(0.08, 0.2, 8);
+          const coneGeo = new THREE5.ConeGeometry(0.08, 0.2, 8);
           coneGeo.translate(0, 0.76, 0);
           coneGeo.applyQuaternion(quat);
-          this._scene.add(new THREE6.Mesh(coneGeo, mat));
+          this._scene.add(new THREE5.Mesh(coneGeo, mat));
           this._disposables.push(coneGeo);
           const sprite = this._makeLabel(axis.label, axis.color);
           const tipPos = axis.dir.clone().multiplyScalar(1.05);
@@ -2194,9 +2104,9 @@ var init_dist = __esm({
           sprite.scale.set(0.28, 0.28, 1);
           this._scene.add(sprite);
         }
-        const sGeo = new THREE6.SphereGeometry(0.06, 8, 8);
-        const sMat = new THREE6.MeshBasicMaterial({ color: 10066329 });
-        this._scene.add(new THREE6.Mesh(sGeo, sMat));
+        const sGeo = new THREE5.SphereGeometry(0.06, 8, 8);
+        const sMat = new THREE5.MeshBasicMaterial({ color: 10066329 });
+        this._scene.add(new THREE5.Mesh(sGeo, sMat));
         this._disposables.push(sGeo);
         this._materials.push(sMat);
       }
@@ -2215,15 +2125,15 @@ var init_dist = __esm({
         const hex = "#" + color.toString(16).padStart(6, "0");
         ctx.fillStyle = hex;
         ctx.fillText(letter, res / 2, res / 2);
-        const tex = new THREE6.CanvasTexture(canvas);
-        tex.minFilter = THREE6.LinearFilter;
-        const mat = new THREE6.SpriteMaterial({
+        const tex = new THREE5.CanvasTexture(canvas);
+        tex.minFilter = THREE5.LinearFilter;
+        const mat = new THREE5.SpriteMaterial({
           map: tex,
           transparent: true,
           depthTest: false
         });
         this._materials.push(mat);
-        return new THREE6.Sprite(mat);
+        return new THREE5.Sprite(mat);
       }
       /**
        * Render the widget into a scissor region in the top-right corner.
@@ -2237,14 +2147,14 @@ var init_dist = __esm({
         if (W === 0 || H === 0) return;
         const size = 100;
         const margin = 10;
-        const savedVp = new THREE6.Vector4();
-        const savedSc = new THREE6.Vector4();
+        const savedVp = new THREE5.Vector4();
+        const savedSc = new THREE5.Vector4();
         renderer.getViewport(savedVp);
         renderer.getScissor(savedSc);
         const savedScTest = renderer.getScissorTest();
         const savedAutoClear = renderer.autoClear;
         const dist = 3;
-        const offset = new THREE6.Vector3(0, 0, dist).applyQuaternion(
+        const offset = new THREE5.Vector3(0, 0, dist).applyQuaternion(
           this.sm.camera.quaternion
         );
         this._camera.position.copy(offset);
@@ -2266,7 +2176,7 @@ var init_dist = __esm({
       dispose() {
         for (const g of this._disposables) g.dispose();
         for (const m of this._materials) {
-          if (m instanceof THREE6.SpriteMaterial) m.map?.dispose();
+          if (m instanceof THREE5.SpriteMaterial) m.map?.dispose();
           m.dispose();
         }
         this._disposables = [];
@@ -2456,6 +2366,7 @@ function ViewerProvider({ config, children }) {
   const setExporter = useCallback((e) => _setExporter(e), []);
   const setMinimap = useCallback((r) => _setMinimap(r), []);
   const setClipManager = useCallback((c) => _setClipManager(c), []);
+  const uiMode = config.uiMode ?? "professional";
   const value = {
     sceneManager,
     loader,
@@ -2503,6 +2414,7 @@ function ViewerProvider({ config, children }) {
     setProjection,
     displaySettings,
     setDisplaySettings,
+    uiMode,
     config
   };
   return /* @__PURE__ */ jsx(ViewerContext.Provider, { value, children });
@@ -2615,11 +2527,11 @@ var init_en = __esm({
         qualityBalanced: "Balanced",
         qualityHigh: "High Quality",
         navOrbit: "Orbit",
-        navFly: "Fly",
-        navEarth: "Earth",
-        navOrbitTitle: "Orbit navigation \u2014 rotate around target",
-        navFlyTitle: "Fly navigation \u2014 WASD + drag to look",
-        navEarthTitle: "Earth navigation \u2014 pan-focused, horizon locked",
+        navFree: "Free",
+        navPan: "Pan",
+        navOrbitTitle: "Orbit \u2014 CAD turntable, rotate around target",
+        navFreeTitle: "Free rotate \u2014 Blender-style, no up-vector lock",
+        navPanTitle: "Pan / Map \u2014 left-drag pans, horizon locked",
         camPerspective: "Persp",
         camOrthographic: "Ortho",
         camPerspectiveTitle: "Perspective camera",
@@ -2780,6 +2692,11 @@ var init_en = __esm({
       },
       panoViewer: {
         close: "Close panorama"
+      },
+      uiModes: {
+        professional: "Professional",
+        lite: "Lite",
+        modeLabel: "Mode"
       }
     };
   }
@@ -2816,7 +2733,7 @@ function Viewport({ className }) {
   const containerRef = useRef(null);
   const minimapContainerRef = useRef(null);
   const initialized = useRef(false);
-  const [minimapSize, setMinimapSize] = React14.useState(176);
+  const [minimapSize, setMinimapSize] = React23.useState(176);
   const t = useLocale().viewport;
   const {
     config,
@@ -2901,26 +2818,14 @@ function Viewport({ className }) {
     const axisFrame = () => axisWidget.render();
     sm.addPostRenderCallback(axisFrame);
     sm.start();
-    const canvas = containerRef.current;
-    const onWheel = (e) => {
-      if (smRef.current?.navigationMode !== "fly") return;
-      const next = Math.max(0.5, smRef.current.flySpeed * (e.deltaY > 0 ? 0.9 : 1.1));
-      smRef.current.setFlySpeed(next);
-    };
-    canvas.addEventListener("wheel", onWheel, { passive: true });
     loader.load("metadata.json", pointBudget).then(() => {
       const pc = loader.getPointCloud();
-      if (pc && !loader.worldBox.isEmpty()) {
-        const size = new THREE6.Vector3();
-        loader.worldBox.getSize(size);
-        sm.flySpeed = Math.max(size.x, size.y, size.z) / 20;
-      }
       if (pc) {
         const pca = pc;
         const box = pca.pcoGeometry?.boundingBox ?? pca.boundingBox;
         const tightBox = pca.pcoGeometry?.tightBoundingBox ?? box;
         const offset = pca.pcoGeometry?.offset;
-        const worldBox = new THREE6.Box3();
+        const worldBox = new THREE5.Box3();
         if (tightBox && offset) {
           worldBox.copy(tightBox);
           worldBox.min.add(offset);
@@ -2936,7 +2841,6 @@ function Viewport({ className }) {
       }
     }).catch(console.error);
     return () => {
-      canvas.removeEventListener("wheel", onWheel);
       sm.removeFrameCallback(minimapFrame);
       sm.removePostRenderCallback(axisFrame);
       sm.dispose();
@@ -2962,7 +2866,7 @@ function Viewport({ className }) {
     const cy = e.clientY - rect.top;
     const world = minimap.canvasToWorld(cx, cy);
     const cam = sm.camera;
-    const offset = new THREE6.Vector3().subVectors(cam.position, sm.controls.target);
+    const offset = new THREE5.Vector3().subVectors(cam.position, sm.controls.target);
     sm.controls.target.set(world.x, world.y, sm.controls.target.z);
     cam.position.set(world.x + offset.x, world.y + offset.y, cam.position.z);
     sm.controls.update();
@@ -3021,10 +2925,10 @@ function Viewport({ className }) {
   const projectToPlaneZ = useCallback((nx, ny, planeZ) => {
     const sm = smRef.current;
     if (!sm) return null;
-    const raycaster = new THREE6.Raycaster();
-    raycaster.setFromCamera(new THREE6.Vector2(nx, ny), sm.camera);
-    const plane = new THREE6.Plane(new THREE6.Vector3(0, 0, 1), -planeZ);
-    const hit = new THREE6.Vector3();
+    const raycaster = new THREE5.Raycaster();
+    raycaster.setFromCamera(new THREE5.Vector2(nx, ny), sm.camera);
+    const plane = new THREE5.Plane(new THREE5.Vector3(0, 0, 1), -planeZ);
+    const hit = new THREE5.Vector3();
     return raycaster.ray.intersectPlane(plane, hit) ? hit : null;
   }, []);
   const getNDC = (e) => {
@@ -3038,8 +2942,6 @@ function Viewport({ className }) {
     const sm = smRef.current;
     const anim = animRef.current;
     if (!sm || !anim) return;
-    const mode = sm.navigationMode;
-    if (mode !== "orbit" && mode !== "earth") return;
     const { nx, ny } = getNDC(e);
     const hit = sm.pickPoint(nx, ny) ?? projectToPlaneZ(nx, ny, sm.controls.target.z);
     if (!hit) return;
@@ -3104,9 +3006,9 @@ function Viewport({ className }) {
         const { startWorld } = vd;
         const zMin = metaZRef.current?.min ?? vd.planeZ - 10;
         const zMax = metaZRef.current?.max ?? vd.planeZ + 10;
-        const box = new THREE6.Box3(
-          new THREE6.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
-          new THREE6.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
+        const box = new THREE5.Box3(
+          new THREE5.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
+          new THREE5.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
         );
         measureRef.current?.setVolumeDraft(box);
       } else if (vd.phase === "height" && vd.footprintBox && vd.startClientY !== void 0) {
@@ -3131,9 +3033,9 @@ function Viewport({ className }) {
       if (!sm) return;
       const zMin = metaZRef.current?.min ?? sm.controls.target.z - 50;
       const zMax = metaZRef.current?.max ?? sm.controls.target.z + 50;
-      const box = new THREE6.Box3(
-        new THREE6.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
-        new THREE6.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
+      const box = new THREE5.Box3(
+        new THREE5.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
+        new THREE5.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
       );
       clipRef.current?.setDraft(box);
       return;
@@ -3164,9 +3066,9 @@ function Viewport({ className }) {
         const { startWorld } = vdUp;
         const zMin = metaZRef.current?.min ?? vdUp.planeZ - 10;
         const zMax = metaZRef.current?.max ?? vdUp.planeZ + 10;
-        const box = new THREE6.Box3(
-          new THREE6.Vector3(Math.min(startWorld.x, endWorld2.x), Math.min(startWorld.y, endWorld2.y), zMin),
-          new THREE6.Vector3(Math.max(startWorld.x, endWorld2.x), Math.max(startWorld.y, endWorld2.y), zMax)
+        const box = new THREE5.Box3(
+          new THREE5.Vector3(Math.min(startWorld.x, endWorld2.x), Math.min(startWorld.y, endWorld2.y), zMin),
+          new THREE5.Vector3(Math.max(startWorld.x, endWorld2.x), Math.max(startWorld.y, endWorld2.y), zMax)
         );
         if (!box.isEmpty()) {
           volumeDragRef.current = {
@@ -3197,9 +3099,9 @@ function Viewport({ className }) {
       const { startWorld } = clipDragRef.current;
       const zMin = sm.controls.target.z - 50;
       const zMax = sm.controls.target.z + 50;
-      const box = new THREE6.Box3(
-        new THREE6.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
-        new THREE6.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
+      const box = new THREE5.Box3(
+        new THREE5.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
+        new THREE5.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
       );
       if (!box.isEmpty()) clipRef.current?.addBox(box);
     }
@@ -3338,13 +3240,14 @@ function ThemeProvider({
     if (typeof window === "undefined") return defaultTheme;
     return localStorage.getItem(storageKey) ?? defaultTheme;
   });
+  const [, forceUpdate] = useReducer((n) => n + 1, 0);
   const resolvedTheme = theme === "system" ? typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light" : theme;
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.remove("dark", "light");
-    root.classList.add(resolvedTheme);
-    root.setAttribute("data-theme", resolvedTheme);
-  }, [resolvedTheme]);
+    if (theme !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", forceUpdate);
+    return () => mq.removeEventListener("change", forceUpdate);
+  }, [theme]);
   const setTheme = (t) => {
     setThemeState(t);
     if (typeof window !== "undefined") localStorage.setItem(storageKey, t);
@@ -3478,20 +3381,22 @@ function OrbitIcon({ className }) {
     /* @__PURE__ */ jsx("path", { d: "M20 5l-1.5-2M20 5l2-1", stroke: "currentColor", strokeWidth: "1", strokeLinecap: "round" })
   ] });
 }
-function FlyIcon({ className }) {
+function FreeIcon({ className }) {
   return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", fill: "none", className, width: "14", height: "14", children: [
     /* @__PURE__ */ jsx("path", { d: "M7 9l5-3 5 3v6l-5 3-5-3V9z", stroke: "currentColor", strokeWidth: "1.3", strokeLinejoin: "round" }),
     /* @__PURE__ */ jsx("path", { d: "M7 9l5 3 5-3", stroke: "currentColor", strokeWidth: "1.3", strokeLinejoin: "round" }),
     /* @__PURE__ */ jsx("path", { d: "M12 12v6", stroke: "currentColor", strokeWidth: "1.3" }),
-    /* @__PURE__ */ jsx("path", { d: "M3 7l4 5-4 5", stroke: "currentColor", strokeWidth: "1.3", strokeLinecap: "round", strokeLinejoin: "round" })
+    /* @__PURE__ */ jsx("path", { d: "M4 8a8.5 8.5 0 0 1 2-3", stroke: "currentColor", strokeWidth: "1.3", strokeLinecap: "round" }),
+    /* @__PURE__ */ jsx("path", { d: "M4 8l-1.5-1.5M4 8l1.5-2", stroke: "currentColor", strokeWidth: "1", strokeLinecap: "round" })
   ] });
 }
-function EarthIcon({ className }) {
+function PanIcon({ className }) {
   return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 24 24", fill: "none", className, width: "14", height: "14", children: [
     /* @__PURE__ */ jsx("path", { d: "M5 8l7-4 7 4v8l-7 4-7-4V8z", stroke: "currentColor", strokeWidth: "1.3", strokeLinejoin: "round" }),
     /* @__PURE__ */ jsx("path", { d: "M5 8l7 4 7-4", stroke: "currentColor", strokeWidth: "1.3", strokeLinejoin: "round" }),
     /* @__PURE__ */ jsx("path", { d: "M12 12v8", stroke: "currentColor", strokeWidth: "1.3" }),
-    /* @__PURE__ */ jsx("path", { d: "M5 8l7-4 7 4-7 4z", fill: "currentColor", fillOpacity: "0.25" })
+    /* @__PURE__ */ jsx("path", { d: "M5 8l7-4 7 4-7 4z", fill: "currentColor", fillOpacity: "0.25" }),
+    /* @__PURE__ */ jsx("path", { d: "M3 20h4M3 20l1.5-1.5M3 20l1.5 1.5", stroke: "currentColor", strokeWidth: "1", strokeLinecap: "round" })
   ] });
 }
 function PerspectiveIcon({ className }) {
@@ -3516,17 +3421,18 @@ function OrthoIcon({ className }) {
 }
 var NAV_MODES = [
   { value: "orbit", icon: OrbitIcon, titleKey: "navOrbitTitle" },
-  { value: "fly", icon: FlyIcon, titleKey: "navFlyTitle" },
-  { value: "earth", icon: EarthIcon, titleKey: "navEarthTitle" }
+  { value: "free", icon: FreeIcon, titleKey: "navFreeTitle" },
+  { value: "pan", icon: PanIcon, titleKey: "navPanTitle" }
 ];
 var PROJ_MODES = [
   { value: "perspective", icon: PerspectiveIcon, titleKey: "camPerspectiveTitle" },
   { value: "orthographic", icon: OrthoIcon, titleKey: "camOrthographicTitle" }
 ];
 function DisplayControls() {
-  const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
+  const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, navigationMode, setNavigationMode, projection, setProjection, uiMode } = useViewer();
   const t = useLocale().toolbar;
   const [quality, setQuality] = useState("balanced");
+  const isPro = uiMode === "professional";
   const handleBudget = (e) => {
     const val = Number(e.target.value);
     setPointBudget(val);
@@ -3572,7 +3478,7 @@ function DisplayControls() {
       },
       pm.value
     )) }),
-    /* @__PURE__ */ jsx(
+    isPro && /* @__PURE__ */ jsx(
       "select",
       {
         value: colorMode,
@@ -3582,7 +3488,7 @@ function DisplayControls() {
         children: COLOR_MODES.map((cm) => /* @__PURE__ */ jsx("option", { value: cm.value, children: t[cm.labelKey] ?? cm.value }, cm.value))
       }
     ),
-    /* @__PURE__ */ jsx(
+    isPro && /* @__PURE__ */ jsx(
       "select",
       {
         value: quality,
@@ -3592,7 +3498,7 @@ function DisplayControls() {
         children: QUALITY_PRESETS.map((q) => /* @__PURE__ */ jsx("option", { value: q.value, children: t[q.label] ?? q.value }, q.value))
       }
     ),
-    /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono", children: [
+    isPro && /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono", children: [
       /* @__PURE__ */ jsx("span", { className: "hidden lg:block", children: t.budget }),
       /* @__PURE__ */ jsx(
         "input",
@@ -3612,7 +3518,7 @@ function DisplayControls() {
         "M"
       ] })
     ] }),
-    /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono", children: [
+    isPro && /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono", children: [
       /* @__PURE__ */ jsx("span", { className: "hidden lg:block", children: t.size }),
       /* @__PURE__ */ jsx(
         "input",
@@ -3638,6 +3544,7 @@ init_dist();
 function ExportTools() {
   const { exporter } = useViewer();
   const t = useLocale().exportPanel;
+  const pcvRoot = usePcvRoot();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState("top");
   const [scale, setScale] = useState(2);
@@ -3761,7 +3668,7 @@ function ExportTools() {
           ]
         }
       ),
-      document.body
+      pcvRoot?.current ?? document.body
     )
   ] });
 }
@@ -3772,14 +3679,15 @@ function ToolbarSection({ label, children, className }) {
   ] });
 }
 function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, sidebarOpen, renderSettingsOpen }) {
-  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap } = useViewer();
+  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap, uiMode } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().toolbar;
+  const isPro = uiMode === "professional";
   return /* @__PURE__ */ jsxs("div", { className: "flex items-center h-10 px-2 gap-0 select-none overflow-x-auto", children: [
     /* @__PURE__ */ jsx(ToolbarSection, { label: "Views", children: /* @__PURE__ */ jsx(ViewControls, {}) }),
     /* @__PURE__ */ jsxs(ToolbarSection, { label: "Display", children: [
       /* @__PURE__ */ jsx(DisplayControls, {}),
-      /* @__PURE__ */ jsx(
+      isPro && /* @__PURE__ */ jsx(
         ToolbarIconBtn,
         {
           icon: /* @__PURE__ */ jsx(Sliders, { size: 14 }),
@@ -3811,8 +3719,8 @@ function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onTogg
           title: t.toggleMinimap
         }
       ),
-      /* @__PURE__ */ jsx(ExportTools, {}),
-      /* @__PURE__ */ jsx(
+      isPro && /* @__PURE__ */ jsx(ExportTools, {}),
+      isPro && /* @__PURE__ */ jsx(
         ToolbarIconBtn,
         {
           icon: /* @__PURE__ */ jsx(Layers, { size: 14 }),
@@ -3915,8 +3823,9 @@ var ADVANCED_MEASURES = [
   { type: "profile", tool: "measure-profile", icon: /* @__PURE__ */ jsx(Waypoints, { size: 15 }), titleKey: "measureProfile" }
 ];
 function ToolRail() {
-  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList } = useViewer();
+  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, uiMode } = useViewer();
   const t = useLocale().toolRail;
+  const isPro = uiMode === "professional";
   const toggle = (tool) => setActiveTool(activeTool === tool ? "none" : tool);
   const boxes = clipManager?.getBoxes() ?? [];
   const hasClipBox = boxes.length > 0;
@@ -3943,7 +3852,7 @@ function ToolRail() {
     measurementManager?.clearAll();
     setMeasurementList([]);
   };
-  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-center gap-0.5 py-2 px-1 h-full bg-[hsl(var(--toolbar-bg,var(--card)))] border-r border-[hsl(var(--border))] w-10 shrink-0 overflow-y-auto", children: [
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-center gap-0.5 py-2 px-1 w-10 shrink-0", children: [
     /* @__PURE__ */ jsx(GroupLabel, { children: t.measureGroup }),
     /* @__PURE__ */ jsx(SubLabel, { children: "Basic" }),
     BASIC_MEASURES.map((def) => /* @__PURE__ */ jsx(
@@ -3956,17 +3865,19 @@ function ToolRail() {
       },
       def.tool
     )),
-    /* @__PURE__ */ jsx(SubLabel, { children: "Advanced" }),
-    ADVANCED_MEASURES.map((def) => /* @__PURE__ */ jsx(
-      RailBtn,
-      {
-        icon: def.icon,
-        title: t[def.titleKey] ?? def.type,
-        active: activeTool === def.tool,
-        onClick: () => toggle(def.tool)
-      },
-      def.tool
-    )),
+    isPro && /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsx(SubLabel, { children: "Advanced" }),
+      ADVANCED_MEASURES.map((def) => /* @__PURE__ */ jsx(
+        RailBtn,
+        {
+          icon: def.icon,
+          title: t[def.titleKey] ?? def.type,
+          active: activeTool === def.tool,
+          onClick: () => toggle(def.tool)
+        },
+        def.tool
+      ))
+    ] }),
     /* @__PURE__ */ jsx(
       RailBtn,
       {
@@ -3976,83 +3887,86 @@ function ToolRail() {
         compact: true
       }
     ),
-    /* @__PURE__ */ jsx(Divider, {}),
-    /* @__PURE__ */ jsx(GroupLabel, { children: t.sectionGroup }),
-    /* @__PURE__ */ jsx(
-      RailBtn,
-      {
-        icon: /* @__PURE__ */ jsx(BoxSelect, { size: 15 }),
-        title: hasClipBox ? t.removeClipBox : t.drawClipBox,
-        active: hasClipBox,
-        onClick: hasClipBox ? clearClipBox : addClipBox
-      }
-    ),
-    hasClipBox && /* @__PURE__ */ jsxs(Fragment, { children: [
+    isPro && /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsx(Divider, {}),
+      /* @__PURE__ */ jsx(GroupLabel, { children: t.sectionGroup }),
       /* @__PURE__ */ jsx(
         RailBtn,
         {
-          icon: /* @__PURE__ */ jsx(Scissors, { size: 15 }),
-          title: clipMode === "outside" ? t.clipModeKeepInside : t.clipModeKeepOutside,
-          active: false,
-          onClick: toggleClipMode
+          icon: /* @__PURE__ */ jsx(BoxSelect, { size: 15 }),
+          title: hasClipBox ? t.removeClipBox : t.drawClipBox,
+          active: hasClipBox,
+          onClick: hasClipBox ? clearClipBox : addClipBox
         }
       ),
-      /* @__PURE__ */ jsx(SubLabel, { children: "Transform" }),
-      /* @__PURE__ */ jsxs("div", { className: "flex gap-0.5", children: [
+      hasClipBox && /* @__PURE__ */ jsxs(Fragment, { children: [
         /* @__PURE__ */ jsx(
           RailBtn,
           {
-            icon: /* @__PURE__ */ jsx(Move, { size: 12 }),
-            title: "Move clip box",
-            onClick: () => {
-              const id = clipManager?.getSelectedId();
-              if (id) clipManager?.setTransformMode("translate");
-              else {
-                const b = boxes[0];
-                if (b) {
-                  clipManager?.selectBox(b.id);
-                  clipManager?.setTransformMode("translate");
-                }
-              }
-            },
-            compact: true
+            icon: /* @__PURE__ */ jsx(Scissors, { size: 15 }),
+            title: clipMode === "outside" ? t.clipModeKeepInside : t.clipModeKeepOutside,
+            active: false,
+            onClick: toggleClipMode
           }
         ),
+        /* @__PURE__ */ jsx(SubLabel, { children: "Transform" }),
+        /* @__PURE__ */ jsxs("div", { className: "flex gap-0.5", children: [
+          /* @__PURE__ */ jsx(
+            RailBtn,
+            {
+              icon: /* @__PURE__ */ jsx(Move, { size: 12 }),
+              title: "Move clip box",
+              onClick: () => {
+                const id = clipManager?.getSelectedId();
+                if (id) clipManager?.setTransformMode("translate");
+                else {
+                  const b = boxes[0];
+                  if (b) {
+                    clipManager?.selectBox(b.id);
+                    clipManager?.setTransformMode("translate");
+                  }
+                }
+              },
+              compact: true
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            RailBtn,
+            {
+              icon: /* @__PURE__ */ jsx(Maximize2, { size: 12 }),
+              title: "Resize clip box faces",
+              onClick: () => {
+                const id = clipManager?.getSelectedId();
+                if (id) clipManager?.setTransformMode("scale");
+                else {
+                  const b = boxes[0];
+                  if (b) {
+                    clipManager?.selectBox(b.id);
+                    clipManager?.setTransformMode("scale");
+                  }
+                }
+              },
+              compact: true
+            }
+          )
+        ] }),
         /* @__PURE__ */ jsx(
           RailBtn,
           {
-            icon: /* @__PURE__ */ jsx(Maximize2, { size: 12 }),
-            title: "Resize clip box faces",
-            onClick: () => {
-              const id = clipManager?.getSelectedId();
-              if (id) clipManager?.setTransformMode("scale");
-              else {
-                const b = boxes[0];
-                if (b) {
-                  clipManager?.selectBox(b.id);
-                  clipManager?.setTransformMode("scale");
-                }
-              }
-            },
+            icon: /* @__PURE__ */ jsx(RotateCcw, { size: 13 }),
+            title: t.removeClipBox,
+            onClick: clearClipBox,
             compact: true
           }
         )
-      ] }),
-      /* @__PURE__ */ jsx(
-        RailBtn,
-        {
-          icon: /* @__PURE__ */ jsx(RotateCcw, { size: 13 }),
-          title: t.removeClipBox,
-          onClick: clearClipBox,
-          compact: true
-        }
-      )
+      ] })
     ] })
   ] });
 }
 
 // src/components/sidebar/sidebar.tsx
 init_locale_context();
+init_viewer_provider();
 
 // src/components/sidebar/pano-panel.tsx
 init_viewer_provider();
@@ -4579,8 +4493,8 @@ function ScenesPanel() {
   };
   const handleRestore = async (scene) => {
     if (!sceneManager) return;
-    const pos = new THREE6.Vector3(...scene.camera.position);
-    const target = new THREE6.Vector3(...scene.camera.target);
+    const pos = new THREE5.Vector3(...scene.camera.position);
+    const target = new THREE5.Vector3(...scene.camera.target);
     if (cameraAnimator) {
       await cameraAnimator.flyTo({ position: pos, target, duration: 600 });
     } else {
@@ -4591,9 +4505,9 @@ function ScenesPanel() {
     if (clipManager) {
       clipManager.clear();
       for (const cb of scene.clipBoxes) {
-        const box = new THREE6.Box3(
-          new THREE6.Vector3(...cb.min),
-          new THREE6.Vector3(...cb.max)
+        const box = new THREE5.Box3(
+          new THREE5.Vector3(...cb.min),
+          new THREE5.Vector3(...cb.max)
         );
         const entry = clipManager.addBox(box, cb.name);
         if (cb.mode !== entry.mode) clipManager.setBoxMode(entry.id, cb.mode);
@@ -4704,34 +4618,38 @@ function ScenesPanel() {
 function Sidebar() {
   const [tab, setTab] = useState("panoramas");
   const t = useLocale().sidebar;
-  const TABS = [
+  const { uiMode } = useViewer();
+  const isPro = uiMode === "professional";
+  const ALL_TABS = [
     { id: "panoramas", icon: /* @__PURE__ */ jsx(Camera, { size: 14 }), label: t.tabPanoramas },
     { id: "scene", icon: /* @__PURE__ */ jsx(Layers, { size: 14 }), label: t.tabScene },
     { id: "measurements", icon: /* @__PURE__ */ jsx(Ruler, { size: 14 }), label: t.tabMeasurements },
-    { id: "classification", icon: /* @__PURE__ */ jsx(Tag, { size: 14 }), label: t.tabClassification },
-    { id: "scenes", icon: /* @__PURE__ */ jsx(Bookmark, { size: 14 }), label: t.tabScenes }
+    { id: "classification", icon: /* @__PURE__ */ jsx(Tag, { size: 14 }), label: t.tabClassification, proOnly: true },
+    { id: "scenes", icon: /* @__PURE__ */ jsx(Bookmark, { size: 14 }), label: t.tabScenes, proOnly: true }
   ];
-  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full bg-[hsl(var(--sidebar-bg,var(--card)))] border-l border-[hsl(var(--border))]", children: [
-    /* @__PURE__ */ jsx("div", { className: "flex border-b border-[hsl(var(--border))] shrink-0", children: TABS.map((t2) => /* @__PURE__ */ jsxs(
+  const TABS = ALL_TABS.filter((entry) => isPro || !entry.proOnly);
+  const activeTab = TABS.some((tb) => tb.id === tab) ? tab : "panoramas";
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full", children: [
+    /* @__PURE__ */ jsx("div", { className: "flex border-b border-white/10 shrink-0", children: TABS.map((tb) => /* @__PURE__ */ jsxs(
       "button",
       {
-        onClick: () => setTab(t2.id),
-        title: t2.label,
+        onClick: () => setTab(tb.id),
+        title: tb.label,
         className: `flex-1 flex flex-col items-center gap-0.5 py-2 text-[9px] font-mono transition-colors
-              ${tab === t2.id ? "text-[hsl(var(--brand))] border-b-2 border-[hsl(var(--brand))] -mb-px" : "text-muted-foreground hover:text-foreground"}`,
+              ${activeTab === tb.id ? "text-[hsl(var(--brand))] border-b-2 border-[hsl(var(--brand))] -mb-px" : "text-white/50 hover:text-white/80"}`,
         children: [
-          t2.icon,
-          /* @__PURE__ */ jsx("span", { className: "hidden xl:block", children: t2.label })
+          tb.icon,
+          /* @__PURE__ */ jsx("span", { className: "hidden xl:block", children: tb.label })
         ]
       },
-      t2.id
+      tb.id
     )) }),
     /* @__PURE__ */ jsxs("div", { className: "flex-1 overflow-hidden", children: [
-      tab === "panoramas" && /* @__PURE__ */ jsx(PanoPanel, {}),
-      tab === "scene" && /* @__PURE__ */ jsx(ScenePanel, {}),
-      tab === "measurements" && /* @__PURE__ */ jsx(MeasurementsPanel, {}),
-      tab === "classification" && /* @__PURE__ */ jsx(ClassificationPanel, {}),
-      tab === "scenes" && /* @__PURE__ */ jsx(ScenesPanel, {})
+      activeTab === "panoramas" && /* @__PURE__ */ jsx(PanoPanel, {}),
+      activeTab === "scene" && /* @__PURE__ */ jsx(ScenePanel, {}),
+      activeTab === "measurements" && /* @__PURE__ */ jsx(MeasurementsPanel, {}),
+      activeTab === "classification" && /* @__PURE__ */ jsx(ClassificationPanel, {}),
+      activeTab === "scenes" && /* @__PURE__ */ jsx(ScenesPanel, {})
     ] })
   ] });
 }
@@ -5078,52 +4996,483 @@ function ViewportFallback() {
     /* @__PURE__ */ jsx("p", { className: "text-xs text-muted-foreground font-mono", children: t.initialisingRenderer })
   ] }) });
 }
+function GlassCard({ children, className }) {
+  return /* @__PURE__ */ jsx(
+    "div",
+    {
+      className: cn(
+        "backdrop-blur-xl bg-black/30 dark:bg-black/40",
+        "border border-white/15 dark:border-white/10",
+        "rounded-2xl shadow-2xl shadow-black/20",
+        className
+      ),
+      children
+    }
+  );
+}
 function WorkspaceLayout({ className }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
-  const { fps, pointBudget, activeTool, selectedCamera } = useViewer();
+  const { fps, pointBudget, activeTool, selectedCamera, uiMode } = useViewer();
   const { metadata } = useData();
   const t = useLocale().viewport;
-  return /* @__PURE__ */ jsxs("div", { className: cn("flex flex-col h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden", className), children: [
-    /* @__PURE__ */ jsx("div", { className: "shrink-0 border-b border-[hsl(var(--border))] bg-[hsl(var(--toolbar-bg,var(--card)))] z-20", children: /* @__PURE__ */ jsx(
+  const isPro = uiMode === "professional";
+  return /* @__PURE__ */ jsxs("div", { className: cn("relative h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden", className), children: [
+    /* @__PURE__ */ jsx("div", { className: "absolute inset-0", children: /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsx(Viewport2, {}) }) }),
+    selectedCamera && /* @__PURE__ */ jsx(PanoViewer, {}),
+    /* @__PURE__ */ jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) }),
+    /* @__PURE__ */ jsx("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(
       MainToolbar,
       {
         onToggleSidebar: () => setSidebarOpen((o) => !o),
         sidebarOpen,
-        onToggleRenderSettings: () => setRenderSettingsOpen((o) => !o),
+        onToggleRenderSettings: isPro ? () => setRenderSettingsOpen((o) => !o) : void 0,
         renderSettingsOpen
       }
-    ) }),
-    /* @__PURE__ */ jsxs("div", { className: "flex flex-1 overflow-hidden min-h-0", children: [
-      /* @__PURE__ */ jsx(ToolRail, {}),
-      /* @__PURE__ */ jsxs("div", { className: "flex-1 relative overflow-hidden", children: [
-        /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsx(Viewport2, {}) }),
-        selectedCamera && /* @__PURE__ */ jsx(PanoViewer, {}),
-        /* @__PURE__ */ jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) })
-      ] }),
-      /* @__PURE__ */ jsx(
-        "div",
-        {
-          className: cn(
-            "border-l border-[hsl(var(--border))] shrink-0 overflow-hidden transition-all duration-200",
-            sidebarOpen ? "w-72 xl:w-80" : "w-0"
-          ),
-          children: sidebarOpen && /* @__PURE__ */ jsx(Sidebar, {})
-        }
-      )
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "shrink-0 border-t border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground", children: [
+    ) }) }),
+    /* @__PURE__ */ jsx("div", { className: "absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center", children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsx(ToolRail, {}) }) }),
+    /* @__PURE__ */ jsx(
+      "div",
+      {
+        className: cn(
+          "absolute top-3 bottom-10 right-3 z-30",
+          "transition-all duration-200",
+          sidebarOpen ? "w-72 xl:w-80" : "w-0 overflow-hidden"
+        ),
+        children: sidebarOpen && /* @__PURE__ */ jsx(GlassCard, { className: "h-full overflow-hidden", children: /* @__PURE__ */ jsx(Sidebar, {}) })
+      }
+    ),
+    /* @__PURE__ */ jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-white/50 select-none", children: [
       metadata && /* @__PURE__ */ jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
       /* @__PURE__ */ jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
       /* @__PURE__ */ jsx("span", { children: t.statusFps(fps) }),
       activeTool !== "none" && /* @__PURE__ */ jsx("span", { className: "text-[hsl(var(--brand))]", children: activeTool })
-    ] })
+    ] }) }) })
   ] });
+}
+
+// src/ui/button.tsx
+init_utils();
+var buttonVariants = cva(
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50",
+  {
+    variants: {
+      variant: {
+        default: "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:bg-[hsl(var(--primary)/.85)]",
+        secondary: "bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] hover:bg-[hsl(var(--secondary)/.8)]",
+        ghost: "hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]",
+        outline: "border border-[hsl(var(--border))] bg-transparent hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]",
+        destructive: "bg-[hsl(var(--destructive))] text-[hsl(var(--destructive-foreground))] hover:bg-[hsl(var(--destructive)/.85)]"
+      },
+      size: {
+        sm: "h-7 px-2.5 text-xs",
+        md: "h-9 px-4",
+        icon: "h-8 w-8 p-0"
+      }
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "md"
+    }
+  }
+);
+var Button = React23.forwardRef(
+  ({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
+    "button",
+    {
+      ref,
+      className: cn(buttonVariants({ variant, size }), className),
+      ...props
+    }
+  )
+);
+Button.displayName = "Button";
+
+// src/ui/slider.tsx
+init_utils();
+var Slider2 = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxs(
+  SliderPrimitive.Root,
+  {
+    ref,
+    className: cn(
+      "relative flex w-full touch-none select-none items-center",
+      className
+    ),
+    ...props,
+    children: [
+      /* @__PURE__ */ jsx(SliderPrimitive.Track, { className: "relative h-1.5 w-full grow overflow-hidden rounded-full bg-[hsl(var(--muted))]", children: /* @__PURE__ */ jsx(SliderPrimitive.Range, { className: "absolute h-full bg-[hsl(var(--primary))]" }) }),
+      /* @__PURE__ */ jsx(SliderPrimitive.Thumb, { className: "block h-4 w-4 rounded-full border border-[hsl(var(--primary))] bg-[hsl(var(--background))] shadow transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50" })
+    ]
+  }
+));
+Slider2.displayName = "Slider";
+
+// src/ui/dialog.tsx
+init_utils();
+var Dialog = DialogPrimitive.Root;
+var DialogTrigger = DialogPrimitive.Trigger;
+var DialogPortal = DialogPrimitive.Portal;
+var DialogOverlay = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  DialogPrimitive.Overlay,
+  {
+    ref,
+    className: cn("fixed inset-0 z-50 bg-black/50", className),
+    ...props
+  }
+));
+DialogOverlay.displayName = "DialogOverlay";
+var DialogContent = React23.forwardRef(({ className, children, container, ...props }, ref) => /* @__PURE__ */ jsxs(DialogPortal, { container: container ?? void 0, children: [
+  /* @__PURE__ */ jsx(DialogOverlay, {}),
+  /* @__PURE__ */ jsx(
+    DialogPrimitive.Content,
+    {
+      ref,
+      className: cn(
+        "fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] shadow-xl",
+        className
+      ),
+      ...props,
+      children
+    }
+  )
+] }));
+DialogContent.displayName = "DialogContent";
+var DialogHeader = ({
+  className,
+  ...props
+}) => /* @__PURE__ */ jsx(
+  "div",
+  {
+    className: cn(
+      "flex items-center justify-between border-b border-[hsl(var(--border))] px-4 py-3",
+      className
+    ),
+    ...props
+  }
+);
+DialogHeader.displayName = "DialogHeader";
+var DialogTitle = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  DialogPrimitive.Title,
+  {
+    ref,
+    className: cn("text-sm font-semibold", className),
+    ...props
+  }
+));
+DialogTitle.displayName = "DialogTitle";
+var DialogClose = React23.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(
+  DialogPrimitive.Close,
+  {
+    ref,
+    className: cn(
+      "rounded p-1 text-muted-foreground hover:bg-[hsl(var(--muted)/.6)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
+      className
+    ),
+    ...props,
+    children: children ?? /* @__PURE__ */ jsx(X, { size: 14 })
+  }
+));
+DialogClose.displayName = "DialogClose";
+
+// src/ui/tabs.tsx
+init_utils();
+var Tabs = TabsPrimitive.Root;
+var TabsList = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  TabsPrimitive.List,
+  {
+    ref,
+    className: cn(
+      "flex gap-1 border-b border-[hsl(var(--border))]",
+      className
+    ),
+    ...props
+  }
+));
+TabsList.displayName = "TabsList";
+var TabsTrigger = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  TabsPrimitive.Trigger,
+  {
+    ref,
+    className: cn(
+      "px-3 py-1.5 text-xs font-medium text-muted-foreground -mb-px transition-colors",
+      "data-[state=active]:text-[hsl(var(--foreground))] data-[state=active]:border-b-2 data-[state=active]:border-[hsl(var(--brand))]",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
+      "disabled:pointer-events-none disabled:opacity-50",
+      className
+    ),
+    ...props
+  }
+));
+TabsTrigger.displayName = "TabsTrigger";
+var TabsContent = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  TabsPrimitive.Content,
+  {
+    ref,
+    className: cn(
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
+      className
+    ),
+    ...props
+  }
+));
+TabsContent.displayName = "TabsContent";
+
+// src/ui/popover.tsx
+init_utils();
+var Popover = PopoverPrimitive.Root;
+var PopoverTrigger = PopoverPrimitive.Trigger;
+var PopoverAnchor = PopoverPrimitive.Anchor;
+var PopoverContent = React23.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(PopoverPrimitive.Portal, { children: /* @__PURE__ */ jsx(
+  PopoverPrimitive.Content,
+  {
+    ref,
+    align,
+    sideOffset,
+    className: cn(
+      "z-50 w-72 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--popover))] p-4 text-[hsl(var(--popover-foreground))] shadow-md outline-none",
+      "data-[state=open]:animate-in data-[state=closed]:animate-out",
+      "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+      "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
+      "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+      className
+    ),
+    ...props
+  }
+) }));
+PopoverContent.displayName = "PopoverContent";
+
+// src/ui/tooltip.tsx
+init_utils();
+var TooltipProvider = TooltipPrimitive.Provider;
+var Tooltip = TooltipPrimitive.Root;
+var TooltipTrigger = TooltipPrimitive.Trigger;
+var TooltipContent = React23.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(TooltipPrimitive.Portal, { children: /* @__PURE__ */ jsx(
+  TooltipPrimitive.Content,
+  {
+    ref,
+    sideOffset,
+    className: cn(
+      "z-50 overflow-hidden rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--popover))] px-3 py-1.5 text-xs text-[hsl(var(--popover-foreground))] shadow-md",
+      "animate-in fade-in-0 zoom-in-95",
+      "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+      "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
+      "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+      className
+    ),
+    ...props
+  }
+) }));
+TooltipContent.displayName = "TooltipContent";
+
+// src/ui/toggle.tsx
+init_utils();
+var toggleVariants = cva(
+  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50",
+  {
+    variants: {
+      variant: {
+        default: "bg-transparent hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--muted-foreground))] data-[state=on]:bg-[hsl(var(--accent))] data-[state=on]:text-[hsl(var(--accent-foreground))]",
+        outline: "border border-[hsl(var(--border))] bg-transparent hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))] data-[state=on]:bg-[hsl(var(--accent))] data-[state=on]:text-[hsl(var(--accent-foreground))]"
+      },
+      size: {
+        sm: "h-7 px-2 text-xs",
+        md: "h-9 px-3",
+        icon: "h-8 w-8 p-0"
+      }
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "md"
+    }
+  }
+);
+var Toggle = React23.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
+  TogglePrimitive.Root,
+  {
+    ref,
+    className: cn(toggleVariants({ variant, size }), className),
+    ...props
+  }
+));
+Toggle.displayName = "Toggle";
+
+// src/ui/select.tsx
+init_utils();
+var Select = SelectPrimitive.Root;
+var SelectGroup = SelectPrimitive.Group;
+var SelectValue = SelectPrimitive.Value;
+var SelectTrigger = React23.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+  SelectPrimitive.Trigger,
+  {
+    ref,
+    className: cn(
+      "flex h-9 w-full items-center justify-between rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm text-[hsl(var(--foreground))] shadow-sm",
+      "placeholder:text-muted-foreground",
+      "focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]",
+      "disabled:cursor-not-allowed disabled:opacity-50",
+      "[&>span]:line-clamp-1",
+      className
+    ),
+    ...props,
+    children: [
+      children,
+      /* @__PURE__ */ jsx(SelectPrimitive.Icon, { asChild: true, children: /* @__PURE__ */ jsx(ChevronDown, { className: "h-4 w-4 opacity-50 shrink-0" }) })
+    ]
+  }
+));
+SelectTrigger.displayName = "SelectTrigger";
+var SelectScrollUpButton = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  SelectPrimitive.ScrollUpButton,
+  {
+    ref,
+    className: cn(
+      "flex cursor-default items-center justify-center py-1",
+      className
+    ),
+    ...props,
+    children: /* @__PURE__ */ jsx(ChevronUp, { className: "h-4 w-4" })
+  }
+));
+SelectScrollUpButton.displayName = "SelectScrollUpButton";
+var SelectScrollDownButton = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  SelectPrimitive.ScrollDownButton,
+  {
+    ref,
+    className: cn(
+      "flex cursor-default items-center justify-center py-1",
+      className
+    ),
+    ...props,
+    children: /* @__PURE__ */ jsx(ChevronDown, { className: "h-4 w-4" })
+  }
+));
+SelectScrollDownButton.displayName = "SelectScrollDownButton";
+var SelectContent = React23.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Portal, { children: /* @__PURE__ */ jsxs(
+  SelectPrimitive.Content,
+  {
+    ref,
+    className: cn(
+      "relative z-50 max-h-96 min-w-32 overflow-hidden rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--popover))] text-[hsl(var(--popover-foreground))] shadow-md",
+      "data-[state=open]:animate-in data-[state=closed]:animate-out",
+      "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+      "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
+      "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+      position === "popper" && "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
+      className
+    ),
+    position,
+    ...props,
+    children: [
+      /* @__PURE__ */ jsx(SelectScrollUpButton, {}),
+      /* @__PURE__ */ jsx(
+        SelectPrimitive.Viewport,
+        {
+          className: cn(
+            "p-1",
+            position === "popper" && "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
+          ),
+          children
+        }
+      ),
+      /* @__PURE__ */ jsx(SelectScrollDownButton, {})
+    ]
+  }
+) }));
+SelectContent.displayName = "SelectContent";
+var SelectLabel = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  SelectPrimitive.Label,
+  {
+    ref,
+    className: cn(
+      "px-2 py-1.5 text-xs font-semibold text-muted-foreground",
+      className
+    ),
+    ...props
+  }
+));
+SelectLabel.displayName = "SelectLabel";
+var SelectItem = React23.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+  SelectPrimitive.Item,
+  {
+    ref,
+    className: cn(
+      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none",
+      "focus:bg-[hsl(var(--accent))] focus:text-[hsl(var(--accent-foreground))]",
+      "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      className
+    ),
+    ...props,
+    children: [
+      /* @__PURE__ */ jsx("span", { className: "absolute left-2 flex h-3.5 w-3.5 items-center justify-center", children: /* @__PURE__ */ jsx(SelectPrimitive.ItemIndicator, { children: /* @__PURE__ */ jsx(Check, { className: "h-4 w-4" }) }) }),
+      /* @__PURE__ */ jsx(SelectPrimitive.ItemText, { children })
+    ]
+  }
+));
+SelectItem.displayName = "SelectItem";
+var SelectSeparator = React23.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  SelectPrimitive.Separator,
+  {
+    ref,
+    className: cn("-mx-1 my-1 h-px bg-[hsl(var(--border))]", className),
+    ...props
+  }
+));
+SelectSeparator.displayName = "SelectSeparator";
+var defaultComponents = {
+  Button,
+  Slider: Slider2,
+  Toggle,
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  TooltipProvider,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  Select,
+  SelectGroup,
+  SelectValue,
+  SelectTrigger,
+  SelectContent,
+  SelectLabel,
+  SelectItem,
+  SelectSeparator
+};
+var ComponentsContext = createContext(defaultComponents);
+function ComponentsProvider({
+  components,
+  children
+}) {
+  const merged = useMemo(
+    () => components ? { ...defaultComponents, ...components } : defaultComponents,
+    [components]
+  );
+  return /* @__PURE__ */ jsx(ComponentsContext.Provider, { value: merged, children });
+}
+function useComponents() {
+  return useContext(ComponentsContext);
 }
 
 // src/components/pano-cloud-viewer.tsx
 init_dist();
-var Viewport3 = lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
+init_utils();
+var Viewport4 = lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
+var PcvRootContext = createContext(null);
+function usePcvRoot() {
+  return useContext(PcvRootContext);
+}
 function ViewportFallback2() {
   return /* @__PURE__ */ jsx("div", { className: "w-full h-full flex items-center justify-center bg-[hsl(var(--background))]", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-center gap-3", children: [
     /* @__PURE__ */ jsx("div", { className: "w-8 h-8 border-2 border-[hsl(var(--brand))] border-t-transparent rounded-full animate-spin" }),
@@ -5135,15 +5484,28 @@ function PanoOverlayBridge() {
   if (!selectedCamera) return null;
   return /* @__PURE__ */ jsx(PanoViewer, {});
 }
-function PanoCloudViewer({ source, theme = "dark", className, locale, children }) {
+function PcvRoot({ className, children }) {
+  const { resolvedTheme } = useTheme();
+  const rootRef = useRef(null);
+  return /* @__PURE__ */ jsx(PcvRootContext.Provider, { value: rootRef, children: /* @__PURE__ */ jsx(
+    "div",
+    {
+      ref: rootRef,
+      className: cn("pcv", resolvedTheme, "w-full h-full", className),
+      "data-theme": resolvedTheme,
+      children
+    }
+  ) });
+}
+function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, children, components }) {
   const adapter = createAdapter(source);
-  const config = { source };
-  return /* @__PURE__ */ jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsx("div", { className: `w-full h-full ${className ?? ""}`, children: children ? /* @__PURE__ */ jsxs(Fragment, { children: [
+  const config = { source, uiMode };
+  return /* @__PURE__ */ jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsx(ComponentsProvider, { components, children: /* @__PURE__ */ jsx(PcvRoot, { className, children: children ? /* @__PURE__ */ jsxs(Fragment, { children: [
     children(
-      /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback2, {}), children: /* @__PURE__ */ jsx(Viewport3, {}) })
+      /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback2, {}), children: /* @__PURE__ */ jsx(Viewport4, {}) })
     ),
     /* @__PURE__ */ jsx(PanoOverlayBridge, {})
-  ] }) : /* @__PURE__ */ jsx(WorkspaceLayout, {}) }) }) }) }) });
+  ] }) : /* @__PURE__ */ jsx(WorkspaceLayout, {}) }) }) }) }) }) });
 }
 
 // src/index.ts
@@ -5304,7 +5666,7 @@ function GlassButton({
     }
   );
 }
-function Separator() {
+function Separator2() {
   return /* @__PURE__ */ jsx("div", { className: "w-px h-6 bg-white/15 mx-0.5" });
 }
 function MinimalToolbar() {
@@ -5352,22 +5714,22 @@ function MinimalToolbar() {
           /* @__PURE__ */ jsx(
             GlassButton,
             {
-              icon: /* @__PURE__ */ jsx(Navigation, { size: 16 }),
-              title: "Fly",
-              active: navigationMode === "fly",
-              onClick: () => setNavigationMode("fly")
+              icon: /* @__PURE__ */ jsx(Rotate3d, { size: 16 }),
+              title: "Free rotate",
+              active: navigationMode === "free",
+              onClick: () => setNavigationMode("free")
             }
           ),
           /* @__PURE__ */ jsx(
             GlassButton,
             {
-              icon: /* @__PURE__ */ jsx(Globe, { size: 16 }),
-              title: "Earth",
-              active: navigationMode === "earth",
-              onClick: () => setNavigationMode("earth")
+              icon: /* @__PURE__ */ jsx(Map$1, { size: 16 }),
+              title: "Pan / Map",
+              active: navigationMode === "pan",
+              onClick: () => setNavigationMode("pan")
             }
           ),
-          /* @__PURE__ */ jsx(Separator, {}),
+          /* @__PURE__ */ jsx(Separator2, {}),
           /* @__PURE__ */ jsx(
             GlassButton,
             {
@@ -5376,7 +5738,7 @@ function MinimalToolbar() {
               onClick: fitToView
             }
           ),
-          /* @__PURE__ */ jsx(Separator, {}),
+          /* @__PURE__ */ jsx(Separator2, {}),
           /* @__PURE__ */ jsx(
             GlassButton,
             {
@@ -5405,7 +5767,7 @@ function MinimalToolbar() {
             }
           ),
           isMeasuring && /* @__PURE__ */ jsxs(Fragment, { children: [
-            /* @__PURE__ */ jsx(Separator, {}),
+            /* @__PURE__ */ jsx(Separator2, {}),
             /* @__PURE__ */ jsx(
               GlassButton,
               {
@@ -5416,7 +5778,7 @@ function MinimalToolbar() {
               }
             )
           ] }),
-          /* @__PURE__ */ jsx(Separator, {}),
+          /* @__PURE__ */ jsx(Separator2, {}),
           /* @__PURE__ */ jsx(
             GlassButton,
             {
@@ -5720,8 +6082,8 @@ function ViewSettingsPalette() {
     /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1", children: "Navigation" }),
     /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
       /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Orbit, { size: 14 }), label: "Orbit", active: navigationMode === "orbit", onClick: () => setNavigationMode("orbit") }),
-      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Navigation, { size: 14 }), label: "Fly", active: navigationMode === "fly", onClick: () => setNavigationMode("fly") }),
-      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Globe, { size: 14 }), label: "Earth", active: navigationMode === "earth", onClick: () => setNavigationMode("earth") })
+      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Rotate3d, { size: 14 }), label: "Free", active: navigationMode === "free", onClick: () => setNavigationMode("free") }),
+      /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Map$1, { size: 14 }), label: "Pan", active: navigationMode === "pan", onClick: () => setNavigationMode("pan") })
     ] }),
     /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1", children: "Projection" }),
     /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
@@ -5933,7 +6295,6 @@ init_utils();
 init_viewer_provider();
 init_locale_context();
 init_dist();
-var tabTriggerClass = "px-3 py-1.5 text-xs font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-[hsl(var(--brand))] -mb-px transition-colors";
 var PRESET_ICONS = {
   compact: /* @__PURE__ */ jsx(Minus, { size: 18 }),
   standard: /* @__PURE__ */ jsx(Circle, { size: 18 }),
@@ -6012,116 +6373,125 @@ function DisplaySettingsDialog({
   onOpenChange
 }) {
   const viewer = useViewer();
+  const {
+    Dialog: Dialog2,
+    DialogContent: DialogContent2,
+    DialogHeader: DialogHeader2,
+    DialogTitle: DialogTitle2,
+    DialogClose: DialogClose2,
+    Tabs: Tabs2,
+    TabsList: TabsList2,
+    TabsTrigger: TabsTrigger2,
+    TabsContent: TabsContent2
+  } = useComponents();
   const [localSettings, setLocalSettings] = useState(
     DISPLAY_PRESETS.standard
   );
   const settings = viewer.displaySettings ?? localSettings;
   const setSettings = viewer.setDisplaySettings ?? setLocalSettings;
   const t = useLocale().displaySettings;
+  const pcvRoot = usePcvRoot();
   const applyPreset = (preset) => {
     setSettings({ ...DISPLAY_PRESETS[preset] });
   };
   const updateField = (key, value) => {
     setSettings({ ...settings, [key]: value, preset: settings.preset });
   };
-  return /* @__PURE__ */ jsx(Dialog.Root, { open, onOpenChange, children: /* @__PURE__ */ jsxs(Dialog.Portal, { children: [
-    /* @__PURE__ */ jsx(Dialog.Overlay, { className: "fixed inset-0 z-50 bg-black/50" }),
-    /* @__PURE__ */ jsxs(Dialog.Content, { className: "fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-[420px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] shadow-xl", children: [
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between border-b border-[hsl(var(--border))] px-4 py-3", children: [
-        /* @__PURE__ */ jsx(Dialog.Title, { className: "text-sm font-semibold", children: t.title }),
-        /* @__PURE__ */ jsx(Dialog.Close, { className: "rounded p-1 text-muted-foreground hover:bg-[hsl(var(--muted)/.6)]", children: /* @__PURE__ */ jsx(X, { size: 14 }) })
+  return /* @__PURE__ */ jsx(Dialog2, { open, onOpenChange, children: /* @__PURE__ */ jsxs(DialogContent2, { className: "w-[420px]", container: pcvRoot?.current ?? void 0, children: [
+    /* @__PURE__ */ jsxs(DialogHeader2, { children: [
+      /* @__PURE__ */ jsx(DialogTitle2, { children: t.title }),
+      /* @__PURE__ */ jsx(DialogClose2, { children: /* @__PURE__ */ jsx(X, { size: 14 }) })
+    ] }),
+    /* @__PURE__ */ jsxs(Tabs2, { defaultValue: "presets", className: "px-4 py-3", children: [
+      /* @__PURE__ */ jsxs(TabsList2, { className: "mb-4", children: [
+        /* @__PURE__ */ jsx(TabsTrigger2, { value: "presets", children: t.presetsTab }),
+        /* @__PURE__ */ jsx(TabsTrigger2, { value: "advanced", children: t.advancedTab })
       ] }),
-      /* @__PURE__ */ jsxs(Tabs.Root, { defaultValue: "presets", className: "px-4 py-3", children: [
-        /* @__PURE__ */ jsxs(Tabs.List, { className: "mb-4 flex gap-1 border-b border-[hsl(var(--border))]", children: [
-          /* @__PURE__ */ jsx(Tabs.Trigger, { value: "presets", className: tabTriggerClass, children: t.presetsTab }),
-          /* @__PURE__ */ jsx(Tabs.Trigger, { value: "advanced", className: tabTriggerClass, children: t.advancedTab })
-        ] }),
-        /* @__PURE__ */ jsx(Tabs.Content, { value: "presets", children: /* @__PURE__ */ jsx("div", { className: "grid grid-cols-3 gap-3", children: ["compact", "standard", "prominent"].map(
-          (preset) => /* @__PURE__ */ jsx(
-            PresetCard,
+      /* @__PURE__ */ jsx(TabsContent2, { value: "presets", children: /* @__PURE__ */ jsx("div", { className: "grid grid-cols-3 gap-3", children: ["compact", "standard", "prominent"].map(
+        (preset) => /* @__PURE__ */ jsx(
+          PresetCard,
+          {
+            preset,
+            label: t[`preset_${preset}`] ?? preset,
+            description: t[`preset_${preset}_desc`] ?? "",
+            active: settings.preset === preset,
+            onClick: () => applyPreset(preset)
+          },
+          preset
+        )
+      ) }) }),
+      /* @__PURE__ */ jsx(TabsContent2, { value: "advanced", children: /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
+        /* @__PURE__ */ jsxs(SettingsSection, { title: t.measurementsSection, children: [
+          /* @__PURE__ */ jsx(
+            SliderRow,
             {
-              preset,
-              label: t[`preset_${preset}`] ?? preset,
-              description: t[`preset_${preset}_desc`] ?? "",
-              active: settings.preset === preset,
-              onClick: () => applyPreset(preset)
-            },
-            preset
+              label: t.lineWidth,
+              min: 1,
+              max: 6,
+              step: 0.5,
+              value: settings.measurementLineWidth,
+              onChange: (v) => updateField("measurementLineWidth", v)
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            SliderRow,
+            {
+              label: t.labelScale,
+              min: 0.3,
+              max: 2.5,
+              step: 0.1,
+              value: settings.measurementLabelScale,
+              onChange: (v) => updateField("measurementLabelScale", v)
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            SliderRow,
+            {
+              label: t.sphereRadius,
+              min: 0.02,
+              max: 0.5,
+              step: 0.01,
+              value: settings.measurementSphereRadius,
+              onChange: (v) => updateField("measurementSphereRadius", v)
+            }
           )
-        ) }) }),
-        /* @__PURE__ */ jsx(Tabs.Content, { value: "advanced", children: /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
-          /* @__PURE__ */ jsxs(SettingsSection, { title: t.measurementsSection, children: [
-            /* @__PURE__ */ jsx(
-              SliderRow,
-              {
-                label: t.lineWidth,
-                min: 1,
-                max: 6,
-                step: 0.5,
-                value: settings.measurementLineWidth,
-                onChange: (v) => updateField("measurementLineWidth", v)
-              }
-            ),
-            /* @__PURE__ */ jsx(
-              SliderRow,
-              {
-                label: t.labelScale,
-                min: 0.3,
-                max: 2.5,
-                step: 0.1,
-                value: settings.measurementLabelScale,
-                onChange: (v) => updateField("measurementLabelScale", v)
-              }
-            ),
-            /* @__PURE__ */ jsx(
-              SliderRow,
-              {
-                label: t.sphereRadius,
-                min: 0.02,
-                max: 0.5,
-                step: 0.01,
-                value: settings.measurementSphereRadius,
-                onChange: (v) => updateField("measurementSphereRadius", v)
-              }
-            )
-          ] }),
-          /* @__PURE__ */ jsxs(SettingsSection, { title: t.markersSection, children: [
-            /* @__PURE__ */ jsx(
-              SliderRow,
-              {
-                label: t.markerScale,
-                min: 0.2,
-                max: 3,
-                step: 0.1,
-                value: settings.markerSphereScale,
-                onChange: (v) => updateField("markerSphereScale", v)
-              }
-            ),
-            /* @__PURE__ */ jsx(
-              SliderRow,
-              {
-                label: t.markerOpacity,
-                min: 0.1,
-                max: 1,
-                step: 0.05,
-                value: settings.markerSphereOpacity,
-                onChange: (v) => updateField("markerSphereOpacity", v)
-              }
-            ),
-            /* @__PURE__ */ jsx(
-              SliderRow,
-              {
-                label: t.markerLabelScale,
-                min: 0.3,
-                max: 2.5,
-                step: 0.1,
-                value: settings.markerLabelScale,
-                onChange: (v) => updateField("markerLabelScale", v)
-              }
-            )
-          ] })
-        ] }) })
-      ] })
+        ] }),
+        /* @__PURE__ */ jsxs(SettingsSection, { title: t.markersSection, children: [
+          /* @__PURE__ */ jsx(
+            SliderRow,
+            {
+              label: t.markerScale,
+              min: 0.2,
+              max: 3,
+              step: 0.1,
+              value: settings.markerSphereScale,
+              onChange: (v) => updateField("markerSphereScale", v)
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            SliderRow,
+            {
+              label: t.markerOpacity,
+              min: 0.1,
+              max: 1,
+              step: 0.05,
+              value: settings.markerSphereOpacity,
+              onChange: (v) => updateField("markerSphereOpacity", v)
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            SliderRow,
+            {
+              label: t.markerLabelScale,
+              min: 0.3,
+              max: 2.5,
+              step: 0.1,
+              value: settings.markerLabelScale,
+              onChange: (v) => updateField("markerLabelScale", v)
+            }
+          )
+        ] })
+      ] }) })
     ] })
   ] }) });
 }
@@ -6410,11 +6780,11 @@ var de = createLocale(en, {
     qualityBalanced: "Ausgewogen",
     qualityHigh: "Hohe Qualit\xE4t",
     navOrbit: "Orbit",
-    navFly: "Flug",
-    navEarth: "Erde",
-    navOrbitTitle: "Orbit-Navigation \u2014 um Ziel rotieren",
-    navFlyTitle: "Flug-Navigation \u2014 WASD + Ziehen zum Umschauen",
-    navEarthTitle: "Erd-Navigation \u2014 Pan-fokussiert, Horizont fixiert",
+    navFree: "Frei",
+    navPan: "Verschieben",
+    navOrbitTitle: "Orbit \u2014 CAD-Drehscheibe, um Ziel rotieren",
+    navFreeTitle: "Frei drehen \u2014 Blender-Stil, keine Horizontbindung",
+    navPanTitle: "Verschieben / Karte \u2014 linke Maustaste verschiebt, Horizont fixiert",
     camPerspective: "Perspek.",
     camOrthographic: "Ortho",
     camPerspectiveTitle: "Perspektivische Kamera",
@@ -6575,9 +6945,14 @@ var de = createLocale(en, {
   },
   panoViewer: {
     close: "Panorama schlie\xDFen"
+  },
+  uiModes: {
+    professional: "Professionell",
+    lite: "Lite",
+    modeLabel: "Modus"
   }
 });
 
-export { AboutDialog, AxisWidget, CameraAnimator, ClassificationPanel, ClipManager, CollapsibleSidebar, DISPLAY_PRESETS, DataProvider, DisplayControls, DisplaySettingsDialog, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, MinimapRenderer, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Sidebar, ThemeProvider, ToolRail, ToolbarIconBtn, ToolbarSection, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, captureScene, cn, createAdapter, createLocale, de, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, useClipActions, useData, useDisplayActions, useDisplaySettings, useExportActions, useLocale, useMeasurementActions, useNavigationActions, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, AxisWidget, Button, CameraAnimator, ClassificationPanel, ClipManager, CollapsibleSidebar, ComponentsProvider, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, DisplaySettingsDialog, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, MinimapRenderer, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider2 as Slider, Tabs, TabsContent, TabsList, TabsTrigger, ThemeProvider, Toggle, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

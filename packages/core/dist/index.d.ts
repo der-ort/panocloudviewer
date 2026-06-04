@@ -72,6 +72,7 @@ interface ExportOptions {
     quality?: number;
 }
 type Theme = "dark" | "light" | "system";
+type UiMode = "professional" | "lite";
 interface ViewerConfig {
     source: PointCloudSource;
     theme?: Theme;
@@ -89,9 +90,15 @@ interface ViewerConfig {
     onMeasurementChange?: (measurements: Measurement[]) => void;
     /** Display settings overrides (marker/measurement sizing) */
     displaySettings?: Partial<DisplaySettings>;
+    /**
+     * UI complexity mode.
+     * - "professional" (default): full toolset — all measurements, clipping, display controls, export, all sidebar tabs.
+     * - "lite": beginner set — nav modes, basic measurements (point/distance/height), panorama/minimap/theme toggles only.
+     */
+    uiMode?: UiMode;
 }
 type ActiveTool = "none" | "measure-point" | "measure-distance" | "measure-height" | "measure-area" | "measure-volume" | "measure-angle" | "measure-profile" | "section-box" | "section-plane" | "annotate";
-type NavigationMode = "orbit" | "fly" | "earth";
+type NavigationMode = "orbit" | "free" | "pan";
 type CameraProjection = "perspective" | "orthographic";
 type DisplayPreset = "compact" | "standard" | "prominent";
 interface DisplaySettings {
@@ -122,11 +129,10 @@ declare class SceneManager {
     camera: THREE.PerspectiveCamera;
     renderer: THREE.WebGLRenderer;
     controls: OrbitControls;
-    private _fpsControls;
     private _navMode;
     private _projection;
     private _orthoCamera;
-    /** Movement speed for fly mode — auto-scaled when point cloud loads */
+    /** Kept for API compatibility — no longer drives navigation */
     flySpeed: number;
     private animationId;
     private lastTime;
@@ -168,15 +174,16 @@ declare class SceneManager {
      */
     private _syncOrthoCamera;
     /**
-     * Switch between navigation modes.
-     * - orbit: standard orbit / tumble around a target point
-     * - fly:   free-flight (WASD + mouse-drag to look), no camera roll
-     * - earth: pan-primary mode (like Google Earth / map view)
+     * Switch between navigation modes. All three reconfigure the SAME OrbitControls
+     * instance (zoom-to-cursor + damping throughout) so the orbit target remains
+     * authoritative for clipping, minimap, camera animation and ortho sync.
+     * - orbit: CAD turntable — left-drag rotate, middle dolly, right pan, full sphere.
+     * - free:  Blender-ish free orbit — left/middle drag rotate, right pan, full sphere.
+     * - pan:   Map / top-down — left-drag pans, horizon-locked, right-drag rotates.
      */
     setNavigationMode(mode: NavigationMode): void;
     /**
-     * Set fly movement speed. Propagates to active FlyControls if instantiated.
-     * Call this instead of setting flySpeed directly when fly mode is active.
+     * Set fly movement speed. Kept for API compatibility.
      */
     setFlySpeed(speed: number): void;
     /** Stop animation loop and dispose resources */
@@ -609,4 +616,4 @@ declare function formatCoord(x: number, y: number, z: number, decimals?: number)
 /** Export measurements as a CSV string */
 declare function exportMeasurementsCSV(measurements: Measurement[]): string;
 
-export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };
+export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };

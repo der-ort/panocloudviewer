@@ -1,6 +1,6 @@
 'use strict';
 
-var THREE6 = require('three');
+var THREE5 = require('three');
 var OrbitControls_js = require('three/examples/jsm/controls/OrbitControls.js');
 
 function _interopNamespace(e) {
@@ -21,111 +21,7 @@ function _interopNamespace(e) {
   return Object.freeze(n);
 }
 
-var THREE6__namespace = /*#__PURE__*/_interopNamespace(THREE6);
-
-// src/core/scene-manager.ts
-var FpsControls = class {
-  camera;
-  domElement;
-  movementSpeed = 10;
-  lookSpeed = 2e-3;
-  enabled = true;
-  _euler = new THREE6__namespace.Euler(0, 0, 0, "YXZ");
-  _keys = /* @__PURE__ */ new Set();
-  _dragging = false;
-  _prevX = 0;
-  _prevY = 0;
-  _disposed = false;
-  // Bound listeners for cleanup
-  _onKeyDown;
-  _onKeyUp;
-  _onMouseDown;
-  _onMouseMove;
-  _onMouseUp;
-  _onContextMenu;
-  constructor(camera, domElement) {
-    this.camera = camera;
-    this.domElement = domElement;
-    this._euler.setFromQuaternion(camera.quaternion, "YXZ");
-    this._onKeyDown = (e) => this._handleKeyDown(e);
-    this._onKeyUp = (e) => this._handleKeyUp(e);
-    this._onMouseDown = (e) => this._handleMouseDown(e);
-    this._onMouseMove = (e) => this._handleMouseMove(e);
-    this._onMouseUp = () => this._handleMouseUp();
-    this._onContextMenu = (e) => e.preventDefault();
-    document.addEventListener("keydown", this._onKeyDown);
-    document.addEventListener("keyup", this._onKeyUp);
-    domElement.addEventListener("mousedown", this._onMouseDown);
-    document.addEventListener("mousemove", this._onMouseMove);
-    document.addEventListener("mouseup", this._onMouseUp);
-    domElement.addEventListener("contextmenu", this._onContextMenu);
-  }
-  /** Sync euler from current camera orientation (call when switching to fly mode) */
-  syncFromCamera() {
-    this._euler.setFromQuaternion(this.camera.quaternion, "YXZ");
-  }
-  _handleKeyDown(e) {
-    if (!this.enabled) return;
-    this._keys.add(e.code);
-  }
-  _handleKeyUp(e) {
-    this._keys.delete(e.code);
-  }
-  _handleMouseDown(e) {
-    if (!this.enabled) return;
-    if (e.button === 2 || e.button === 1) {
-      this._dragging = true;
-      this._prevX = e.clientX;
-      this._prevY = e.clientY;
-    }
-  }
-  _handleMouseMove(e) {
-    if (!this.enabled || !this._dragging) return;
-    const dx = e.clientX - this._prevX;
-    const dy = e.clientY - this._prevY;
-    this._prevX = e.clientX;
-    this._prevY = e.clientY;
-    this._euler.y -= dx * this.lookSpeed;
-    this._euler.x -= dy * this.lookSpeed;
-    this._euler.x = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this._euler.x));
-    this.camera.quaternion.setFromEuler(this._euler);
-  }
-  _handleMouseUp() {
-    this._dragging = false;
-  }
-  /**
-   * Update camera position based on held keys.
-   * @param delta Time in seconds since last frame
-   */
-  update(delta) {
-    if (!this.enabled) return;
-    const speed = this.movementSpeed * delta * (this._keys.has("ShiftLeft") || this._keys.has("ShiftRight") ? 2 : 1);
-    const forward = new THREE6__namespace.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    const right = new THREE6__namespace.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
-    const up = new THREE6__namespace.Vector3(0, 0, 1);
-    const move = new THREE6__namespace.Vector3();
-    if (this._keys.has("KeyW")) move.add(forward);
-    if (this._keys.has("KeyS")) move.sub(forward);
-    if (this._keys.has("KeyA")) move.sub(right);
-    if (this._keys.has("KeyD")) move.add(right);
-    if (this._keys.has("KeyE")) move.add(up);
-    if (this._keys.has("KeyQ")) move.sub(up);
-    if (move.lengthSq() > 0) {
-      move.normalize().multiplyScalar(speed);
-      this.camera.position.add(move);
-    }
-  }
-  dispose() {
-    if (this._disposed) return;
-    this._disposed = true;
-    document.removeEventListener("keydown", this._onKeyDown);
-    document.removeEventListener("keyup", this._onKeyUp);
-    this.domElement.removeEventListener("mousedown", this._onMouseDown);
-    document.removeEventListener("mousemove", this._onMouseMove);
-    document.removeEventListener("mouseup", this._onMouseUp);
-    this.domElement.removeEventListener("contextmenu", this._onContextMenu);
-  }
-};
+var THREE5__namespace = /*#__PURE__*/_interopNamespace(THREE5);
 
 // src/core/scene-manager.ts
 var SceneManager = class {
@@ -133,11 +29,10 @@ var SceneManager = class {
   camera;
   renderer;
   controls;
-  _fpsControls = null;
   _navMode = "orbit";
   _projection = "perspective";
   _orthoCamera = null;
-  /** Movement speed for fly mode — auto-scaled when point cloud loads */
+  /** Kept for API compatibility — no longer drives navigation */
   flySpeed = 10;
   animationId = null;
   lastTime = 0;
@@ -154,18 +49,18 @@ var SceneManager = class {
   constructor({ canvas, onFpsUpdate, onPointsUpdate }) {
     this.onFpsUpdate = onFpsUpdate;
     this.onPointsUpdate = onPointsUpdate;
-    this.scene = new THREE6__namespace.Scene();
-    this.scene.background = new THREE6__namespace.Color(657930);
+    this.scene = new THREE5__namespace.Scene();
+    this.scene.background = new THREE5__namespace.Color(657930);
     const { clientWidth: w, clientHeight: h } = canvas;
-    this.camera = new THREE6__namespace.PerspectiveCamera(60, w / h, 0.01, 1e5);
+    this.camera = new THREE5__namespace.PerspectiveCamera(60, w / h, 0.01, 1e5);
     this.camera.position.set(0, 0, 50);
-    this.renderer = new THREE6__namespace.WebGLRenderer({
+    this.renderer = new THREE5__namespace.WebGLRenderer({
       antialias: true,
       logarithmicDepthBuffer: true
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(w, h);
-    this.renderer.outputColorSpace = THREE6__namespace.LinearSRGBColorSpace;
+    this.renderer.outputColorSpace = THREE5__namespace.LinearSRGBColorSpace;
     this.renderer.autoClear = false;
     canvas.appendChild(this.renderer.domElement);
     this.controls = new OrbitControls_js.OrbitControls(this.camera, this.renderer.domElement);
@@ -174,9 +69,15 @@ var SceneManager = class {
     this.controls.screenSpacePanning = true;
     this.controls.maxPolarAngle = Math.PI;
     this.controls.zoomSpeed = 1.5;
-    this.controls.rotateSpeed = -1;
-    this.scene.add(new THREE6__namespace.AmbientLight(16777215, 0.5));
-    const dir = new THREE6__namespace.DirectionalLight(16777215, 1);
+    this.controls.rotateSpeed = 0.8;
+    this.controls.zoomToCursor = true;
+    this.controls.mouseButtons = {
+      LEFT: THREE5__namespace.MOUSE.ROTATE,
+      MIDDLE: THREE5__namespace.MOUSE.DOLLY,
+      RIGHT: THREE5__namespace.MOUSE.PAN
+    };
+    this.scene.add(new THREE5__namespace.AmbientLight(16777215, 0.5));
+    const dir = new THREE5__namespace.DirectionalLight(16777215, 1);
     dir.position.set(1, 2, 3);
     this.scene.add(dir);
     this.resizeObserver = new ResizeObserver(() => this.onResize(canvas));
@@ -194,15 +95,11 @@ var SceneManager = class {
   start() {
     const loop = (now) => {
       this.animationId = requestAnimationFrame(loop);
-      const delta = this.lastTime === 0 ? 16 : now - this.lastTime;
+      this.lastTime === 0 ? 16 : now - this.lastTime;
       this.lastTime = now;
       this.renderer.setScissorTest(false);
       this.renderer.clear();
-      if (this._navMode === "fly" && this._fpsControls) {
-        this._fpsControls.update(Math.min(delta / 1e3, 0.1));
-      } else {
-        this.controls.update();
-      }
+      this.controls.update();
       if (this.potree && this.pointClouds.length > 0) {
         this.potree.updatePointClouds(
           this.pointClouds,
@@ -260,7 +157,7 @@ var SceneManager = class {
     if (mode === this._projection) return;
     this._projection = mode;
     if (mode === "orthographic" && !this._orthoCamera) {
-      this._orthoCamera = new THREE6__namespace.OrthographicCamera(-1, 1, 1, -1, 0.01, 1e5);
+      this._orthoCamera = new THREE5__namespace.OrthographicCamera(-1, 1, 1, -1, 0.01, 1e5);
     }
   }
   /**
@@ -273,7 +170,7 @@ var SceneManager = class {
     cam.position.copy(this.camera.position);
     cam.quaternion.copy(this.camera.quaternion);
     const dist = this.camera.position.distanceTo(this.controls.target);
-    const h = 2 * dist * Math.tan(THREE6__namespace.MathUtils.degToRad(this.camera.fov / 2));
+    const h = 2 * dist * Math.tan(THREE5__namespace.MathUtils.degToRad(this.camera.fov / 2));
     const w = h * this.camera.aspect;
     cam.left = -w / 2;
     cam.right = w / 2;
@@ -285,70 +182,75 @@ var SceneManager = class {
     return cam;
   }
   /**
-   * Switch between navigation modes.
-   * - orbit: standard orbit / tumble around a target point
-   * - fly:   free-flight (WASD + mouse-drag to look), no camera roll
-   * - earth: pan-primary mode (like Google Earth / map view)
+   * Switch between navigation modes. All three reconfigure the SAME OrbitControls
+   * instance (zoom-to-cursor + damping throughout) so the orbit target remains
+   * authoritative for clipping, minimap, camera animation and ortho sync.
+   * - orbit: CAD turntable — left-drag rotate, middle dolly, right pan, full sphere.
+   * - free:  Blender-ish free orbit — left/middle drag rotate, right pan, full sphere.
+   * - pan:   Map / top-down — left-drag pans, horizon-locked, right-drag rotates.
    */
   setNavigationMode(mode) {
     if (mode === this._navMode) return;
     this._navMode = mode;
-    if (mode === "fly") {
-      this.controls.enabled = false;
-      if (!this._fpsControls) {
-        this._fpsControls = new FpsControls(this.camera, this.renderer.domElement);
-      }
-      this._fpsControls.syncFromCamera();
-      this._fpsControls.movementSpeed = this.flySpeed;
-      this._fpsControls.enabled = true;
+    const c = this.controls;
+    c.enableRotate = true;
+    c.screenSpacePanning = true;
+    c.minPolarAngle = 0;
+    if (mode === "pan") {
+      c.maxPolarAngle = Math.PI / 2.05;
+      c.mouseButtons = {
+        LEFT: THREE5__namespace.MOUSE.PAN,
+        MIDDLE: THREE5__namespace.MOUSE.DOLLY,
+        RIGHT: THREE5__namespace.MOUSE.ROTATE
+      };
+    } else if (mode === "free") {
+      c.maxPolarAngle = Math.PI;
+      c.mouseButtons = {
+        LEFT: THREE5__namespace.MOUSE.ROTATE,
+        MIDDLE: THREE5__namespace.MOUSE.ROTATE,
+        RIGHT: THREE5__namespace.MOUSE.PAN
+      };
     } else {
-      if (this._fpsControls) this._fpsControls.enabled = false;
-      this.controls.enabled = true;
-      if (mode === "orbit") {
-        this.controls.screenSpacePanning = true;
-        this.controls.maxPolarAngle = Math.PI;
-        this.controls.enableRotate = true;
-      } else {
-        this.controls.screenSpacePanning = true;
-        this.controls.maxPolarAngle = Math.PI / 2.05;
-        this.controls.enableRotate = true;
-      }
+      c.maxPolarAngle = Math.PI;
+      c.mouseButtons = {
+        LEFT: THREE5__namespace.MOUSE.ROTATE,
+        MIDDLE: THREE5__namespace.MOUSE.DOLLY,
+        RIGHT: THREE5__namespace.MOUSE.PAN
+      };
     }
+    c.update();
   }
   /**
-   * Set fly movement speed. Propagates to active FlyControls if instantiated.
-   * Call this instead of setting flySpeed directly when fly mode is active.
+   * Set fly movement speed. Kept for API compatibility.
    */
   setFlySpeed(speed) {
     this.flySpeed = speed;
-    if (this._fpsControls) this._fpsControls.movementSpeed = speed;
   }
   /** Stop animation loop and dispose resources */
   dispose() {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
     this.resizeObserver.disconnect();
     this.controls.dispose();
-    this._fpsControls?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
   /** Fit camera to bounding box */
   fitToBox(box) {
-    const center = new THREE6__namespace.Vector3();
-    const size = new THREE6__namespace.Vector3();
+    const center = new THREE5__namespace.Vector3();
+    const size = new THREE5__namespace.Vector3();
     box.getCenter(center);
     box.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z);
     const fov = this.camera.fov * (Math.PI / 180);
     const dist = maxDim / (2 * Math.tan(fov / 2)) * 1.5;
-    this.camera.position.copy(center).add(new THREE6__namespace.Vector3(0, 0, dist));
+    this.camera.position.copy(center).add(new THREE5__namespace.Vector3(0, 0, dist));
     this.controls.target.copy(center);
     this.controls.update();
   }
   /** Raycast against objects in scene */
   raycast(normalizedX, normalizedY, objects) {
-    const raycaster = new THREE6__namespace.Raycaster();
-    const pointer = new THREE6__namespace.Vector2(normalizedX, normalizedY);
+    const raycaster = new THREE5__namespace.Raycaster();
+    const pointer = new THREE5__namespace.Vector2(normalizedX, normalizedY);
     raycaster.setFromCamera(pointer, this.camera);
     return raycaster.intersectObjects(objects, true);
   }
@@ -359,8 +261,8 @@ var SceneManager = class {
    */
   pickPoint(normalizedX, normalizedY) {
     if (this.pointClouds.length === 0) return null;
-    const raycaster = new THREE6__namespace.Raycaster();
-    raycaster.setFromCamera(new THREE6__namespace.Vector2(normalizedX, normalizedY), this.camera);
+    const raycaster = new THREE5__namespace.Raycaster();
+    raycaster.setFromCamera(new THREE5__namespace.Vector2(normalizedX, normalizedY), this.camera);
     for (const pc of this.pointClouds) {
       const octree = pc;
       if (typeof octree.pick !== "function") continue;
@@ -380,7 +282,7 @@ var PointCloudLoader = class {
   currentClouds = [];
   hasRgb = false;
   /** World-space bounding box of the loaded point cloud (available after load) */
-  worldBox = new THREE6__namespace.Box3();
+  worldBox = new THREE5__namespace.Box3();
   constructor(sceneManager, adapter) {
     this.sceneManager = sceneManager;
     this.adapter = adapter;
@@ -431,7 +333,7 @@ var PointCloudLoader = class {
     const box = pointCloud.pcoGeometry?.boundingBox ?? pointCloud.boundingBox;
     const tightBox = pointCloud.pcoGeometry?.tightBoundingBox ?? box;
     const offset = pointCloud.pcoGeometry?.offset;
-    const worldBox = new THREE6__namespace.Box3();
+    const worldBox = new THREE5__namespace.Box3();
     if (tightBox && offset) {
       worldBox.copy(tightBox);
       worldBox.min.add(offset);
@@ -602,9 +504,9 @@ var CameraAnimator = class {
   }
   /** Fly to a camera marker position (offset behind the camera by `offset` units) */
   flyToCamera(camPos, yawDeg = 0, offset = 5, duration = 800) {
-    const pos = Array.isArray(camPos) ? new THREE6__namespace.Vector3(camPos[0], camPos[1], camPos[2]) : camPos;
+    const pos = Array.isArray(camPos) ? new THREE5__namespace.Vector3(camPos[0], camPos[1], camPos[2]) : camPos;
     const yaw = yawDeg * Math.PI / 180;
-    const viewerPos = new THREE6__namespace.Vector3(
+    const viewerPos = new THREE5__namespace.Vector3(
       pos.x - Math.sin(yaw) * offset,
       pos.y - Math.cos(yaw) * offset,
       pos.z + 2
@@ -666,7 +568,7 @@ var MarkerManager = class {
   _worldBox;
   constructor(scene) {
     this.scene = scene;
-    this.group = new THREE6__namespace.Group();
+    this.group = new THREE5__namespace.Group();
     this.group.name = "pano-markers";
     this.scene.add(this.group);
   }
@@ -683,7 +585,7 @@ var MarkerManager = class {
     this._worldBox = worldBox;
     this.clear();
     if (worldBox && !worldBox.isEmpty()) {
-      const size = new THREE6__namespace.Vector3();
+      const size = new THREE5__namespace.Vector3();
       worldBox.getSize(size);
       const maxDim = Math.max(size.x, size.y, size.z);
       this.sphereRadius = Math.max(0.25, Math.min(5, maxDim * 8e-3));
@@ -704,8 +606,8 @@ var MarkerManager = class {
   }
   _makeSphere(color) {
     const scaledRadius = this.sphereRadius * this._displaySettings.markerSphereScale;
-    const geo = new THREE6__namespace.SphereGeometry(scaledRadius, 16, 16);
-    const mat = new THREE6__namespace.MeshBasicMaterial({
+    const geo = new THREE5__namespace.SphereGeometry(scaledRadius, 16, 16);
+    const mat = new THREE5__namespace.MeshBasicMaterial({
       color,
       depthTest: false,
       // Always visible through the point cloud
@@ -713,7 +615,7 @@ var MarkerManager = class {
       transparent: true,
       opacity: this._displaySettings.markerSphereOpacity
     });
-    return new THREE6__namespace.Mesh(geo, mat);
+    return new THREE5__namespace.Mesh(geo, mat);
   }
   _makeLabel(text) {
     const canvas = document.createElement("canvas");
@@ -729,14 +631,14 @@ var MarkerManager = class {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text.substring(0, 20), 128, 34);
-    const tex = new THREE6__namespace.CanvasTexture(canvas);
-    const mat = new THREE6__namespace.SpriteMaterial({
+    const tex = new THREE5__namespace.CanvasTexture(canvas);
+    const mat = new THREE5__namespace.SpriteMaterial({
       map: tex,
       depthTest: false,
       depthWrite: false,
       transparent: true
     });
-    const sprite = new THREE6__namespace.Sprite(mat);
+    const sprite = new THREE5__namespace.Sprite(mat);
     const ls = this._displaySettings.markerLabelScale;
     sprite.scale.set(this.sphereRadius * 8 * ls, this.sphereRadius * 2 * ls, 1);
     return sprite;
@@ -908,7 +810,7 @@ var MeasurementManager = class {
   _snapLine = null;
   constructor(scene) {
     this.scene = scene;
-    this.group = new THREE6__namespace.Group();
+    this.group = new THREE5__namespace.Group();
     this.group.name = "measurements";
     this.scene.add(this.group);
   }
@@ -925,9 +827,9 @@ var MeasurementManager = class {
     for (const [id, entry] of this.measurements) {
       this._disposeObjects(entry.objects);
       const m = entry.data;
-      const newObjects = m.box ? this.buildVolumeBoxObjects(m, new THREE6__namespace.Box3(
-        new THREE6__namespace.Vector3(m.box.min[0], m.box.min[1], m.box.min[2]),
-        new THREE6__namespace.Vector3(m.box.max[0], m.box.max[1], m.box.max[2])
+      const newObjects = m.box ? this.buildVolumeBoxObjects(m, new THREE5__namespace.Box3(
+        new THREE5__namespace.Vector3(m.box.min[0], m.box.min[1], m.box.min[2]),
+        new THREE5__namespace.Vector3(m.box.max[0], m.box.max[1], m.box.max[2])
       )) : this.buildObjects(m);
       this.measurements.set(id, { data: m, objects: newObjects });
     }
@@ -935,10 +837,10 @@ var MeasurementManager = class {
   /** Dispose geometry/materials and remove objects from the group */
   _disposeObjects(objects) {
     objects.forEach((o) => {
-      if (o instanceof THREE6__namespace.Mesh || o instanceof THREE6__namespace.Line || o instanceof THREE6__namespace.LineSegments) {
+      if (o instanceof THREE5__namespace.Mesh || o instanceof THREE5__namespace.Line || o instanceof THREE5__namespace.LineSegments) {
         o.geometry.dispose();
         o.material.dispose();
-      } else if (o instanceof THREE6__namespace.Sprite) {
+      } else if (o instanceof THREE5__namespace.Sprite) {
         o.material.map?.dispose();
         o.material.dispose();
       }
@@ -994,16 +896,16 @@ var MeasurementManager = class {
    *  - A rubber-band line from the last placed point to the snap position
    */
   updateSnap(worldPos, color) {
-    const c = new THREE6__namespace.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
+    const c = new THREE5__namespace.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
     if (!this._snapSphere) {
-      const geo = new THREE6__namespace.SphereGeometry(this._displaySettings.measurementSphereRadius * 0.8, 10, 8);
-      const mat = new THREE6__namespace.MeshBasicMaterial({
+      const geo = new THREE5__namespace.SphereGeometry(this._displaySettings.measurementSphereRadius * 0.8, 10, 8);
+      const mat = new THREE5__namespace.MeshBasicMaterial({
         color: c,
         depthTest: false,
         transparent: true,
         opacity: 0.8
       });
-      this._snapSphere = new THREE6__namespace.Mesh(geo, mat);
+      this._snapSphere = new THREE5__namespace.Mesh(geo, mat);
       this._snapSphere.renderOrder = 4;
       this.group.add(this._snapSphere);
     }
@@ -1017,8 +919,8 @@ var MeasurementManager = class {
         positions.setXYZ(1, worldPos.x, worldPos.y, worldPos.z);
         positions.needsUpdate = true;
       } else {
-        const geo = new THREE6__namespace.BufferGeometry().setFromPoints([lastPt, worldPos]);
-        const mat = new THREE6__namespace.LineDashedMaterial({
+        const geo = new THREE5__namespace.BufferGeometry().setFromPoints([lastPt, worldPos]);
+        const mat = new THREE5__namespace.LineDashedMaterial({
           color: c,
           depthTest: false,
           transparent: true,
@@ -1026,7 +928,7 @@ var MeasurementManager = class {
           dashSize: 0.3,
           gapSize: 0.15
         });
-        this._snapLine = new THREE6__namespace.Line(geo, mat);
+        this._snapLine = new THREE5__namespace.Line(geo, mat);
         this._snapLine.computeLineDistances();
         this._snapLine.renderOrder = 3;
         this.group.add(this._snapLine);
@@ -1054,7 +956,7 @@ var MeasurementManager = class {
   setVolumeDraft(box) {
     if (this._volumeDraft) {
       this._volumeDraft.traverse((o) => {
-        if (o instanceof THREE6__namespace.Mesh || o instanceof THREE6__namespace.LineSegments) {
+        if (o instanceof THREE5__namespace.Mesh || o instanceof THREE5__namespace.LineSegments) {
           o.geometry.dispose();
           o.material.dispose();
         }
@@ -1063,28 +965,28 @@ var MeasurementManager = class {
       this._volumeDraft = null;
     }
     if (!box || box.isEmpty()) return;
-    const draftGroup = new THREE6__namespace.Group();
-    const center = new THREE6__namespace.Vector3();
-    const size = new THREE6__namespace.Vector3();
+    const draftGroup = new THREE5__namespace.Group();
+    const center = new THREE5__namespace.Vector3();
+    const size = new THREE5__namespace.Vector3();
     box.getCenter(center);
     box.getSize(size);
-    const c = new THREE6__namespace.Color(COLORS.volume);
-    const fillGeo = new THREE6__namespace.BoxGeometry(1, 1, 1);
-    const fillMat = new THREE6__namespace.MeshBasicMaterial({
+    const c = new THREE5__namespace.Color(COLORS.volume);
+    const fillGeo = new THREE5__namespace.BoxGeometry(1, 1, 1);
+    const fillMat = new THREE5__namespace.MeshBasicMaterial({
       color: c,
       opacity: 0.1,
       transparent: true,
       depthWrite: false,
       depthTest: false
     });
-    const fill = new THREE6__namespace.Mesh(fillGeo, fillMat);
+    const fill = new THREE5__namespace.Mesh(fillGeo, fillMat);
     fill.position.copy(center);
     fill.scale.copy(size);
     fill.renderOrder = 1;
     draftGroup.add(fill);
-    const edgesGeo = new THREE6__namespace.EdgesGeometry(new THREE6__namespace.BoxGeometry(1, 1, 1));
-    const edgesMat = new THREE6__namespace.LineBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: 0.6 });
-    const edges = new THREE6__namespace.LineSegments(edgesGeo, edgesMat);
+    const edgesGeo = new THREE5__namespace.EdgesGeometry(new THREE5__namespace.BoxGeometry(1, 1, 1));
+    const edgesMat = new THREE5__namespace.LineBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: 0.6 });
+    const edges = new THREE5__namespace.LineSegments(edgesGeo, edgesMat);
     edges.position.copy(center);
     edges.scale.copy(size);
     edges.renderOrder = 2;
@@ -1096,7 +998,7 @@ var MeasurementManager = class {
   addVolumeMeasurement(box) {
     this.setVolumeDraft(null);
     this.clearSnap();
-    const size = new THREE6__namespace.Vector3();
+    const size = new THREE5__namespace.Vector3();
     box.getSize(size);
     const volume = size.x * size.y * size.z;
     if (volume <= 0) return null;
@@ -1123,28 +1025,28 @@ var MeasurementManager = class {
   }
   buildVolumeBoxObjects(m, box) {
     const objects = [];
-    const color = new THREE6__namespace.Color(m.color);
-    const center = new THREE6__namespace.Vector3();
-    const size = new THREE6__namespace.Vector3();
+    const color = new THREE5__namespace.Color(m.color);
+    const center = new THREE5__namespace.Vector3();
+    const size = new THREE5__namespace.Vector3();
     box.getCenter(center);
     box.getSize(size);
-    const fillGeo = new THREE6__namespace.BoxGeometry(1, 1, 1);
-    const fillMat = new THREE6__namespace.MeshBasicMaterial({
+    const fillGeo = new THREE5__namespace.BoxGeometry(1, 1, 1);
+    const fillMat = new THREE5__namespace.MeshBasicMaterial({
       color,
       opacity: 0.12,
       transparent: true,
       depthWrite: false,
       depthTest: false
     });
-    const fill = new THREE6__namespace.Mesh(fillGeo, fillMat);
+    const fill = new THREE5__namespace.Mesh(fillGeo, fillMat);
     fill.position.copy(center);
     fill.scale.copy(size);
     fill.renderOrder = 1;
     this.group.add(fill);
     objects.push(fill);
-    const edgesGeo = new THREE6__namespace.EdgesGeometry(new THREE6__namespace.BoxGeometry(1, 1, 1));
-    const edgesMat = new THREE6__namespace.LineBasicMaterial({ color, depthTest: false });
-    const edges = new THREE6__namespace.LineSegments(edgesGeo, edgesMat);
+    const edgesGeo = new THREE5__namespace.EdgesGeometry(new THREE5__namespace.BoxGeometry(1, 1, 1));
+    const edgesMat = new THREE5__namespace.LineBasicMaterial({ color, depthTest: false });
+    const edges = new THREE5__namespace.LineSegments(edgesGeo, edgesMat);
     edges.position.copy(center);
     edges.scale.copy(size);
     edges.renderOrder = 2;
@@ -1152,7 +1054,7 @@ var MeasurementManager = class {
     objects.push(edges);
     const text = `${m.value.toFixed(3)} m\xB3`;
     const sprite = this.makeTextSprite(text, m.color);
-    sprite.position.copy(center).add(new THREE6__namespace.Vector3(0, 0, size.z / 2 + 0.5));
+    sprite.position.copy(center).add(new THREE5__namespace.Vector3(0, 0, size.z / 2 + 0.5));
     const ls = this._displaySettings.measurementLabelScale;
     sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
     sprite.renderOrder = 3;
@@ -1195,20 +1097,20 @@ var MeasurementManager = class {
     return Math.abs(area) / 2;
   }
   convexVolume(pts) {
-    const box = new THREE6__namespace.Box3();
+    const box = new THREE5__namespace.Box3();
     pts.forEach((p) => box.expandByPoint(p));
-    const size = new THREE6__namespace.Vector3();
+    const size = new THREE5__namespace.Vector3();
     box.getSize(size);
     return size.x * size.y * size.z;
   }
   buildObjects(m) {
     const objects = [];
-    const color = new THREE6__namespace.Color(m.color);
+    const color = new THREE5__namespace.Color(m.color);
     const pts = m.points;
     pts.forEach((p) => {
-      const geo = new THREE6__namespace.SphereGeometry(this._displaySettings.measurementSphereRadius, 8, 6);
-      const mat = new THREE6__namespace.MeshBasicMaterial({ color, depthTest: false });
-      const mesh = new THREE6__namespace.Mesh(geo, mat);
+      const geo = new THREE5__namespace.SphereGeometry(this._displaySettings.measurementSphereRadius, 8, 6);
+      const mat = new THREE5__namespace.MeshBasicMaterial({ color, depthTest: false });
+      const mesh = new THREE5__namespace.Mesh(geo, mat);
       mesh.position.copy(p);
       mesh.renderOrder = 2;
       this.group.add(mesh);
@@ -1217,28 +1119,28 @@ var MeasurementManager = class {
     if (pts.length >= 2) {
       const lineType = m.type === "height" ? "vertical" : "direct";
       if (lineType === "vertical" && m.type === "height") {
-        const geo = new THREE6__namespace.BufferGeometry().setFromPoints([
+        const geo = new THREE5__namespace.BufferGeometry().setFromPoints([
           pts[0],
-          new THREE6__namespace.Vector3(pts[0].x, pts[0].y, pts[1].z)
+          new THREE5__namespace.Vector3(pts[0].x, pts[0].y, pts[1].z)
         ]);
-        const mat = new THREE6__namespace.LineBasicMaterial({ color, depthTest: false });
-        const line = new THREE6__namespace.Line(geo, mat);
+        const mat = new THREE5__namespace.LineBasicMaterial({ color, depthTest: false });
+        const line = new THREE5__namespace.Line(geo, mat);
         line.renderOrder = 1;
         this.group.add(line);
         objects.push(line);
       } else {
         for (let i = 0; i < pts.length - 1; i++) {
-          const geo = new THREE6__namespace.BufferGeometry().setFromPoints([pts[i], pts[i + 1]]);
-          const mat = new THREE6__namespace.LineBasicMaterial({ color, depthTest: false });
-          const line = new THREE6__namespace.Line(geo, mat);
+          const geo = new THREE5__namespace.BufferGeometry().setFromPoints([pts[i], pts[i + 1]]);
+          const mat = new THREE5__namespace.LineBasicMaterial({ color, depthTest: false });
+          const line = new THREE5__namespace.Line(geo, mat);
           line.renderOrder = 1;
           this.group.add(line);
           objects.push(line);
         }
         if (m.type === "area" && pts.length >= 3) {
-          const geo = new THREE6__namespace.BufferGeometry().setFromPoints([pts[pts.length - 1], pts[0]]);
-          const mat = new THREE6__namespace.LineBasicMaterial({ color, depthTest: false });
-          this.group.add(new THREE6__namespace.Line(geo, mat));
+          const geo = new THREE5__namespace.BufferGeometry().setFromPoints([pts[pts.length - 1], pts[0]]);
+          const mat = new THREE5__namespace.LineBasicMaterial({ color, depthTest: false });
+          this.group.add(new THREE5__namespace.Line(geo, mat));
         }
       }
     }
@@ -1268,8 +1170,8 @@ var MeasurementManager = class {
       }
       if (text) {
         const sprite = this.makeTextSprite(text, m.color);
-        const mid = pts.reduce((a, b) => a.clone().add(b), new THREE6__namespace.Vector3()).divideScalar(pts.length);
-        sprite.position.copy(mid).add(new THREE6__namespace.Vector3(0, 0, 1));
+        const mid = pts.reduce((a, b) => a.clone().add(b), new THREE5__namespace.Vector3()).divideScalar(pts.length);
+        sprite.position.copy(mid).add(new THREE5__namespace.Vector3(0, 0, 1));
         const ls = this._displaySettings.measurementLabelScale;
         sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
         sprite.renderOrder = 3;
@@ -1292,21 +1194,21 @@ var MeasurementManager = class {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, 128, 24);
-    const tex = new THREE6__namespace.CanvasTexture(canvas);
-    return new THREE6__namespace.Sprite(new THREE6__namespace.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    const tex = new THREE5__namespace.CanvasTexture(canvas);
+    return new THREE5__namespace.Sprite(new THREE5__namespace.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
   }
   rebuildPreview() {
     this.clearPreview();
     if (!this.activeMeasurement || this.activeMeasurement.points.length < 1) return;
     const pts = this.activeMeasurement.points;
-    const geo = new THREE6__namespace.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE6__namespace.LineBasicMaterial({
-      color: new THREE6__namespace.Color(this.activeMeasurement.color),
+    const geo = new THREE5__namespace.BufferGeometry().setFromPoints(pts);
+    const mat = new THREE5__namespace.LineBasicMaterial({
+      color: new THREE5__namespace.Color(this.activeMeasurement.color),
       depthTest: false,
       transparent: true,
       opacity: 0.7
     });
-    this.previewLine = new THREE6__namespace.Line(geo, mat);
+    this.previewLine = new THREE5__namespace.Line(geo, mat);
     this.previewLine.renderOrder = 1;
     this.group.add(this.previewLine);
   }
@@ -1342,11 +1244,11 @@ var MeasurementManager = class {
   }
 };
 var VIEW_DIRECTIONS = {
-  top: { pos: new THREE6__namespace.Vector3(0, 0, 1), up: new THREE6__namespace.Vector3(0, 1, 0) },
-  front: { pos: new THREE6__namespace.Vector3(0, -1, 0), up: new THREE6__namespace.Vector3(0, 0, 1) },
-  side: { pos: new THREE6__namespace.Vector3(1, 0, 0), up: new THREE6__namespace.Vector3(0, 0, 1) },
-  back: { pos: new THREE6__namespace.Vector3(0, 1, 0), up: new THREE6__namespace.Vector3(0, 0, 1) },
-  custom: { pos: new THREE6__namespace.Vector3(0, 0, 1), up: new THREE6__namespace.Vector3(0, 1, 0) }
+  top: { pos: new THREE5__namespace.Vector3(0, 0, 1), up: new THREE5__namespace.Vector3(0, 1, 0) },
+  front: { pos: new THREE5__namespace.Vector3(0, -1, 0), up: new THREE5__namespace.Vector3(0, 0, 1) },
+  side: { pos: new THREE5__namespace.Vector3(1, 0, 0), up: new THREE5__namespace.Vector3(0, 0, 1) },
+  back: { pos: new THREE5__namespace.Vector3(0, 1, 0), up: new THREE5__namespace.Vector3(0, 0, 1) },
+  custom: { pos: new THREE5__namespace.Vector3(0, 0, 1), up: new THREE5__namespace.Vector3(0, 1, 0) }
 };
 var ExportManager = class {
   sceneManager;
@@ -1357,17 +1259,17 @@ var ExportManager = class {
   async capture(options) {
     const { view, scale, background, format, quality = 0.95 } = options;
     const { scene, renderer } = this.sceneManager;
-    const box = new THREE6__namespace.Box3();
+    const box = new THREE5__namespace.Box3();
     scene.traverse((obj) => {
-      if (obj instanceof THREE6__namespace.Mesh || obj.name === "pointcloud") {
+      if (obj instanceof THREE5__namespace.Mesh || obj.name === "pointcloud") {
         try {
           box.expandByObject(obj);
         } catch {
         }
       }
     });
-    const size = new THREE6__namespace.Vector3();
-    const center = new THREE6__namespace.Vector3();
+    const size = new THREE5__namespace.Vector3();
+    const center = new THREE5__namespace.Vector3();
     box.getSize(size);
     box.getCenter(center);
     const dir = VIEW_DIRECTIONS[view] ?? VIEW_DIRECTIONS.top;
@@ -1378,19 +1280,19 @@ var ExportManager = class {
     const aspect = outW / outH;
     const halfH = Math.max(size.x, size.y, size.z) * 0.6;
     const halfW = halfH * aspect;
-    const orthoCamera = new THREE6__namespace.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 1e5);
+    const orthoCamera = new THREE5__namespace.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 1e5);
     orthoCamera.position.copy(center).addScaledVector(dir.pos, halfH * 3);
     orthoCamera.up.copy(dir.up);
     orthoCamera.lookAt(center);
     orthoCamera.updateMatrixWorld();
-    const rt = new THREE6__namespace.WebGLRenderTarget(outW, outH, {
-      minFilter: THREE6__namespace.LinearFilter,
-      magFilter: THREE6__namespace.LinearFilter,
-      format: THREE6__namespace.RGBAFormat
+    const rt = new THREE5__namespace.WebGLRenderTarget(outW, outH, {
+      minFilter: THREE5__namespace.LinearFilter,
+      magFilter: THREE5__namespace.LinearFilter,
+      format: THREE5__namespace.RGBAFormat
     });
     const prevBg = scene.background;
-    if (background === "white") scene.background = new THREE6__namespace.Color(16777215);
-    else if (background === "black") scene.background = new THREE6__namespace.Color(0);
+    if (background === "white") scene.background = new THREE5__namespace.Color(16777215);
+    else if (background === "black") scene.background = new THREE5__namespace.Color(0);
     else scene.background = null;
     renderer.setRenderTarget(rt);
     renderer.setSize(outW, outH);
@@ -1439,7 +1341,7 @@ var MinimapRenderer = class {
   frameCount = 0;
   constructor(sceneManager) {
     this.sceneManager = sceneManager;
-    this.orthoCamera = new THREE6__namespace.OrthographicCamera(-50, 50, 50, -50, -1e4, 1e4);
+    this.orthoCamera = new THREE5__namespace.OrthographicCamera(-50, 50, 50, -50, -1e4, 1e4);
     this.orthoCamera.position.set(0, 0, 1e3);
     this.orthoCamera.up.set(0, 1, 0);
     this.orthoCamera.lookAt(0, 0, 0);
@@ -1464,7 +1366,7 @@ var MinimapRenderer = class {
     this.overlayCanvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;";
     container.appendChild(this.overlayCanvas);
     try {
-      this.miniRenderer = new THREE6__namespace.WebGLRenderer({
+      this.miniRenderer = new THREE5__namespace.WebGLRenderer({
         canvas: this.glCanvas,
         antialias: false,
         alpha: false
@@ -1480,8 +1382,8 @@ var MinimapRenderer = class {
   setBounds(bounds) {
     this.bounds = bounds.clone();
     if (bounds.isEmpty()) return;
-    const size = new THREE6__namespace.Vector3();
-    const center = new THREE6__namespace.Vector3();
+    const size = new THREE5__namespace.Vector3();
+    const center = new THREE5__namespace.Vector3();
     bounds.getSize(size);
     bounds.getCenter(center);
     const half = Math.max(size.x, size.y) * 0.55;
@@ -1547,13 +1449,13 @@ var MinimapRenderer = class {
   }
   _drawCamera(ctx, _W, _H) {
     const cam = this.sceneManager.camera;
-    const dir = new THREE6__namespace.Vector3();
+    const dir = new THREE5__namespace.Vector3();
     cam.getWorldDirection(dir);
     const cx = this._worldToCanvasX(cam.position.x);
     const cy = this._worldToCanvasY(cam.position.y);
     const angle = Math.atan2(-dir.y, dir.x);
     const fovLen = 28;
-    const halfFov = THREE6__namespace.MathUtils.degToRad(cam.fov * 0.5 * (1 / Math.max(cam.aspect, 0.1)));
+    const halfFov = THREE5__namespace.MathUtils.degToRad(cam.fov * 0.5 * (1 / Math.max(cam.aspect, 0.1)));
     const left = angle - halfFov;
     const right = angle + halfFov;
     ctx.beginPath();
@@ -1577,7 +1479,7 @@ var MinimapRenderer = class {
     const H = this.overlayCanvas?.height ?? 176;
     const wx = this.worldLeft + cx / W * (this.worldRight - this.worldLeft);
     const wy = this.worldBottom + (1 - cy / H) * (this.worldTop - this.worldBottom);
-    return new THREE6__namespace.Vector2(wx, wy);
+    return new THREE5__namespace.Vector2(wx, wy);
   }
   /** Handle resize (called by parent when container size changes) */
   resize() {
@@ -1616,14 +1518,14 @@ var FaceHandleController = class {
   onChange = null;
   drag = null;
   hoveredHandle = null;
-  raycaster = new THREE6__namespace.Raycaster();
+  raycaster = new THREE5__namespace.Raycaster();
   group;
   disposed = false;
   constructor(scene, camera, domElement) {
     this.scene = scene;
     this.camera = camera;
     this.domElement = domElement;
-    this.group = new THREE6__namespace.Group();
+    this.group = new THREE5__namespace.Group();
     this.group.name = "face-handles";
     this.scene.add(this.group);
     this.createHandles();
@@ -1631,16 +1533,16 @@ var FaceHandleController = class {
   createHandles() {
     const axes = ["x", "y", "z"];
     const signs = [1, -1];
-    const geo = new THREE6__namespace.SphereGeometry(1, 12, 8);
+    const geo = new THREE5__namespace.SphereGeometry(1, 12, 8);
     for (const axis of axes) {
       for (const sign of signs) {
-        const mat = new THREE6__namespace.MeshBasicMaterial({
+        const mat = new THREE5__namespace.MeshBasicMaterial({
           color: HANDLE_COLOR,
           transparent: true,
           opacity: 0.7,
           depthTest: false
         });
-        const mesh = new THREE6__namespace.Mesh(geo, mat);
+        const mesh = new THREE5__namespace.Mesh(geo, mat);
         mesh.renderOrder = 10;
         mesh.visible = false;
         mesh.userData = { faceHandle: true, axis, sign };
@@ -1674,8 +1576,8 @@ var FaceHandleController = class {
   /** Update handle positions and sizes to match the current box */
   updatePositions() {
     if (!this.box) return;
-    const center = new THREE6__namespace.Vector3();
-    const size = new THREE6__namespace.Vector3();
+    const center = new THREE5__namespace.Vector3();
+    const size = new THREE5__namespace.Vector3();
     this.box.getCenter(center);
     this.box.getSize(size);
     const diag = size.length();
@@ -1699,14 +1601,14 @@ var FaceHandleController = class {
     if (!this.box) return false;
     const handle = this.hitTest(clientX, clientY);
     if (!handle) return false;
-    const cameraDir = new THREE6__namespace.Vector3();
+    const cameraDir = new THREE5__namespace.Vector3();
     this.camera.getWorldDirection(cameraDir);
-    const plane = new THREE6__namespace.Plane().setFromNormalAndCoplanarPoint(
+    const plane = new THREE5__namespace.Plane().setFromNormalAndCoplanarPoint(
       cameraDir.negate(),
       handle.mesh.position.clone()
     );
     this.setRaycasterFromClient(clientX, clientY);
-    const startIntersect = new THREE6__namespace.Vector3();
+    const startIntersect = new THREE5__namespace.Vector3();
     if (!this.raycaster.ray.intersectPlane(plane, startIntersect)) return false;
     const startValue = handle.sign === 1 ? this.box.max[handle.axis] : this.box.min[handle.axis];
     this.drag = { handle, plane, startIntersect, startValue };
@@ -1717,7 +1619,7 @@ var FaceHandleController = class {
   onPointerMove(clientX, clientY) {
     if (!this.drag || !this.box) return;
     this.setRaycasterFromClient(clientX, clientY);
-    const currentIntersect = new THREE6__namespace.Vector3();
+    const currentIntersect = new THREE5__namespace.Vector3();
     if (!this.raycaster.ray.intersectPlane(this.drag.plane, currentIntersect)) return;
     const axis = this.drag.handle.axis;
     const delta = currentIntersect[axis] - this.drag.startIntersect[axis];
@@ -1774,7 +1676,7 @@ var FaceHandleController = class {
     const rect = this.domElement.getBoundingClientRect();
     const nx = (clientX - rect.left) / rect.width * 2 - 1;
     const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
-    this.raycaster.setFromCamera(new THREE6__namespace.Vector2(nx, ny), this.camera);
+    this.raycaster.setFromCamera(new THREE5__namespace.Vector2(nx, ny), this.camera);
   }
   setHandleColor(handle, color) {
     handle.mesh.material.color.setHex(color);
@@ -1847,13 +1749,13 @@ var ClipManager = class {
     if (!entry) return;
     await this.initTransformControls();
     const controls = this.transformControls;
-    const center = new THREE6__namespace.Vector3();
-    const size = new THREE6__namespace.Vector3();
+    const center = new THREE5__namespace.Vector3();
+    const size = new THREE5__namespace.Vector3();
     entry.box.getCenter(center);
     entry.box.getSize(size);
-    const geo = new THREE6__namespace.BoxGeometry(1, 1, 1);
-    const mat = new THREE6__namespace.MeshBasicMaterial({ visible: false });
-    this.pivot = new THREE6__namespace.Mesh(geo, mat);
+    const geo = new THREE5__namespace.BoxGeometry(1, 1, 1);
+    const mat = new THREE5__namespace.MeshBasicMaterial({ visible: false });
+    this.pivot = new THREE5__namespace.Mesh(geo, mat);
     this.pivot.position.copy(center);
     this.pivot.scale.copy(size);
     this.pivot.userData.clipId = id;
@@ -1871,8 +1773,8 @@ var ClipManager = class {
       this.updateHelper(entry);
       this.applyAll();
       if (this.pivot) {
-        const c = new THREE6__namespace.Vector3();
-        const s = new THREE6__namespace.Vector3();
+        const c = new THREE5__namespace.Vector3();
+        const s = new THREE5__namespace.Vector3();
         entry.box.getCenter(c);
         entry.box.getSize(s);
         this.pivot.position.copy(c);
@@ -1902,8 +1804,8 @@ var ClipManager = class {
             this.updateHelper(entry);
             this.applyAll();
             if (this.pivot) {
-              const c = new THREE6__namespace.Vector3();
-              const s = new THREE6__namespace.Vector3();
+              const c = new THREE5__namespace.Vector3();
+              const s = new THREE5__namespace.Vector3();
               entry.box.getCenter(c);
               entry.box.getSize(s);
               this.pivot.position.copy(c);
@@ -1993,7 +1895,7 @@ var ClipManager = class {
       this.draftHelper = null;
     }
     if (box && !box.isEmpty()) {
-      this.draftHelper = new THREE6__namespace.Box3Helper(box, new THREE6__namespace.Color(14472518));
+      this.draftHelper = new THREE5__namespace.Box3Helper(box, new THREE5__namespace.Color(14472518));
       this.draftHelper.material.transparent = true;
       this.draftHelper.material.opacity = 0.6;
       this.draftHelper.renderOrder = 3;
@@ -2047,7 +1949,7 @@ var ClipManager = class {
     const entry = this.entries.find((e) => e.id === this.selectedId);
     if (!entry) return;
     const center = this.pivot.position.clone();
-    const halfSize = new THREE6__namespace.Vector3(
+    const halfSize = new THREE5__namespace.Vector3(
       Math.abs(this.pivot.scale.x) * 0.5,
       Math.abs(this.pivot.scale.y) * 0.5,
       Math.abs(this.pivot.scale.z) * 0.5
@@ -2070,15 +1972,15 @@ var ClipManager = class {
   }
   updateHelper(entry) {
     if (!this.helpers.has(entry.id)) {
-      const helper = new THREE6__namespace.Box3Helper(entry.box, new THREE6__namespace.Color(14472518));
+      const helper = new THREE5__namespace.Box3Helper(entry.box, new THREE5__namespace.Color(14472518));
       helper.material.linewidth = 1;
       helper.renderOrder = 3;
       helper.visible = entry.visible;
       this.sm.scene.add(helper);
       this.helpers.set(entry.id, helper);
     }
-    const center = new THREE6__namespace.Vector3();
-    const size = new THREE6__namespace.Vector3();
+    const center = new THREE5__namespace.Vector3();
+    const size = new THREE5__namespace.Vector3();
     entry.box.getCenter(center);
     entry.box.getSize(size);
     const existingFill = this.fills.get(entry.id);
@@ -2086,15 +1988,15 @@ var ClipManager = class {
       existingFill.position.copy(center);
       existingFill.scale.copy(size);
     } else {
-      const fillGeo = new THREE6__namespace.BoxGeometry(1, 1, 1);
-      const fillMat = new THREE6__namespace.MeshBasicMaterial({
+      const fillGeo = new THREE5__namespace.BoxGeometry(1, 1, 1);
+      const fillMat = new THREE5__namespace.MeshBasicMaterial({
         color: 14472518,
         opacity: 0.08,
         transparent: true,
         depthWrite: false,
-        side: THREE6__namespace.FrontSide
+        side: THREE5__namespace.FrontSide
       });
-      const fillMesh = new THREE6__namespace.Mesh(fillGeo, fillMat);
+      const fillMesh = new THREE5__namespace.Mesh(fillGeo, fillMat);
       fillMesh.position.copy(center);
       fillMesh.scale.copy(size);
       fillMesh.renderOrder = 2;
@@ -2114,11 +2016,11 @@ var ClipManager = class {
         continue;
       }
       const clipBoxes = visible.map((entry) => {
-        const size = new THREE6__namespace.Vector3();
-        const center = new THREE6__namespace.Vector3();
+        const size = new THREE5__namespace.Vector3();
+        const center = new THREE5__namespace.Vector3();
         entry.box.getSize(size);
         entry.box.getCenter(center);
-        const matrix = new THREE6__namespace.Matrix4().makeScale(size.x, size.y, size.z).setPosition(center);
+        const matrix = new THREE5__namespace.Matrix4().makeScale(size.x, size.y, size.z).setPosition(center);
         const inverse = matrix.clone().invert();
         return {
           box: entry.box.clone(),
@@ -2140,36 +2042,36 @@ var AxisWidget = class {
   sm;
   constructor(sm) {
     this.sm = sm;
-    this._scene = new THREE6__namespace.Scene();
+    this._scene = new THREE5__namespace.Scene();
     this._scene.background = null;
-    this._camera = new THREE6__namespace.PerspectiveCamera(50, 1, 0.1, 100);
+    this._camera = new THREE5__namespace.PerspectiveCamera(50, 1, 0.1, 100);
     this._buildAxes();
   }
   _buildAxes() {
     const axes = [
-      { dir: new THREE6__namespace.Vector3(1, 0, 0), color: 15087942, label: "X" },
+      { dir: new THREE5__namespace.Vector3(1, 0, 0), color: 15087942, label: "X" },
       // red
-      { dir: new THREE6__namespace.Vector3(0, 1, 0), color: 2792847, label: "Y" },
+      { dir: new THREE5__namespace.Vector3(0, 1, 0), color: 2792847, label: "Y" },
       // teal
-      { dir: new THREE6__namespace.Vector3(0, 0, 1), color: 4553629, label: "Z" }
+      { dir: new THREE5__namespace.Vector3(0, 0, 1), color: 4553629, label: "Z" }
       // blue
     ];
     for (const axis of axes) {
-      const mat = new THREE6__namespace.MeshBasicMaterial({ color: axis.color });
+      const mat = new THREE5__namespace.MeshBasicMaterial({ color: axis.color });
       this._materials.push(mat);
-      const quat = new THREE6__namespace.Quaternion().setFromUnitVectors(
-        new THREE6__namespace.Vector3(0, 1, 0),
+      const quat = new THREE5__namespace.Quaternion().setFromUnitVectors(
+        new THREE5__namespace.Vector3(0, 1, 0),
         axis.dir
       );
-      const shaftGeo = new THREE6__namespace.CylinderGeometry(0.03, 0.03, 0.65, 6);
+      const shaftGeo = new THREE5__namespace.CylinderGeometry(0.03, 0.03, 0.65, 6);
       shaftGeo.translate(0, 0.325, 0);
       shaftGeo.applyQuaternion(quat);
-      this._scene.add(new THREE6__namespace.Mesh(shaftGeo, mat));
+      this._scene.add(new THREE5__namespace.Mesh(shaftGeo, mat));
       this._disposables.push(shaftGeo);
-      const coneGeo = new THREE6__namespace.ConeGeometry(0.08, 0.2, 8);
+      const coneGeo = new THREE5__namespace.ConeGeometry(0.08, 0.2, 8);
       coneGeo.translate(0, 0.76, 0);
       coneGeo.applyQuaternion(quat);
-      this._scene.add(new THREE6__namespace.Mesh(coneGeo, mat));
+      this._scene.add(new THREE5__namespace.Mesh(coneGeo, mat));
       this._disposables.push(coneGeo);
       const sprite = this._makeLabel(axis.label, axis.color);
       const tipPos = axis.dir.clone().multiplyScalar(1.05);
@@ -2177,9 +2079,9 @@ var AxisWidget = class {
       sprite.scale.set(0.28, 0.28, 1);
       this._scene.add(sprite);
     }
-    const sGeo = new THREE6__namespace.SphereGeometry(0.06, 8, 8);
-    const sMat = new THREE6__namespace.MeshBasicMaterial({ color: 10066329 });
-    this._scene.add(new THREE6__namespace.Mesh(sGeo, sMat));
+    const sGeo = new THREE5__namespace.SphereGeometry(0.06, 8, 8);
+    const sMat = new THREE5__namespace.MeshBasicMaterial({ color: 10066329 });
+    this._scene.add(new THREE5__namespace.Mesh(sGeo, sMat));
     this._disposables.push(sGeo);
     this._materials.push(sMat);
   }
@@ -2198,15 +2100,15 @@ var AxisWidget = class {
     const hex = "#" + color.toString(16).padStart(6, "0");
     ctx.fillStyle = hex;
     ctx.fillText(letter, res / 2, res / 2);
-    const tex = new THREE6__namespace.CanvasTexture(canvas);
-    tex.minFilter = THREE6__namespace.LinearFilter;
-    const mat = new THREE6__namespace.SpriteMaterial({
+    const tex = new THREE5__namespace.CanvasTexture(canvas);
+    tex.minFilter = THREE5__namespace.LinearFilter;
+    const mat = new THREE5__namespace.SpriteMaterial({
       map: tex,
       transparent: true,
       depthTest: false
     });
     this._materials.push(mat);
-    return new THREE6__namespace.Sprite(mat);
+    return new THREE5__namespace.Sprite(mat);
   }
   /**
    * Render the widget into a scissor region in the top-right corner.
@@ -2220,14 +2122,14 @@ var AxisWidget = class {
     if (W === 0 || H === 0) return;
     const size = 100;
     const margin = 10;
-    const savedVp = new THREE6__namespace.Vector4();
-    const savedSc = new THREE6__namespace.Vector4();
+    const savedVp = new THREE5__namespace.Vector4();
+    const savedSc = new THREE5__namespace.Vector4();
     renderer.getViewport(savedVp);
     renderer.getScissor(savedSc);
     const savedScTest = renderer.getScissorTest();
     const savedAutoClear = renderer.autoClear;
     const dist = 3;
-    const offset = new THREE6__namespace.Vector3(0, 0, dist).applyQuaternion(
+    const offset = new THREE5__namespace.Vector3(0, 0, dist).applyQuaternion(
       this.sm.camera.quaternion
     );
     this._camera.position.copy(offset);
@@ -2249,7 +2151,7 @@ var AxisWidget = class {
   dispose() {
     for (const g of this._disposables) g.dispose();
     for (const m of this._materials) {
-      if (m instanceof THREE6__namespace.SpriteMaterial) m.map?.dispose();
+      if (m instanceof THREE5__namespace.SpriteMaterial) m.map?.dispose();
       m.dispose();
     }
     this._disposables = [];

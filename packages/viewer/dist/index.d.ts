@@ -2,6 +2,15 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import React, { ReactNode } from 'react';
+import * as class_variance_authority_types from 'class-variance-authority/types';
+import { VariantProps } from 'class-variance-authority';
+import * as SliderPrimitive from '@radix-ui/react-slider';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import * as TabsPrimitive from '@radix-ui/react-tabs';
+import * as PopoverPrimitive from '@radix-ui/react-popover';
+import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+import * as TogglePrimitive from '@radix-ui/react-toggle';
+import * as SelectPrimitive from '@radix-ui/react-select';
 import { ClassValue } from 'clsx';
 
 interface S3Source {
@@ -75,6 +84,7 @@ interface ExportOptions {
     quality?: number;
 }
 type Theme = "dark" | "light" | "system";
+type UiMode = "professional" | "lite";
 interface ViewerConfig {
     source: PointCloudSource;
     theme?: Theme;
@@ -92,9 +102,15 @@ interface ViewerConfig {
     onMeasurementChange?: (measurements: Measurement[]) => void;
     /** Display settings overrides (marker/measurement sizing) */
     displaySettings?: Partial<DisplaySettings>;
+    /**
+     * UI complexity mode.
+     * - "professional" (default): full toolset — all measurements, clipping, display controls, export, all sidebar tabs.
+     * - "lite": beginner set — nav modes, basic measurements (point/distance/height), panorama/minimap/theme toggles only.
+     */
+    uiMode?: UiMode;
 }
 type ActiveTool = "none" | "measure-point" | "measure-distance" | "measure-height" | "measure-area" | "measure-volume" | "measure-angle" | "measure-profile" | "section-box" | "section-plane" | "annotate";
-type NavigationMode = "orbit" | "fly" | "earth";
+type NavigationMode = "orbit" | "free" | "pan";
 type CameraProjection = "perspective" | "orthographic";
 type DisplayPreset = "compact" | "standard" | "prominent";
 interface DisplaySettings {
@@ -125,11 +141,10 @@ declare class SceneManager {
     camera: THREE.PerspectiveCamera;
     renderer: THREE.WebGLRenderer;
     controls: OrbitControls;
-    private _fpsControls;
     private _navMode;
     private _projection;
     private _orthoCamera;
-    /** Movement speed for fly mode — auto-scaled when point cloud loads */
+    /** Kept for API compatibility — no longer drives navigation */
     flySpeed: number;
     private animationId;
     private lastTime;
@@ -171,15 +186,16 @@ declare class SceneManager {
      */
     private _syncOrthoCamera;
     /**
-     * Switch between navigation modes.
-     * - orbit: standard orbit / tumble around a target point
-     * - fly:   free-flight (WASD + mouse-drag to look), no camera roll
-     * - earth: pan-primary mode (like Google Earth / map view)
+     * Switch between navigation modes. All three reconfigure the SAME OrbitControls
+     * instance (zoom-to-cursor + damping throughout) so the orbit target remains
+     * authoritative for clipping, minimap, camera animation and ortho sync.
+     * - orbit: CAD turntable — left-drag rotate, middle dolly, right pan, full sphere.
+     * - free:  Blender-ish free orbit — left/middle drag rotate, right pan, full sphere.
+     * - pan:   Map / top-down — left-drag pans, horizon-locked, right-drag rotates.
      */
     setNavigationMode(mode: NavigationMode): void;
     /**
-     * Set fly movement speed. Propagates to active FlyControls if instantiated.
-     * Call this instead of setting flySpeed directly when fly mode is active.
+     * Set fly movement speed. Kept for API compatibility.
      */
     setFlySpeed(speed: number): void;
     /** Stop animation loop and dispose resources */
@@ -659,11 +675,11 @@ interface ViewerLocale {
         qualityBalanced: string;
         qualityHigh: string;
         navOrbit: string;
-        navFly: string;
-        navEarth: string;
+        navFree: string;
+        navPan: string;
         navOrbitTitle: string;
-        navFlyTitle: string;
-        navEarthTitle: string;
+        navFreeTitle: string;
+        navPanTitle: string;
         camPerspective: string;
         camOrthographic: string;
         camPerspectiveTitle: string;
@@ -813,6 +829,15 @@ interface ViewerLocale {
     panoViewer: {
         close: string;
     };
+    /** UI mode labels and related toolbar strings */
+    uiModes: {
+        /** Label for the "professional" mode */
+        professional: string;
+        /** Label for the "lite" mode */
+        lite: string;
+        /** Generic label for the mode selector */
+        modeLabel: string;
+    };
 }
 /**
  * Deep-merge a base locale with partial overrides.
@@ -827,6 +852,127 @@ type DeepPartial<T> = {
     [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
 };
 
+declare const buttonVariants: (props?: ({
+    variant?: "default" | "secondary" | "ghost" | "outline" | "destructive" | null | undefined;
+    size?: "icon" | "sm" | "md" | null | undefined;
+} & class_variance_authority_types.ClassProp) | undefined) => string;
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
+}
+declare const Button: React.ForwardRefExoticComponent<ButtonProps & React.RefAttributes<HTMLButtonElement>>;
+
+interface SliderProps extends React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> {
+}
+declare const Slider: React.ForwardRefExoticComponent<SliderProps & React.RefAttributes<HTMLSpanElement>>;
+
+declare const Dialog: React.FC<DialogPrimitive.DialogProps>;
+declare const DialogTrigger: React.ForwardRefExoticComponent<DialogPrimitive.DialogTriggerProps & React.RefAttributes<HTMLButtonElement>>;
+declare const DialogPortal: React.FC<DialogPrimitive.DialogPortalProps>;
+declare const DialogOverlay: React.ForwardRefExoticComponent<Omit<DialogPrimitive.DialogOverlayProps & React.RefAttributes<HTMLDivElement>, "ref"> & React.RefAttributes<HTMLDivElement>>;
+declare const DialogContent: React.ForwardRefExoticComponent<Omit<DialogPrimitive.DialogContentProps & React.RefAttributes<HTMLDivElement>, "ref"> & {
+    /** Portal container — pass the `.pcv` root so themed tokens apply to the portalled dialog. */
+    container?: HTMLElement | null;
+} & React.RefAttributes<HTMLDivElement>>;
+declare const DialogHeader: {
+    ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>): react_jsx_runtime.JSX.Element;
+    displayName: string;
+};
+declare const DialogTitle: React.ForwardRefExoticComponent<Omit<DialogPrimitive.DialogTitleProps & React.RefAttributes<HTMLHeadingElement>, "ref"> & React.RefAttributes<HTMLHeadingElement>>;
+declare const DialogClose: React.ForwardRefExoticComponent<Omit<DialogPrimitive.DialogCloseProps & React.RefAttributes<HTMLButtonElement>, "ref"> & React.RefAttributes<HTMLButtonElement>>;
+
+declare const Tabs: React.ForwardRefExoticComponent<TabsPrimitive.TabsProps & React.RefAttributes<HTMLDivElement>>;
+declare const TabsList: React.ForwardRefExoticComponent<Omit<TabsPrimitive.TabsListProps & React.RefAttributes<HTMLDivElement>, "ref"> & React.RefAttributes<HTMLDivElement>>;
+declare const TabsTrigger: React.ForwardRefExoticComponent<Omit<TabsPrimitive.TabsTriggerProps & React.RefAttributes<HTMLButtonElement>, "ref"> & React.RefAttributes<HTMLButtonElement>>;
+declare const TabsContent: React.ForwardRefExoticComponent<Omit<TabsPrimitive.TabsContentProps & React.RefAttributes<HTMLDivElement>, "ref"> & React.RefAttributes<HTMLDivElement>>;
+
+declare const Popover: React.FC<PopoverPrimitive.PopoverProps>;
+declare const PopoverTrigger: React.ForwardRefExoticComponent<PopoverPrimitive.PopoverTriggerProps & React.RefAttributes<HTMLButtonElement>>;
+declare const PopoverAnchor: React.ForwardRefExoticComponent<PopoverPrimitive.PopoverAnchorProps & React.RefAttributes<HTMLDivElement>>;
+declare const PopoverContent: React.ForwardRefExoticComponent<Omit<PopoverPrimitive.PopoverContentProps & React.RefAttributes<HTMLDivElement>, "ref"> & React.RefAttributes<HTMLDivElement>>;
+
+declare const TooltipProvider: React.FC<TooltipPrimitive.TooltipProviderProps>;
+declare const Tooltip: React.FC<TooltipPrimitive.TooltipProps>;
+declare const TooltipTrigger: React.ForwardRefExoticComponent<TooltipPrimitive.TooltipTriggerProps & React.RefAttributes<HTMLButtonElement>>;
+declare const TooltipContent: React.ForwardRefExoticComponent<Omit<TooltipPrimitive.TooltipContentProps & React.RefAttributes<HTMLDivElement>, "ref"> & React.RefAttributes<HTMLDivElement>>;
+
+declare const toggleVariants: (props?: ({
+    variant?: "default" | "outline" | null | undefined;
+    size?: "icon" | "sm" | "md" | null | undefined;
+} & class_variance_authority_types.ClassProp) | undefined) => string;
+interface ToggleProps extends React.ComponentPropsWithoutRef<typeof TogglePrimitive.Root>, VariantProps<typeof toggleVariants> {
+}
+declare const Toggle: React.ForwardRefExoticComponent<ToggleProps & React.RefAttributes<HTMLButtonElement>>;
+
+declare const Select: React.FC<SelectPrimitive.SelectProps>;
+declare const SelectGroup: React.ForwardRefExoticComponent<SelectPrimitive.SelectGroupProps & React.RefAttributes<HTMLDivElement>>;
+declare const SelectValue: React.ForwardRefExoticComponent<SelectPrimitive.SelectValueProps & React.RefAttributes<HTMLSpanElement>>;
+declare const SelectTrigger: React.ForwardRefExoticComponent<Omit<SelectPrimitive.SelectTriggerProps & React.RefAttributes<HTMLButtonElement>, "ref"> & React.RefAttributes<HTMLButtonElement>>;
+declare const SelectScrollUpButton: React.ForwardRefExoticComponent<Omit<SelectPrimitive.SelectScrollUpButtonProps & React.RefAttributes<HTMLDivElement>, "ref"> & React.RefAttributes<HTMLDivElement>>;
+declare const SelectScrollDownButton: React.ForwardRefExoticComponent<Omit<SelectPrimitive.SelectScrollDownButtonProps & React.RefAttributes<HTMLDivElement>, "ref"> & React.RefAttributes<HTMLDivElement>>;
+declare const SelectContent: React.ForwardRefExoticComponent<Omit<SelectPrimitive.SelectContentProps & React.RefAttributes<HTMLDivElement>, "ref"> & React.RefAttributes<HTMLDivElement>>;
+declare const SelectLabel: React.ForwardRefExoticComponent<Omit<SelectPrimitive.SelectLabelProps & React.RefAttributes<HTMLDivElement>, "ref"> & React.RefAttributes<HTMLDivElement>>;
+declare const SelectItem: React.ForwardRefExoticComponent<Omit<SelectPrimitive.SelectItemProps & React.RefAttributes<HTMLDivElement>, "ref"> & React.RefAttributes<HTMLDivElement>>;
+declare const SelectSeparator: React.ForwardRefExoticComponent<Omit<SelectPrimitive.SelectSeparatorProps & React.RefAttributes<HTMLDivElement>, "ref"> & React.RefAttributes<HTMLDivElement>>;
+
+interface ViewerComponents {
+    Button: React.ComponentType<ButtonProps>;
+    Slider: React.ComponentType<SliderProps>;
+    Toggle: React.ComponentType<ToggleProps>;
+    Dialog: typeof Dialog;
+    DialogTrigger: typeof DialogTrigger;
+    DialogContent: typeof DialogContent;
+    DialogHeader: React.ComponentType<React.HTMLAttributes<HTMLDivElement>>;
+    DialogTitle: typeof DialogTitle;
+    DialogClose: typeof DialogClose;
+    Tabs: typeof Tabs;
+    TabsList: typeof TabsList;
+    TabsTrigger: typeof TabsTrigger;
+    TabsContent: typeof TabsContent;
+    Popover: typeof Popover;
+    PopoverTrigger: typeof PopoverTrigger;
+    PopoverContent: typeof PopoverContent;
+    TooltipProvider: typeof TooltipProvider;
+    Tooltip: typeof Tooltip;
+    TooltipTrigger: typeof TooltipTrigger;
+    TooltipContent: typeof TooltipContent;
+    Select: typeof Select;
+    SelectGroup: typeof SelectGroup;
+    SelectValue: typeof SelectValue;
+    SelectTrigger: typeof SelectTrigger;
+    SelectContent: typeof SelectContent;
+    SelectLabel: typeof SelectLabel;
+    SelectItem: typeof SelectItem;
+    SelectSeparator: typeof SelectSeparator;
+}
+declare const defaultComponents: ViewerComponents;
+interface ComponentsProviderProps {
+    /** Partial overrides merged over the shadcn-style defaults. */
+    components?: Partial<ViewerComponents>;
+    children: ReactNode;
+}
+declare function ComponentsProvider({ components, children, }: ComponentsProviderProps): react_jsx_runtime.JSX.Element;
+/**
+ * Returns the active component set from the nearest ComponentsProvider.
+ * Falls back to `defaultComponents` if no provider is present so that
+ * individual primitives used outside a full PanoCloudViewer tree still work.
+ */
+declare function useComponents(): ViewerComponents;
+
+/**
+ * Returns a ref to the `.pcv` root element.
+ * Use this as the `container` prop for Radix Portal and createPortal so that
+ * portalled content inherits the viewer's scoped CSS custom properties.
+ *
+ * @example
+ * function MyDialog() {
+ *   const pcvRef = usePcvRoot();
+ *   return (
+ *     <Dialog.Portal container={pcvRef?.current ?? undefined}>
+ *       ...
+ *     </Dialog.Portal>
+ *   );
+ * }
+ */
+declare function usePcvRoot(): React.RefObject<HTMLDivElement | null> | null;
 interface PanoCloudViewerProps {
     /** Data source: S3 bucket, local path, or Electron IPC */
     source: PointCloudSource;
@@ -845,6 +991,12 @@ interface PanoCloudViewerProps {
      */
     locale?: ViewerLocale;
     /**
+     * UI complexity mode.
+     * - `"professional"` (default): full toolset — all measurements, clipping, display controls, export, all sidebar tabs.
+     * - `"lite"`: beginner set — nav modes, basic measurements, panorama/minimap/theme toggles only.
+     */
+    uiMode?: UiMode;
+    /**
      * Custom UI via render prop. Receives the viewport element that must be rendered.
      * When omitted, the default WorkspaceLayout is used.
      *
@@ -859,6 +1011,16 @@ interface PanoCloudViewerProps {
      * </PanoCloudViewer>
      */
     children?: (viewport: React.ReactNode) => React.ReactNode;
+    /**
+     * Override any of the default shadcn-style UI primitives.
+     * Shallow-merged over the built-in defaults. Useful for consumers who
+     * already have a component library and want to swap out e.g. Dialog or Button.
+     *
+     * @example
+     * import { Button } from '@/components/ui/button'; // your own shadcn button
+     * <PanoCloudViewer components={{ Button }} ... />
+     */
+    components?: Partial<ViewerComponents>;
 }
 /**
  * Drop-in PanoCloud Viewer component.
@@ -874,7 +1036,7 @@ interface PanoCloudViewerProps {
  * />
  * ```
  */
-declare function PanoCloudViewer({ source, theme, className, locale, children }: PanoCloudViewerProps): react_jsx_runtime.JSX.Element;
+declare function PanoCloudViewer({ source, theme, className, locale, uiMode, children, components }: PanoCloudViewerProps): react_jsx_runtime.JSX.Element;
 
 interface ViewerContextValue {
     sceneManager: SceneManager | null;
@@ -923,6 +1085,8 @@ interface ViewerContextValue {
     setProjection: (mode: CameraProjection) => void;
     displaySettings: DisplaySettings;
     setDisplaySettings: (settings: DisplaySettings) => void;
+    /** Resolved UI mode — defaults to "professional" when not set in config */
+    uiMode: UiMode;
     config: ViewerConfig;
 }
 declare function useViewer(): ViewerContextValue;
@@ -1144,4 +1308,4 @@ declare const en: ViewerLocale;
 
 declare const de: ViewerLocale;
 
-export { AboutDialog, type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, CollapsibleSidebar, type ColorMode, DISPLAY_PRESETS, DataProvider, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Sidebar, type Theme, ThemeProvider, ToolRail, ToolbarIconBtn, ToolbarSection, ViewControls, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, captureScene, cn, createAdapter, createLocale, de, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, useClipActions, useData, useDisplayActions, useDisplaySettings, useExportActions, useLocale, useMeasurementActions, useNavigationActions, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
