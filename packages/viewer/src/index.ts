@@ -5,7 +5,7 @@
 export * from "@der-ort/pano-cloud-viewer-core";
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export { PanoCloudViewer } from "./components/pano-cloud-viewer";
+export { PanoCloudViewer, usePcvRoot } from "./components/pano-cloud-viewer";
 export type { PanoCloudViewerProps } from "./components/pano-cloud-viewer";
 
 // ─── Providers ────────────────────────────────────────────────────────────────

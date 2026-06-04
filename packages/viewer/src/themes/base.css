@@ -1,14 +1,25 @@
 /* @der-ort/pano-cloud-viewer - Base Theme
    Built on shadcn/ui design tokens (CSS custom properties).
    Override any variable to create your own theme.
-   Import this file OR one of the preset themes (e.g. smart-agile.css). */
+   Import this file OR one of the preset themes (e.g. smart-agile.css).
+
+   SCOPING: All tokens are defined on `.pcv` (the viewer root element), not `:root`.
+   This prevents collisions with a host app's CSS variables and ensures the viewer
+   never themes the host's <body> or <html>.
+
+   To override tokens from the host app, target `.pcv`:
+     .pcv { --brand: 220 90% 56%; }
+
+   To map to shadcn/ui tokens already present in the host app:
+     .pcv { --brand: var(--primary); --background: var(--background); }
+*/
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  :root {
+  .pcv {
     /* ── Layout ─────────────────────────────── */
     --radius: 0.375rem;
 
@@ -57,9 +68,22 @@
     --font-sans:      ui-sans-serif, system-ui, sans-serif;
     --font-mono:      ui-monospace, monospace;
     --font-heading:   var(--font-sans);
+
+    /* ── Base styles scoped to viewer root ─── */
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  .dark {
+  /* Both class-based (.pcv.dark) and attribute-based (.pcv[data-theme="dark"]) selectors
+     are supported. PcvRoot sets both simultaneously, so only one block is needed here.
+     The class selector is used by Tailwind dark: variants; the attribute is for consumers
+     who prefer data attributes. They share the same specificity level so there is no cascade
+     conflict when both are present on the same element. */
+  .pcv.dark,
+  .pcv[data-theme="dark"] {
     --background:     0 0% 5%;
     --foreground:     0 0% 95%;
 
@@ -98,17 +122,12 @@
     --viewport-bg:    0 0% 3%;
   }
 
-  * {
+  /* Scope border-box and border-color helpers inside the viewer root */
+  .pcv *,
+  .pcv *::before,
+  .pcv *::after {
     border-color: hsl(var(--border));
     box-sizing: border-box;
-  }
-
-  body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
-    font-family: var(--font-sans);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
   }
 }
 

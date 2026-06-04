@@ -6,12 +6,14 @@ import { Download } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
 import { ToolbarIconBtn } from "./main-toolbar";
+import { usePcvRoot } from "../pano-cloud-viewer";
 import { ExportManager } from "@der-ort/pano-cloud-viewer-core";
 import type { ExportView, ExportFormat } from "@der-ort/pano-cloud-viewer-core";
 
 export function ExportTools() {
   const { exporter } = useViewer();
   const t = useLocale().exportPanel;
+  const pcvRoot = usePcvRoot();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<ExportView>("top");
   const [scale, setScale] = useState<1 | 2 | 4>(2);
@@ -132,7 +134,7 @@ export function ExportTools() {
             {exporting ? t.exporting : t.download}
           </button>
         </div>,
-        document.body
+        pcvRoot?.current ?? document.body
       )}
     </div>
   );
