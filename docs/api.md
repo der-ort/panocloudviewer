@@ -1,31 +1,34 @@
 # PanoCloudViewer — API Reference
 
-Complete reference for `@der-ort/pano-cloud-viewer`. All types and exports are based on the actual source code.
+Complete reference for `@der-ort/pano-cloud-viewer`. All types and exports are verified against the actual source code.
 
 ---
 
 ## Table of Contents
 
 1. [`<PanoCloudViewer>`](#1-panocloudviewer)
-2. [`<WorkspaceLayout>`](#2-workspacelayout)
-3. [`<Viewport>`](#3-viewport)
-4. [Toolbar Components](#4-toolbar-components)
-5. [Sidebar Components](#5-sidebar-components)
-6. [Overlay Components](#6-overlay-components)
-7. [`useViewer()` hook](#7-useviewer-hook)
-8. [`useData()` hook](#8-usedata-hook)
-9. [`useTheme()` hook](#9-usetheme-hook)
-10. [`useLocale()` hook](#10-uselocale-hook)
-11. [Manager Classes](#11-manager-classes)
-12. [Types](#12-types)
-13. [Source Adapters](#13-source-adapters)
-14. [i18n](#14-i18n)
+2. [`ViewerConfig`](#2-viewerconfig)
+3. [`<WorkspaceLayout>` and layout variants](#3-workspacelayout-and-layout-variants)
+4. [`<Viewport>`](#4-viewport)
+5. [Toolbar Components](#5-toolbar-components)
+6. [Sidebar Components](#6-sidebar-components)
+7. [Overlay Components](#7-overlay-components)
+8. [`useViewer()` hook](#8-useviewer-hook)
+9. [`useData()` hook](#9-usedata-hook)
+10. [`useTheme()` hook](#10-usetheme-hook)
+11. [`useLocale()` hook](#11-uselocale-hook)
+12. [Action Hooks](#12-action-hooks)
+13. [Manager Classes](#13-manager-classes)
+14. [Types](#14-types)
+15. [Source Adapters](#15-source-adapters)
+16. [i18n](#16-i18n)
+17. [Utilities](#17-utilities)
 
 ---
 
 ## 1. `<PanoCloudViewer>`
 
-Drop-in component. Sets up all providers and renders the full viewer shell.
+Drop-in component. Sets up all providers (`LocaleProvider` → `ThemeProvider` → `DataProvider` → `ViewerProvider`) and renders the full viewer shell.
 
 ```tsx
 import { PanoCloudViewer } from '@der-ort/pano-cloud-viewer';
@@ -47,42 +50,119 @@ The component fills its container — give the container an explicit size.
 | `theme` | `"dark" \| "light"` | `"dark"` | Initial color theme |
 | `className` | `string` | `undefined` | Extra CSS class on the root `<div>` |
 | `locale` | `ViewerLocale` | `en` | UI language / string overrides |
+| `children` | `(viewport: ReactNode) => ReactNode` | `undefined` | Custom UI render prop — replaces default `WorkspaceLayout`. Receives the Suspense-wrapped `<Viewport>` element. |
 
-### Provider tree
+### Custom UI via render prop
 
-`PanoCloudViewer` wraps these providers in order (outermost to innermost):
-`LocaleProvider` → `ThemeProvider` → `DataProvider` → `ViewerProvider` → `WorkspaceLayout`
+When `children` is provided, the default `WorkspaceLayout` is replaced. The function receives the viewport element that **must** be rendered:
+
+```tsx
+import { PanoCloudViewer, MinimalLayout } from '@der-ort/pano-cloud-viewer';
+
+<PanoCloudViewer source={source}>
+  {(viewport) => <MinimalLayout viewport={viewport} />}
+</PanoCloudViewer>
+```
+
+All providers are set up regardless, so action hooks and `useViewer()` work inside any descendant component.
 
 ---
 
-## 2. `<WorkspaceLayout>`
+## 2. `ViewerConfig`
 
-Shell layout component. Renders: top toolbar (`MainToolbar`) → left tool rail (`ToolRail`) → central viewport (`Viewport`, lazy) → right sidebar (`Sidebar`) → bottom status bar.
+Configuration object passed internally by `<PanoCloudViewer>` to `ViewerProvider`. Can also be passed directly when composing providers yourself.
 
-Must be inside `ViewerProvider`, `DataProvider`, `ThemeProvider`, and `LocaleProvider`.
+```typescript
+interface ViewerConfig {
+  source: PointCloudSource;
+  theme?: Theme;
+  /** Initial point budget (default: 2_000_000) */
+  pointBudget?: number;
+  /** Show minimap (default: true) */
+  showMinimap?: boolean;
+  /** Enable panorama sidebar (default: true) */
+  enablePanoramas?: boolean;
+  /** Custom class name for the root element */
+  className?: string;
+  /** Called when a camera marker is selected */
+  onCameraSelect?: (camera: CameraData) => void;
+  /** Called when measurements are created / updated */
+  onMeasurementChange?: (measurements: Measurement[]) => void;
+  /** Display settings overrides (marker/measurement sizing) */
+  displaySettings?: Partial<DisplaySettings>;
+}
+```
+
+---
+
+## 3. `<WorkspaceLayout>` and layout variants
+
+### `<WorkspaceLayout>`
+
+Default shell layout: top toolbar (`MainToolbar`) → left tool rail (`ToolRail`) → central `<Viewport>` (lazy) → right collapsible `<Sidebar>`. Must be inside `ViewerProvider`, `DataProvider`, `ThemeProvider`, and `LocaleProvider`.
 
 ```tsx
 import { WorkspaceLayout } from '@der-ort/pano-cloud-viewer';
 
-// Custom layout — provide your own providers
 <ViewerProvider config={config}>
   <DataProvider adapter={adapter}>
-    <WorkspaceLayout className="my-custom-class" />
+    <WorkspaceLayout className="my-class" />
   </DataProvider>
 </ViewerProvider>
 ```
-
-### Props
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `className` | `string` | `undefined` | Extra CSS class on the root flex container |
 
-The right sidebar toggles open/closed via internal state. The `Viewport` is loaded with `React.lazy` — a spinner fallback is shown while it initialises.
+### `<MinimalLayout>`
+
+Full-screen viewport with a minimal floating toolbar (fit-to-view, navigation mode selector, theme toggle). Suitable for embedded widgets.
+
+```tsx
+import { MinimalLayout } from '@der-ort/pano-cloud-viewer';
+
+<PanoCloudViewer source={source}>
+  {(viewport) => <MinimalLayout viewport={viewport} />}
+</PanoCloudViewer>
+```
+
+| Prop | Type | Description |
+|---|---|---|
+| `viewport` | `React.ReactNode` | The viewport element from the render prop |
+
+### `<WorkstationLayout>`
+
+Full-screen viewport with a collapsible side-panel containing floating palettes (tools, display, view settings, export) and a bottom status bar.
+
+```tsx
+import { WorkstationLayout } from '@der-ort/pano-cloud-viewer';
+
+<PanoCloudViewer source={source}>
+  {(viewport) => <WorkstationLayout viewport={viewport} sidebarSide="left" />}
+</PanoCloudViewer>
+```
+
+| Prop | Type | Default | Description |
+|---|---|---|---|
+| `viewport` | `React.ReactNode` | required | The viewport element from the render prop |
+| `sidebarSide` | `"left" \| "right"` | `"left"` | Which side the collapsible panel appears on |
+
+### `<FloatingPalette>`
+
+Standalone glass-morphism floating panel. Use to compose custom layouts.
+
+```tsx
+import { FloatingPalette } from '@der-ort/pano-cloud-viewer';
+```
+
+### `<CollapsibleSidebar>`
+
+Side panel that collapses to an icon rail via a chevron toggle. Used internally by `WorkstationLayout`. Accepts `side` (`"left" | "right"`) and `children`.
 
 ---
 
-## 3. `<Viewport>`
+## 4. `<Viewport>`
 
 Core Three.js component. Initialises all manager instances, runs the render loop, and handles mouse events. Renders the 3D canvas, minimap overlay, and tool hint bar.
 
@@ -97,31 +177,30 @@ import { Viewport } from '@der-ort/pano-cloud-viewer';
 </div>
 ```
 
-**Note:** `Viewport` should be lazy-imported in Next.js or any SSR environment to prevent server-side errors:
+**Note:** Lazy-import in Next.js or any SSR environment:
 ```tsx
-const Viewport = dynamic(() => import('@der-ort/pano-cloud-viewer').then(m => ({ default: m.Viewport })), { ssr: false });
+const Viewport = dynamic(
+  () => import('@der-ort/pano-cloud-viewer').then(m => m.Viewport),
+  { ssr: false }
+);
 ```
-
-### Props
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `className` | `string` | `undefined` | Extra CSS class on the container div |
 
-### What Viewport initialises
-
-On first mount, Viewport creates and registers in `ViewerProvider`: `SceneManager`, `PointCloudLoader`, `MeasurementManager`, `MarkerManager`, `CameraAnimator`, `ExportManager`, `MinimapRenderer`, `ClipManager`.
+On first mount, `Viewport` creates and registers in `ViewerProvider`: `SceneManager`, `PointCloudLoader`, `MeasurementManager`, `MarkerManager`, `CameraAnimator`, `ExportManager`, `MinimapRenderer`, `ClipManager`.
 
 ---
 
-## 4. Toolbar Components
+## 5. Toolbar Components
 
 All toolbar components must be inside `ViewerProvider`. They read state via `useViewer()` and dispatch actions through it.
 
 | Component | Description |
 |---|---|
 | `<MainToolbar>` | Full top bar: logo, view preset buttons, display controls, navigation mode selector, theme toggle, sidebar toggle, about button |
-| `<ViewControls>` | View preset buttons (top, front, back, left, right) — flies camera to orthographic-style positions |
+| `<ViewControls>` | View preset buttons (top, bottom, front, back, left, right) — flies camera to axis-aligned positions |
 | `<DisplayControls>` | Navigation mode buttons (orbit/fly/earth), color mode selector, quality preset selector, point budget slider, point size slider |
 | `<MeasureTools>` | Measurement tool buttons (point, distance, height, area, volume, angle, profile) + clear all |
 | `<SectionTools>` | Clip box draw tool, mode toggle (keep inside / keep outside), remove box button |
@@ -137,13 +216,13 @@ All toolbar components must be inside `ViewerProvider`. They read state via `use
 | `onToggleRenderSettings` | `() => void` | Called when rendering settings button is clicked |
 | `renderSettingsOpen` | `boolean` | Controls the rendering settings button active state |
 
-### `<ToolbarIconBtn>` and `<ToolbarSection>` (named exports from `main-toolbar`)
+### `<ToolbarIconBtn>` and `<ToolbarSection>`
 
-Primitive building blocks for custom toolbars. `ToolbarIconBtn` is a styled icon button with active/disabled states. `ToolbarSection` is a flex row group with an optional divider.
+Primitive building blocks for custom toolbars exported from `main-toolbar`. `ToolbarIconBtn` is a styled icon button with active/disabled states. `ToolbarSection` is a flex row group with an optional divider.
 
 ---
 
-## 5. Sidebar Components
+## 6. Sidebar Components
 
 All sidebar components must be inside `ViewerProvider` and `DataProvider`.
 
@@ -158,13 +237,14 @@ All sidebar components must be inside `ViewerProvider` and `DataProvider`.
 
 ---
 
-## 6. Overlay Components
+## 7. Overlay Components
 
 | Component | Description |
 |---|---|
 | `<PanoViewer>` | Full-screen 360° panorama viewer (Pannellum). Rendered by `WorkspaceLayout` when `selectedCamera` is set in `ViewerProvider`. |
 | `<AboutDialog>` | Modal dialog showing library version, engine credits |
 | `<RenderingSettings>` | Slide-out panel for fine-grained rendering adjustments (gamma, brightness, contrast, elevation range, opacity) |
+| `<DisplaySettingsDialog>` | Dialog for choosing a display preset (compact / standard / prominent) affecting measurement and marker sizing |
 
 ### `<RenderingSettings>` props
 
@@ -175,7 +255,7 @@ All sidebar components must be inside `ViewerProvider` and `DataProvider`.
 
 ---
 
-## 7. `useViewer()` hook
+## 8. `useViewer()` hook
 
 Returns the full viewer context. Must be used inside `<ViewerProvider>`.
 
@@ -184,7 +264,6 @@ import { useViewer } from '@der-ort/pano-cloud-viewer';
 
 function MyComponent() {
   const { sceneManager, loader, fps, activeTool, setActiveTool } = useViewer();
-  // ...
 }
 ```
 
@@ -237,11 +316,15 @@ function MyComponent() {
 | `setColorMode` | `(mode: ColorMode) => void` | — | Change color mode |
 | `navigationMode` | `NavigationMode` | `"orbit"` | Current navigation mode |
 | `setNavigationMode` | `(mode: NavigationMode) => void` | — | Change navigation mode |
+| `projection` | `CameraProjection` | `"perspective"` | Perspective or orthographic camera |
+| `setProjection` | `(mode: CameraProjection) => void` | — | Switch camera projection |
+| `displaySettings` | `DisplaySettings` | `DISPLAY_PRESETS.standard` | Measurement and marker sizing settings |
+| `setDisplaySettings` | `(s: DisplaySettings) => void` | — | Update display settings |
 | `config` | `ViewerConfig` | — | The config object passed to ViewerProvider |
 
 ---
 
-## 8. `useData()` hook
+## 9. `useData()` hook
 
 Returns metadata and camera data loaded from the adapter. Must be used inside `<DataProvider>`.
 
@@ -277,7 +360,7 @@ interface PointCloudMetadata {
 
 ---
 
-## 9. `useTheme()` hook
+## 10. `useTheme()` hook
 
 Returns theme state. Must be used inside `<ThemeProvider>`.
 
@@ -300,7 +383,7 @@ function MyComponent() {
 
 ---
 
-## 10. `useLocale()` hook
+## 11. `useLocale()` hook
 
 Returns the active locale dictionary. Must be used inside `<LocaleProvider>`.
 
@@ -313,13 +396,141 @@ function MyComponent() {
 }
 ```
 
-Returns a `ViewerLocale` object. See [i18n section](#14-i18n) for the full interface.
+Returns a `ViewerLocale` object. See [i18n section](#16-i18n) for the full interface.
 
 ---
 
-## 11. Manager Classes
+## 12. Action Hooks
+
+Action hooks are high-level hooks that encapsulate common interactions. Use them instead of wiring `useViewer()` manually in custom UIs. All must be used inside `<ViewerProvider>`.
+
+### `useNavigationActions()`
+
+```tsx
+import { useNavigationActions } from '@der-ort/pano-cloud-viewer';
+
+const { fitToView, flyToView, navigationMode, setNavigationMode, projection, setProjection } = useNavigationActions();
+```
+
+| Return | Type | Description |
+|---|---|---|
+| `navigationMode` | `NavigationMode` | Current navigation mode |
+| `setNavigationMode` | `(mode: NavigationMode) => void` | Switch navigation mode |
+| `projection` | `CameraProjection` | Current camera projection |
+| `setProjection` | `(mode: CameraProjection) => void` | Switch perspective / orthographic |
+| `fitToView` | `() => void` | Fit camera to loaded point cloud bounding box |
+| `flyToView` | `(preset: ViewPreset) => void` | Snap to axis-aligned view. `ViewPreset = "top" \| "bottom" \| "front" \| "back" \| "left" \| "right"` |
+
+### `useMeasurementActions()`
+
+```tsx
+import { useMeasurementActions } from '@der-ort/pano-cloud-viewer';
+
+const { startTool, cancelTool, measurements, clearAll, remove, rename, exportCSV } = useMeasurementActions();
+```
+
+| Return | Type | Description |
+|---|---|---|
+| `activeTool` | `ActiveTool` | Currently active tool |
+| `startTool` | `(type: MeasurementType) => void` | Start a measurement tool (toggles off if already active) |
+| `cancelTool` | `() => void` | Cancel the active tool |
+| `measurements` | `Measurement[]` | All completed measurements |
+| `clearAll` | `() => void` | Remove all measurements |
+| `remove` | `(id: string) => void` | Remove a single measurement |
+| `rename` | `(id: string, name: string) => void` | Rename a measurement |
+| `exportCSV` | `() => void` | Download measurements as CSV |
+
+### `useClipActions()`
+
+```tsx
+import { useClipActions } from '@der-ort/pano-cloud-viewer';
+
+const { addBox, clearAll, toggleMode, selectBox, setTransformMode, boxes, clipMode, hasClipBox } = useClipActions();
+```
+
+| Return | Type | Description |
+|---|---|---|
+| `boxes` | `ClipBoxEntry[]` | All active clip boxes |
+| `selectedBoxId` | `string \| null` | Currently selected box ID |
+| `hasClipBox` | `boolean` | Whether any clip boxes exist |
+| `clipMode` | `ClipMode` | Current clip mode (`"outside"` = keep inside, `"inside"` = remove inside) |
+| `addBox` | `() => void` | Add a new clip box sized to the point cloud world box |
+| `clearAll` | `() => void` | Remove all clip boxes |
+| `toggleMode` | `() => void` | Toggle clip mode for all boxes |
+| `selectBox` | `(id: string \| null) => void` | Select a box for transform |
+| `setTransformMode` | `(mode: "translate" \| "scale" \| "rotate") => void` | Set TransformControls mode |
+
+### `useDisplayActions()`
+
+```tsx
+import { useDisplayActions } from '@der-ort/pano-cloud-viewer';
+
+const { colorMode, setColorMode, pointBudget, setPointBudget, pointSize, setPointSize, setQualityPreset } = useDisplayActions();
+```
+
+| Return | Type | Description |
+|---|---|---|
+| `colorMode` | `ColorMode` | Current point color mode |
+| `setColorMode` | `(mode: ColorMode) => void` | Change color mode |
+| `pointBudget` | `number` | Max rendered points |
+| `setPointBudget` | `(v: number) => void` | Update point budget |
+| `pointSize` | `number` | Point size in pixels |
+| `setPointSize` | `(v: number) => void` | Update point size |
+| `setQualityPreset` | `(preset: "performance" \| "balanced" \| "high") => void` | Apply a point shape/size-type preset |
+
+### `useExportActions()`
+
+```tsx
+import { useExportActions } from '@der-ort/pano-cloud-viewer';
+
+const { capture, download } = useExportActions();
+
+const url = await capture({ view: 'top', scale: 2, background: 'white', showScaleBar: false, format: 'png' });
+download(url!, 'plan_view.png');
+```
+
+| Return | Type | Description |
+|---|---|---|
+| `capture` | `(options: ExportOptions) => Promise<string \| null>` | Render and return a data URL |
+| `download` | `(dataUrl: string, filename: string) => void` | Trigger browser file download |
+
+### `useVisibilityActions()`
+
+```tsx
+import { useVisibilityActions } from '@der-ort/pano-cloud-viewer';
+
+const { showMarkers, toggleMarkers, showMinimap, toggleMinimap } = useVisibilityActions();
+```
+
+| Return | Type | Description |
+|---|---|---|
+| `showMarkers` | `boolean` | Whether panorama markers are visible |
+| `toggleMarkers` | `() => void` | Toggle panorama marker visibility |
+| `showMinimap` | `boolean` | Whether minimap overlay is visible |
+| `toggleMinimap` | `() => void` | Toggle minimap |
+
+### `useDisplaySettings()`
+
+```tsx
+import { useDisplaySettings } from '@der-ort/pano-cloud-viewer';
+
+const { settings, presets, applyPreset, updateSetting } = useDisplaySettings();
+```
+
+| Return | Type | Description |
+|---|---|---|
+| `settings` | `DisplaySettings` | Current display settings |
+| `presets` | `Record<DisplayPreset, DisplaySettings>` | All available presets |
+| `applyPreset` | `(preset: DisplayPreset) => void` | Apply `"compact"`, `"standard"`, or `"prominent"` |
+| `updateSetting` | `<K extends keyof DisplaySettings>(key: K, value: ...) => void` | Update a single setting |
+
+---
+
+## 13. Manager Classes
 
 Managers are exported for advanced / headless use. In normal usage, obtain instances via `useViewer()` after Viewport has initialised them.
+
+All manager classes are exported from both `@der-ort/pano-cloud-viewer` and `@der-ort/pano-cloud-viewer-core`.
 
 ### `SceneManager`
 
@@ -330,10 +541,13 @@ Manages the Three.js scene, camera, renderer, and animation loop.
 | `start` | `() => void` | Start the requestAnimationFrame render loop |
 | `dispose` | `() => void` | Stop loop, disconnect ResizeObserver, dispose renderer |
 | `setNavigationMode` | `(mode: NavigationMode) => void` | Switch between orbit / fly / earth navigation |
+| `setProjection` | `(mode: CameraProjection) => void` | Switch perspective / orthographic projection |
 | `fitToBox` | `(box: THREE.Box3) => void` | Position camera to frame a bounding box |
 | `raycast` | `(nx: number, ny: number, objects: THREE.Object3D[]) => THREE.Intersection[]` | Screen-space raycast (nx/ny are NDC: -1 to 1) |
 | `addFrameCallback` | `(cb: () => void) => void` | Register a callback to run every frame before render |
 | `removeFrameCallback` | `(cb: () => void) => void` | Unregister a frame callback |
+| `addPostRenderCallback` | `(cb: () => void) => void` | Register a callback to run after the main render |
+| `removePostRenderCallback` | `(cb: () => void) => void` | Unregister a post-render callback |
 
 | Property | Type | Description |
 |---|---|---|
@@ -345,6 +559,7 @@ Manages the Three.js scene, camera, renderer, and animation loop.
 | `potree` | `unknown` | potree-core Potree instance (set after lazy import) |
 | `pointClouds` | `unknown[]` | Array of loaded potree-core point cloud objects |
 | `navigationMode` | `NavigationMode` | Read-only getter for current mode |
+| `projection` | `CameraProjection` | Read-only getter for current projection |
 
 ### `PointCloudLoader`
 
@@ -352,14 +567,13 @@ Loads Potree 2.0 point clouds via `potree-core`.
 
 | Method | Signature | Description |
 |---|---|---|
-| `load` | `(metadataPath?: string, pointBudget?: number) => Promise<void>` | Load a point cloud; detects RGB; fits camera; sets minimap bounds |
+| `load` | `(metadataPath?: string, pointBudget?: number) => Promise<void>` | Load a point cloud; detects RGB; fits camera |
 | `setColorMode` | `(mode: ColorMode) => Promise<void>` | Change `PointColorType` on all loaded materials |
 | `setPointBudget` | `(budget: number) => void` | Set max rendered points on the potree instance |
 | `setPointSize` | `(size: number) => void` | Set point size on all materials |
 | `setPointShape` | `(shape: number) => void` | 0=square, 1=circle, 2=paraboloid |
 | `setPointSizeType` | `(type: number) => void` | 0=fixed, 1=attenuated, 2=adaptive |
 | `readMetadata` | `(path?: string) => Promise<PointCloudMetadata \| null>` | Fetch and parse metadata.json |
-| `getPointCloud` | `() => THREE.Object3D \| null` | Return the first loaded point cloud object |
 | `clear` | `() => void` | Remove all loaded point clouds from scene |
 | `static calcOptimalBudget` | `(totalPoints: number) => number` | Heuristic budget: 30%/15%/8% of total, capped 500K–10M |
 
@@ -386,13 +600,13 @@ Manages named axis-aligned clip boxes with TransformControls.
 |---|---|---|
 | `addBox` | `(box: THREE.Box3, name?: string) => ClipBoxEntry` | Add a clip box; creates scene helper; applies clipping |
 | `selectBox` | `(id: string \| null) => Promise<void>` | Select a box for transform (lazy-init TransformControls) |
-| `setTransformMode` | `(mode: "translate" \| "scale") => void` | Switch TransformControls mode |
+| `setTransformMode` | `(mode: "translate" \| "scale" \| "rotate") => void` | Switch TransformControls mode |
 | `removeBox` | `(id: string) => void` | Remove a clip box |
 | `setBoxMode` | `(id: string, mode: ClipMode) => void` | Set clip mode: `"outside"` (keep inside) or `"inside"` (remove inside) |
-| `setBoxVisible` | `(id: string, visible: boolean) => void` | Show/hide a clip box helper and its clipping effect |
+| `setBoxVisible` | `(id: string, visible: boolean) => void` | Show/hide a clip box helper |
 | `renameBox` | `(id: string, name: string) => void` | Rename a clip box |
 | `setDraft` | `(box: THREE.Box3 \| null) => void` | Show a draft preview box (no clipping applied) |
-| `getBoxes` | `() => ClipBoxEntry[]` | Get all clip boxes (defensive clone) |
+| `getBoxes` | `() => ClipBoxEntry[]` | Get all clip boxes |
 | `getSelectedId` | `() => string \| null` | Get currently selected box ID |
 | `hasBox` | `() => boolean` | Whether any clip boxes exist |
 | `clear` | `() => void` | Remove all clip boxes |
@@ -436,6 +650,7 @@ Interactive 3D measurement tool.
 | `addPoint` | `(point: THREE.Vector3) => Measurement \| null` | Add a 3D point; auto-finishes when enough points collected |
 | `finish` | `() => Measurement \| null` | Finalize active measurement; computes value; builds scene objects |
 | `remove` | `(id: string) => void` | Remove a measurement and dispose its geometry |
+| `rename` | `(id: string, name: string) => void` | Rename a measurement label |
 | `clearAll` | `() => void` | Remove all measurements |
 | `getAll` | `() => Measurement[]` | Get all completed measurements |
 | `dispose` | `() => void` | Full cleanup |
@@ -476,8 +691,10 @@ Persists named viewer scenes in localStorage.
 |---|---|---|
 | `onChange` | `(scenes: ViewerScene[]) => void` | Called after any mutation |
 
-**Helper function:**
+**`captureScene()` helper function:**
 ```typescript
+import { captureScene } from '@der-ort/pano-cloud-viewer';
+
 captureScene(
   name: string,
   cameraPos: { x: number; y: number; z: number },
@@ -492,9 +709,9 @@ Assembles a `ViewerScene` payload from current viewer state. Pass the result to 
 
 ---
 
-## 12. Types
+## 14. Types
 
-All types are exported from `@der-ort/pano-cloud-viewer`.
+All types are exported from both `@der-ort/pano-cloud-viewer` and `@der-ort/pano-cloud-viewer-core`.
 
 ### Source types
 
@@ -509,12 +726,12 @@ interface S3Source {
 
 interface LocalSource {
   type: "local";
-  basePath: string;          // Relative to dev server root
+  basePath: string;          // Base URL or relative path served by the dev server / Next.js public folder
 }
 
 interface ElectronSource {
   type: "electron";
-  basePath: string;          // Absolute path to folder
+  basePath: string;          // Absolute path to the point cloud folder
 }
 ```
 
@@ -525,6 +742,7 @@ interface CameraData {
   name: string;
   index: number;
   image: string | null;      // Absolute URL (resolved by DataProvider)
+  thumbnail?: string | null; // Low-res thumbnail URL (falls back to image)
   representation?: "sphericalRepresentation" | "pinholeRepresentation" | "cylindricalRepresentation";
   position?: { x: number; y: number; z: number };
   rotation?: { x: number; y: number; z: number; w: number };
@@ -546,6 +764,7 @@ interface Measurement {
   label: string;
   points: THREE.Vector3[];
   value?: number;            // meters / m² / m³ / radians depending on type
+  box?: { min: [number, number, number]; max: [number, number, number] }; // volume only
   color: string;
   visible: boolean;
   selected: boolean;
@@ -563,17 +782,6 @@ interface ClipBoxEntry {
   box: THREE.Box3;
   mode: ClipMode;
   visible: boolean;
-}
-
-type SectionType = "box" | "plane";
-
-interface ClipSection {
-  id: string;
-  type: SectionType;
-  label: string;
-  visible: boolean;
-  active: boolean;
-  transform: THREE.Matrix4;
 }
 ```
 
@@ -599,6 +807,7 @@ interface ExportOptions {
 type Theme = "dark" | "light" | "system";
 
 type NavigationMode = "orbit" | "fly" | "earth";
+type CameraProjection = "perspective" | "orthographic";
 
 type ActiveTool =
   | "none"
@@ -608,17 +817,25 @@ type ActiveTool =
   | "annotate";
 
 type ColorMode = "rgb" | "height" | "intensity" | "intensity_gradient" | "classification" | "return_number" | "source";
+```
 
-interface ViewerConfig {
-  source: PointCloudSource;
-  theme?: Theme;
-  pointBudget?: number;
-  showMinimap?: boolean;
-  enablePanoramas?: boolean;
-  className?: string;
-  onCameraSelect?: (camera: CameraData) => void;
-  onMeasurementChange?: (measurements: Measurement[]) => void;
+### Display settings
+
+```typescript
+type DisplayPreset = "compact" | "standard" | "prominent";
+
+interface DisplaySettings {
+  preset: DisplayPreset;
+  measurementLineWidth: number;    // pixels
+  measurementLabelScale: number;   // multiplier
+  measurementSphereRadius: number; // world units
+  markerSphereScale: number;       // multiplier on auto-calculated radius
+  markerSphereOpacity: number;     // 0–1
+  markerLabelScale: number;        // multiplier
 }
+
+// Pre-defined presets — also exported as DISPLAY_PRESETS constant
+const DISPLAY_PRESETS: Record<DisplayPreset, DisplaySettings>;
 ```
 
 ### Presentation / scenes
@@ -647,7 +864,7 @@ interface ViewerScene {
 
 ---
 
-## 13. Source Adapters
+## 15. Source Adapters
 
 ### `FileSourceAdapter` interface
 
@@ -690,7 +907,7 @@ class ElectronSourceAdapter implements FileSourceAdapter {
 }
 ```
 
-Uses `window.electronFS` IPC bridge (`readFile`, `readFileBinary`, `readdir`). Throws if the bridge is not available. The preload script in `apps/electron/src/preload.ts` exposes the bridge.
+Uses `window.electronFS` IPC bridge (`readFile`, `readFileBinary`, `readdir`). The preload script in `apps/electron/src/preload.ts` exposes the bridge.
 
 ### Adding a custom adapter
 
@@ -720,11 +937,11 @@ const adapter = new MyCustomAdapter();
 </DataProvider>
 ```
 
-Note: `ViewerProvider` still requires a `config.source` — pass a placeholder if using a custom adapter directly with `DataProvider`.
+**Note:** `ViewerProvider` requires a `config.source` — pass a placeholder `{ type: 's3', baseUrl: '' }` when using a custom adapter directly with `DataProvider`.
 
 ---
 
-## 14. i18n
+## 16. i18n
 
 ### `ViewerLocale` interface
 
@@ -760,7 +977,7 @@ measurementCount: (count: number) => string
 
 ### `createLocale(base, overrides)`
 
-Deep-merges a `DeepPartial<ViewerLocale>` into a base locale. All unspecified keys keep their base values.
+Deep-merges a `DeepPartial<ViewerLocale>` into a base locale.
 
 ```typescript
 import { en, createLocale } from '@der-ort/pano-cloud-viewer';
@@ -768,7 +985,6 @@ import { en, createLocale } from '@der-ort/pano-cloud-viewer';
 const myLocale = createLocale(en, {
   toolbar: {
     about: 'Info',
-    navOrbit: 'Turntable',
   },
   viewport: {
     overview: 'Map',
@@ -797,29 +1013,27 @@ import { en } from '@der-ort/pano-cloud-viewer';  // English (default)
 import { de } from '@der-ort/pano-cloud-viewer';  // German
 ```
 
-### Using with `<PanoCloudViewer>`
-
-```tsx
-import { de } from '@der-ort/pano-cloud-viewer';
-
-<PanoCloudViewer
-  source={source}
-  locale={de}
-/>
-```
-
 ---
 
-## Utilities
+## 17. Utilities
 
-Exported from `@der-ort/pano-cloud-viewer`:
+### Format helpers
+
+Exported from both `@der-ort/pano-cloud-viewer` and `@der-ort/pano-cloud-viewer-core`:
 
 | Function | Signature | Description |
 |---|---|---|
-| `cn` | `(...inputs: ClassValue[]) => string` | `clsx` + `tailwind-merge` for conditional class names |
 | `formatLength` | `(meters: number) => string` | e.g. `"1.23 m"` or `"123.4 cm"` |
 | `formatArea` | `(m2: number) => string` | e.g. `"4.56 m²"` |
 | `formatVolume` | `(m3: number) => string` | e.g. `"7.89 m³"` |
 | `formatAngle` | `(radians: number) => string` | e.g. `"45.0°"` |
-| `formatCoord` | `(value: number) => string` | Formatted coordinate value |
-| `exportMeasurementsCSV` | `(measurements: Measurement[]) => string` | Generate CSV string from measurements array |
+| `formatCoord` | `(x: number, y: number, z: number, decimals?: number) => string` | Formatted coordinate string, e.g. `"X: 1.23, Y: 4.56, Z: 7.89"` |
+| `exportMeasurementsCSV` | `(measurements: Measurement[]) => string` | Generate CSV string from measurements (does not download — call `ExportManager.download()` or use `useMeasurementActions().exportCSV()`) |
+
+### `cn()` utility
+
+React-only, exported from `@der-ort/pano-cloud-viewer` only:
+
+| Function | Signature | Description |
+|---|---|---|
+| `cn` | `(...inputs: ClassValue[]) => string` | `clsx` + `tailwind-merge` for conditional class names |

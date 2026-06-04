@@ -12,23 +12,56 @@
 - Orthographic image export (top, front, side, back)
 - 2D minimap overlay
 - Dark/light theming via CSS custom properties
+- Custom UI via render prop and action hooks
+
+---
+
+## Packages
+
+The library is split into two packages:
+
+| Package | Contents |
+|---|---|
+| `@der-ort/pano-cloud-viewer` | React UI: components, providers, hooks, layouts, themes, i18n |
+| `@der-ort/pano-cloud-viewer-core` | Headless engine: Three.js managers, data adapters, types, format helpers (no React) |
+
+**You only need to install `@der-ort/pano-cloud-viewer`.** It bundles the core package into its `dist` at build time, so the core is self-contained — no extra install step.
 
 ---
 
 ## Installation
 
-Install the package and its peer dependencies:
+### Via git dependency (recommended)
+
+The package is distributed as a git dependency pointing directly at the monorepo. Add it to your `package.json`:
+
+```json
+{
+  "dependencies": {
+    "@der-ort/pano-cloud-viewer": "github:der-ort/panocloudviewer&path:packages/viewer",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "three": ">=0.160.0"
+  }
+}
+```
+
+Then install:
+
+```bash
+pnpm install
+# or
+npm install
+# or
+yarn
+```
+
+The committed `dist/` in the package is self-contained (core bundled in), so **no build step is needed** after install.
+
+### Via npm (if published)
 
 ```bash
 pnpm add @der-ort/pano-cloud-viewer three react react-dom
-```
-
-```bash
-npm install @der-ort/pano-cloud-viewer three react react-dom
-```
-
-```bash
-yarn add @der-ort/pano-cloud-viewer three react react-dom
 ```
 
 ---
@@ -37,7 +70,7 @@ yarn add @der-ort/pano-cloud-viewer three react react-dom
 
 ### 1. Import a theme
 
-The viewer requires a CSS theme to render correctly. Import the included `smart-agile` theme, or [create your own](/theming).
+The viewer requires a CSS theme. Import the included `smart-agile` theme, or [create your own](/guide/theming).
 
 ```tsx
 import '@der-ort/pano-cloud-viewer/themes/smart-agile.css';
@@ -67,7 +100,7 @@ The viewer fills its container — give it an explicit width and height.
 
 ### 3. Provide your data
 
-The viewer expects a **Potree 2.0** formatted folder. See [Data Format](/guide/data-format) for the full spec, and [Point Cloud Preparation](/guide/point-cloud-preparation) to convert raw scanner files.
+The viewer expects a **Potree 2.0** formatted folder. See [Data Format](/guide/data-format) for the full spec.
 
 ---
 
@@ -83,6 +116,15 @@ interface PanoCloudViewerProps {
 
   /** Extra CSS class applied to the root element */
   className?: string;
+
+  /** UI language override. Default: English */
+  locale?: ViewerLocale;
+
+  /**
+   * Custom UI render prop. When provided, replaces the default WorkspaceLayout.
+   * Receives the viewport element — it must be rendered in the returned JSX.
+   */
+  children?: (viewport: React.ReactNode) => React.ReactNode;
 }
 ```
 
@@ -109,14 +151,82 @@ source={{ type: 'electron', basePath: '/absolute/path/to/project/' }}
 source={{ type: 'local', basePath: '/sample/' }}
 ```
 
-See [Integrations](/integrations/react) for framework-specific setup.
+---
+
+## Next.js Setup
+
+All viewer components include `"use client"` directives. Load the main component dynamically to prevent SSR errors:
+
+```tsx
+import dynamic from 'next/dynamic';
+
+const PanoCloudViewer = dynamic(
+  () => import('@der-ort/pano-cloud-viewer').then(m => m.PanoCloudViewer),
+  { ssr: false }
+);
+```
+
+Add to `next.config.ts`:
+
+```ts
+const nextConfig = {
+  transpilePackages: ['@der-ort/pano-cloud-viewer'],
+};
+```
+
+---
+
+## Electron Setup
+
+1. Build the Next.js app statically: `pnpm build` in `apps/web`
+2. The Electron main process loads `apps/web/out/index.html`
+3. The preload script exposes `window.electronFS` — the viewer auto-detects this for `electron` source type
+4. Pass `source={{ type: 'electron', basePath: folderPath }}` — use the IPC `dialog:openFolder` handler to let users pick a folder
+
+---
+
+## Custom UI
+
+Swap out the default toolbar and sidebar with your own UI using the `children` render prop and action hooks:
+
+```tsx
+import {
+  PanoCloudViewer,
+  useNavigationActions,
+  useMeasurementActions,
+} from '@der-ort/pano-cloud-viewer';
+
+function MyToolbar() {
+  const { fitToView } = useNavigationActions();
+  const { startTool } = useMeasurementActions();
+
+  return (
+    <div className="absolute top-4 left-4 z-10 flex gap-2">
+      <button onClick={fitToView}>Fit to view</button>
+      <button onClick={() => startTool('distance')}>Measure distance</button>
+    </div>
+  );
+}
+
+<PanoCloudViewer source={source}>
+  {(viewport) => (
+    <div className="relative w-full h-full">
+      {viewport}
+      <MyToolbar />
+    </div>
+  )}
+</PanoCloudViewer>
+```
+
+See [Custom UI](/guide/custom-ui) for a full walkthrough.
 
 ---
 
 ## Next Steps
 
 - [Data Format](/guide/data-format) — expected folder structure and `cameras.json` schema
-- [Point Cloud Preparation](/guide/point-cloud-preparation) — convert E57 files with PanoCloudConverter
-- [Theming](/theming) — customize colors, fonts, and radius with CSS variables
-- [Composable API](/composable-api) — build a fully custom layout with hooks and providers
-- [API Reference](/api/components) — complete component and hook documentation
+- [Navigation](/guide/navigation) — orbit, fly, and earth modes explained
+- [Custom UI](/guide/custom-ui) — render prop, action hooks, packaged layout components
+- [Theming](/guide/theming) — CSS variables, dark/light mode, shadcn integration
+- [API Reference](/api) — complete component and hook documentation
+- [Architecture](/architecture) — deep dive into the three-layer model and package split
