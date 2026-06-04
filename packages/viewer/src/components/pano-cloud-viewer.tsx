@@ -41,6 +41,30 @@ export function usePcvRoot(): React.RefObject<HTMLDivElement | null> | null {
   return useContext(PcvRootContext);
 }
 
+/**
+ * Context exposing the numeric `uiScale` factor so packaged layouts can read it
+ * directly when needed. The primary scaling mechanism is the `--pcv-scale` CSS
+ * custom property set on the `.pcv` root; this context is a convenience for
+ * components that need the raw number (e.g. for measurement / layout math).
+ */
+const UiScaleContext = createContext<number>(1);
+
+/** Returns the active UI chrome scale factor (default `1`). */
+export function useUiScale(): number {
+  return useContext(UiScaleContext);
+}
+
+/**
+ * Inline style helper that applies the chrome scale via the CSS `zoom` property,
+ * reading the `--pcv-scale` custom property set on the `.pcv` root. Apply this to
+ * non-viewport chrome containers (toolbars, sidebars, floating palettes, overlay
+ * panels). The 3D `Viewport`/canvas must NOT receive this style so it stays at
+ * native resolution and full size.
+ *
+ * `zoom` is not part of React's `CSSProperties` type, so the object is cast.
+ */
+export const pcvChromeScaleStyle = { zoom: "var(--pcv-scale, 1)" } as React.CSSProperties;
+
 export interface PanoCloudViewerProps {
   /** Data source: S3 bucket, local path, or Electron IPC */
   source: PointCloudSource;
@@ -64,6 +88,20 @@ export interface PanoCloudViewerProps {
    * - `"lite"`: beginner set — nav modes, basic measurements, panorama/minimap/theme toggles only.
    */
   uiMode?: UiMode;
+  /**
+   * Scale factor for the UI chrome (toolbars, tool-rail, sidebar, floating
+   * palettes, dialogs / overlay panels, status bar). Defaults to `1`.
+   *
+   * Only the chrome is scaled — the 3D viewport / canvas stays at native
+   * resolution and full size, so the point-cloud view remains crisp and you
+   * don't lose view area. Implemented via a `--pcv-scale` CSS custom property
+   * on the `.pcv` root that chrome containers consume through `zoom`.
+   *
+   * @example
+   * // Enlarge all controls by 25% for touch / high-DPI displays
+   * <PanoCloudViewer source={source} uiScale={1.25} />
+   */
+  uiScale?: number;
   /**
    * Custom UI via render prop. Receives the viewport element that must be rendered.
    * When omitted, the default WorkspaceLayout is used.
@@ -110,6 +148,8 @@ function PanoOverlayBridge() {
 
 interface PcvRootProps {
   className?: string;
+  /** Chrome scale factor, published as the `--pcv-scale` CSS custom property. */
+  uiScale?: number;
   children: React.ReactNode;
 }
 
@@ -119,20 +159,30 @@ interface PcvRootProps {
  * ensuring all CSS tokens and Tailwind `dark:` variants are scoped to this element.
  * Also exposes a ref to this element via PcvRootContext so portalled content
  * (Radix Dialog.Portal, createPortal) can be anchored inside the CSS scope.
+ *
+ * Publishes `--pcv-scale` so chrome containers can scale via `zoom` while the
+ * viewport stays at native resolution.
  */
-function PcvRoot({ className, children }: PcvRootProps) {
+function PcvRoot({ className, uiScale = 1, children }: PcvRootProps) {
   const { resolvedTheme } = useTheme();
   const rootRef = useRef<HTMLDivElement | null>(null);
 
+  // `--pcv-scale` is a custom property; cast the style object since these keys
+  // aren't part of React's CSSProperties.
+  const rootStyle = { "--pcv-scale": uiScale } as React.CSSProperties;
+
   return (
     <PcvRootContext.Provider value={rootRef}>
-      <div
-        ref={rootRef}
-        className={cn("pcv", resolvedTheme, "w-full h-full", className)}
-        data-theme={resolvedTheme}
-      >
-        {children}
-      </div>
+      <UiScaleContext.Provider value={uiScale}>
+        <div
+          ref={rootRef}
+          className={cn("pcv", resolvedTheme, "w-full h-full", className)}
+          data-theme={resolvedTheme}
+          style={rootStyle}
+        >
+          {children}
+        </div>
+      </UiScaleContext.Provider>
     </PcvRootContext.Provider>
   );
 }
@@ -151,7 +201,7 @@ function PcvRoot({ className, children }: PcvRootProps) {
  * />
  * ```
  */
-export function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, children, components }: PanoCloudViewerProps) {
+export function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, uiScale = 1, children, components }: PanoCloudViewerProps) {
   const adapter = createAdapter(source);
   const config = { source, uiMode };
 
@@ -161,7 +211,7 @@ export function PanoCloudViewer({ source, theme = "dark", className, locale, uiM
         <DataProvider adapter={adapter}>
           <ViewerProvider config={config}>
             <ComponentsProvider components={components}>
-              <PcvRoot className={className}>
+              <PcvRoot className={className} uiScale={uiScale}>
                 {children ? (
                   <>
                     {children(

@@ -12,6 +12,14 @@ import { Sidebar } from "./sidebar/sidebar";
 import { PanoViewer } from "./overlays/pano-viewer";
 import { RenderingSettings } from "./overlays/rendering-settings";
 
+/**
+ * Inline style that scales UI chrome via the `--pcv-scale` CSS custom property
+ * (set on the `.pcv` root by `PanoCloudViewer`'s `uiScale` prop). Applied to
+ * non-viewport chrome containers only — the viewport/canvas stays at native size.
+ * `zoom` isn't in React's CSSProperties, so the object is cast.
+ */
+const chromeScale = { zoom: "var(--pcv-scale, 1)" } as React.CSSProperties;
+
 const Viewport = lazy(() => import("./viewport").then(m => ({ default: m.Viewport })));
 
 function ViewportFallback() {
@@ -76,7 +84,7 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       <RenderingSettings open={renderSettingsOpen} onClose={() => setRenderSettingsOpen(false)} />
 
       {/* ── Top floating toolbar ────────────────────────────────────────── */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={chromeScale}>
         <GlassCard className="pointer-events-auto">
           <MainToolbar
             onToggleSidebar={() => setSidebarOpen(o => !o)}
@@ -89,7 +97,7 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
 
       {/* ── Left floating tool rail ──────────────────────────────────────── */}
       {/* Positioned wrapper with explicit top/bottom gives the GlassCard a height anchor */}
-      <div className="absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center">
+      <div className="absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center" style={chromeScale}>
         <GlassCard className="pointer-events-auto overflow-y-auto max-h-full">
           <ToolRail />
         </GlassCard>
@@ -102,6 +110,7 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
           "transition-all duration-200",
           sidebarOpen ? "w-72 xl:w-80" : "w-0 overflow-hidden",
         )}
+        style={chromeScale}
       >
         {sidebarOpen && (
           <GlassCard className="h-full overflow-hidden">
@@ -112,7 +121,7 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
 
       {/* ── Clip management toolbar (Pro + has boxes) ───────────────────── */}
       {isPro && clipBoxEntries.length > 0 && (
-        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={chromeScale}>
           <GlassCard className="pointer-events-auto">
             <ClipToolbar />
           </GlassCard>
@@ -120,7 +129,7 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       )}
 
       {/* ── Bottom status strip ─────────────────────────────────────────── */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={chromeScale}>
         <GlassCard className="pointer-events-none">
           <div className="px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-white/50 select-none">
             {metadata && <span>{t.statusPts(metadata.points / 1e6)}</span>}
