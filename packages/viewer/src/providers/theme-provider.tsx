@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { Theme } from "../types";
+import type { Theme } from "@der-ort/pano-cloud-viewer-core";
 
 interface ThemeContextValue {
   theme: Theme;

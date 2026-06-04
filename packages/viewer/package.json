@@ -45,6 +45,7 @@
     "lucide-react": "^0.475.0"
   },
   "devDependencies": {
+    "@der-ort/pano-cloud-viewer-core": "workspace:*",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/three": "^0.170.0",

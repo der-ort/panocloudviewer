@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { DisplaySettings, Measurement, MeasurementType } from "../types";
 import { DISPLAY_PRESETS } from "../types";
-import { formatLength, formatArea, formatAngle } from "../lib/utils";
+import { formatLength, formatArea, formatAngle } from "../format";
 
 let _idCounter = 0;
 function nextId() { return `m-${++_idCounter}`; }

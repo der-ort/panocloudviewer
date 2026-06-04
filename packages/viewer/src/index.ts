@@ -1,10 +1,15 @@
+// ─── Headless core (managers, adapters, types, formats) ──────────────────────
+// Re-exported so existing imports like `import { SceneManager, useViewer }` from
+// "@der-ort/pano-cloud-viewer" keep working. Core is bundled into this package's
+// dist at build time (tsup noExternal), so consumers never resolve it separately.
+export * from "@der-ort/pano-cloud-viewer-core";
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export { PanoCloudViewer } from "./components/pano-cloud-viewer";
 export type { PanoCloudViewerProps } from "./components/pano-cloud-viewer";
 
 // ─── Providers ────────────────────────────────────────────────────────────────
 export { ViewerProvider, useViewer } from "./providers/viewer-provider";
-export type { ColorMode } from "./core/point-cloud-loader";
 export { ThemeProvider, useTheme } from "./providers/theme-provider";
 export { DataProvider, useData } from "./providers/data-provider";
 
@@ -38,43 +43,7 @@ export { ToolRail } from "./components/toolbar/tool-rail";
 export { PanoViewer } from "./components/overlays/pano-viewer";
 export { AboutDialog } from "./components/overlays/about-dialog";
 export { RenderingSettings } from "./components/overlays/rendering-settings";
-
-// ─── Core managers (for advanced / headless use) ──────────────────────────────
-export { SceneManager } from "./core/scene-manager";
-export { PointCloudLoader } from "./core/point-cloud-loader";
-export { CameraAnimator } from "./core/camera-animator";
-export { MarkerManager } from "./core/marker-manager";
-export { MeasurementManager } from "./core/measurement-manager";
-export { ExportManager } from "./core/export-manager";
-export { MinimapRenderer } from "./core/minimap-renderer";
-export { ClipManager } from "./core/clip-manager";
-export { AxisWidget } from "./core/axis-widget";
-export type { ClipMode, ClipBoxEntry } from "./core/clip-manager";
-export { PresentationManager, captureScene } from "./core/presentation-manager";
-export type { ViewerScene } from "./core/presentation-manager";
-
-// ─── Data adapters ────────────────────────────────────────────────────────────
-export { createAdapter, S3SourceAdapter, ElectronSourceAdapter } from "./data/file-source-adapter";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-export type {
-  PointCloudSource,
-  S3Source,
-  LocalSource,
-  ElectronSource,
-  CameraData,
-  Measurement,
-  MeasurementType,
-  ActiveTool,
-  NavigationMode,
-  CameraProjection,
-  ExportOptions,
-  ExportView,
-  ExportFormat,
-  DisplayPreset,
-  DisplaySettings,
-} from "./types";
-export { DISPLAY_PRESETS } from "./types";
+export { DisplaySettingsDialog } from "./components/overlays/display-settings-dialog";
 
 // ─── Action hooks (for custom UIs) ───────────────────────────────────────────
 export {
@@ -88,7 +57,8 @@ export {
 } from "./hooks";
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
-export { cn, formatLength, formatArea, formatVolume, formatAngle, formatCoord, exportMeasurementsCSV } from "./lib/utils";
+// Formatting helpers come from the core wildcard above; cn() is UI-only.
+export { cn } from "./lib/utils";
 
 // ─── i18n ─────────────────────────────────────────────────────────────────────
 export { LocaleProvider, useLocale } from "./i18n/locale-context";

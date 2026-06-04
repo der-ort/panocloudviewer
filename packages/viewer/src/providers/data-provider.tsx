@@ -1,9 +1,9 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { CameraData } from "../types";
-import type { PointCloudMetadata } from "../core/point-cloud-loader";
-import type { FileSourceAdapter } from "../data/file-source-adapter";
+import type { CameraData } from "@der-ort/pano-cloud-viewer-core";
+import type { PointCloudMetadata } from "@der-ort/pano-cloud-viewer-core";
+import type { FileSourceAdapter } from "@der-ort/pano-cloud-viewer-core";
 
 interface DataContextValue {
   cameras: CameraData[];

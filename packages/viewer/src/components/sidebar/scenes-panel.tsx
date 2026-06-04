@@ -4,8 +4,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { Bookmark, Plus, Trash2, Download, Upload, Play } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
-import { PresentationManager, captureScene } from "../../core/presentation-manager";
-import type { ViewerScene } from "../../core/presentation-manager";
+import { PresentationManager, captureScene } from "@der-ort/pano-cloud-viewer-core";
+import type { ViewerScene } from "@der-ort/pano-cloud-viewer-core";
 import * as THREE from "three";
 
 function InlineEditSceneName({ value, onSave }: { value: string; onSave: (v: string) => void }) {
@@ -120,7 +120,7 @@ export function ScenesPanel() {
 
     // Restore color mode
     if (scene.colorMode && loader) {
-      const cm = scene.colorMode as import("../../core/point-cloud-loader").ColorMode;
+      const cm = scene.colorMode as import("@der-ort/pano-cloud-viewer-core").ColorMode;
       await loader.setColorMode(cm);
       setColorMode(cm);
     }

@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useViewer } from "../providers/viewer-provider";
-import type { ColorMode } from "../core/point-cloud-loader";
+import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
 
 type QualityPreset = "performance" | "balanced" | "high";
 

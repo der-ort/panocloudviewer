@@ -6,8 +6,8 @@ import { Download } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
 import { ToolbarIconBtn } from "./main-toolbar";
-import { ExportManager } from "../../core/export-manager";
-import type { ExportView, ExportFormat } from "../../types";
+import { ExportManager } from "@der-ort/pano-cloud-viewer-core";
+import type { ExportView, ExportFormat } from "@der-ort/pano-cloud-viewer-core";
 
 export function ExportTools() {
   const { exporter } = useViewer();

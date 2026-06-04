@@ -2,8 +2,8 @@
 
 import { useCallback, useState } from "react";
 import { useViewer } from "../providers/viewer-provider";
-import { DISPLAY_PRESETS } from "../types";
-import type { DisplayPreset, DisplaySettings } from "../types";
+import { DISPLAY_PRESETS } from "@der-ort/pano-cloud-viewer-core";
+import type { DisplayPreset, DisplaySettings } from "@der-ort/pano-cloud-viewer-core";
 
 export function useDisplaySettings() {
   const viewer = useViewer();

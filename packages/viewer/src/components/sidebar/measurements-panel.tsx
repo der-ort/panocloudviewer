@@ -5,7 +5,7 @@ import { Trash2, Download } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
 import { formatLength, formatArea, formatVolume, formatAngle, formatCoord, exportMeasurementsCSV } from "../../lib/utils";
-import type { Measurement } from "../../types";
+import type { Measurement } from "@der-ort/pano-cloud-viewer-core";
 
 // Resolved at runtime inside the component — see TYPE_LABELS below
 function formatValue(m: Measurement): string {

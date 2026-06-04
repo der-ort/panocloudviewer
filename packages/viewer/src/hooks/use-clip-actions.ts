@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useViewer } from "../providers/viewer-provider";
-import type { ClipMode } from "../core/clip-manager";
+import type { ClipMode } from "@der-ort/pano-cloud-viewer-core";
 
 export function useClipActions() {
   const { clipManager, loader, clipBoxEntries, selectedClipBoxId, activeTool, setActiveTool } = useViewer();

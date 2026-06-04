@@ -1,13 +1,15 @@
 'use strict';
 
+var THREE6 = require('three');
+var OrbitControls_js = require('three/examples/jsm/controls/OrbitControls.js');
 var React14 = require('react');
 var jsxRuntime = require('react/jsx-runtime');
 var clsx = require('clsx');
 var tailwindMerge = require('tailwind-merge');
-var THREE6 = require('three');
-var OrbitControls_js = require('three/examples/jsm/controls/OrbitControls.js');
 var lucideReact = require('lucide-react');
 var reactDom = require('react-dom');
+var Dialog = require('@radix-ui/react-dialog');
+var Tabs = require('@radix-ui/react-tabs');
 
 function _interopDefault (e) { return e && e.__esModule ? e : { default: e }; }
 
@@ -29,8 +31,10 @@ function _interopNamespace(e) {
   return Object.freeze(n);
 }
 
-var React14__default = /*#__PURE__*/_interopDefault(React14);
 var THREE6__namespace = /*#__PURE__*/_interopNamespace(THREE6);
+var React14__default = /*#__PURE__*/_interopDefault(React14);
+var Dialog__namespace = /*#__PURE__*/_interopNamespace(Dialog);
+var Tabs__namespace = /*#__PURE__*/_interopNamespace(Tabs);
 
 var __defProp = Object.defineProperty;
 var __getOwnPropNames = Object.getOwnPropertyNames;
@@ -41,432 +45,8 @@ var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
-
-// src/types.ts
-exports.DISPLAY_PRESETS = void 0;
-var init_types = __esm({
-  "src/types.ts"() {
-    exports.DISPLAY_PRESETS = {
-      compact: {
-        preset: "compact",
-        measurementLineWidth: 1,
-        measurementLabelScale: 0.6,
-        measurementSphereRadius: 0.08,
-        markerSphereScale: 0.5,
-        markerSphereOpacity: 0.7,
-        markerLabelScale: 0.5
-      },
-      standard: {
-        preset: "standard",
-        measurementLineWidth: 2,
-        measurementLabelScale: 1,
-        measurementSphereRadius: 0.15,
-        markerSphereScale: 1,
-        markerSphereOpacity: 0.92,
-        markerLabelScale: 1
-      },
-      prominent: {
-        preset: "prominent",
-        measurementLineWidth: 4,
-        measurementLabelScale: 1.6,
-        measurementSphereRadius: 0.3,
-        markerSphereScale: 2,
-        markerSphereOpacity: 1,
-        markerLabelScale: 1.5
-      }
-    };
-  }
-});
-function useViewer() {
-  const ctx = React14.useContext(ViewerContext);
-  if (!ctx) throw new Error("useViewer must be used inside <ViewerProvider>");
-  return ctx;
-}
-function ViewerProvider({ config, children }) {
-  const [sceneManager, _setSceneManager] = React14.useState(null);
-  const [loader, _setLoader] = React14.useState(null);
-  const [measurementManager, _setMeasurementManager] = React14.useState(null);
-  const [markerManager, _setMarkerManager] = React14.useState(null);
-  const [cameraAnimator, _setCameraAnimator] = React14.useState(null);
-  const [exporter, _setExporter] = React14.useState(null);
-  const [minimap, _setMinimap] = React14.useState(null);
-  const [clipManager, _setClipManager] = React14.useState(null);
-  const [activeTool, setActiveTool] = React14.useState("none");
-  const [pointBudget, setPointBudget] = React14.useState(config.pointBudget ?? 2e6);
-  const [pointSize, setPointSize] = React14.useState(1.5);
-  const [fps, setFps] = React14.useState(0);
-  const [pointCount, setPointCount] = React14.useState(0);
-  const [measurementList, setMeasurementList] = React14.useState([]);
-  const [showMarkers, setShowMarkers] = React14.useState(true);
-  const [showMinimap, setShowMinimap] = React14.useState(config.showMinimap ?? true);
-  const [selectedCamera, setSelectedCamera] = React14.useState(null);
-  const [clipBoxEntries, setClipBoxEntries] = React14.useState([]);
-  const [selectedClipBoxId, setSelectedClipBoxId] = React14.useState(null);
-  const [colorMode, setColorMode] = React14.useState("rgb");
-  const [navigationMode, _setNavigationMode] = React14.useState("orbit");
-  const [projection, _setProjection] = React14.useState("perspective");
-  const [displaySettings, setDisplaySettings] = React14.useState(() => ({
-    ...exports.DISPLAY_PRESETS.standard,
-    ...config.displaySettings
-  }));
-  const setNavigationMode = React14.useCallback((mode) => {
-    _setNavigationMode(mode);
-  }, []);
-  const setProjection = React14.useCallback((mode) => {
-    _setProjection(mode);
-  }, []);
-  const setSceneManager = React14.useCallback((sm) => _setSceneManager(sm), []);
-  const setLoader = React14.useCallback((l) => _setLoader(l), []);
-  const setMeasurementManager = React14.useCallback((m) => _setMeasurementManager(m), []);
-  const setMarkerManager = React14.useCallback((m) => _setMarkerManager(m), []);
-  const setCameraAnimator = React14.useCallback((a) => _setCameraAnimator(a), []);
-  const setExporter = React14.useCallback((e) => _setExporter(e), []);
-  const setMinimap = React14.useCallback((r) => _setMinimap(r), []);
-  const setClipManager = React14.useCallback((c) => _setClipManager(c), []);
-  const value = {
-    sceneManager,
-    loader,
-    measurementManager,
-    markerManager,
-    cameraAnimator,
-    exporter,
-    minimap,
-    clipManager,
-    setSceneManager,
-    setLoader,
-    setMeasurementManager,
-    setMarkerManager,
-    setCameraAnimator,
-    setExporter,
-    setMinimap,
-    setClipManager,
-    activeTool,
-    setActiveTool,
-    pointBudget,
-    setPointBudget,
-    pointSize,
-    setPointSize,
-    fps,
-    setFps,
-    pointCount,
-    setPointCount,
-    measurementList,
-    setMeasurementList,
-    showMarkers,
-    setShowMarkers,
-    showMinimap,
-    setShowMinimap,
-    selectedCamera,
-    setSelectedCamera,
-    clipBoxEntries,
-    setClipBoxEntries,
-    selectedClipBoxId,
-    setSelectedClipBoxId,
-    colorMode,
-    setColorMode,
-    navigationMode,
-    setNavigationMode,
-    projection,
-    setProjection,
-    displaySettings,
-    setDisplaySettings,
-    config
-  };
-  return /* @__PURE__ */ jsxRuntime.jsx(ViewerContext.Provider, { value, children });
-}
-var ViewerContext;
-var init_viewer_provider = __esm({
-  "src/providers/viewer-provider.tsx"() {
-    "use client";
-    init_types();
-    ViewerContext = React14.createContext(null);
-  }
-});
-function useData() {
-  const ctx = React14.useContext(DataContext);
-  if (!ctx) throw new Error("useData must be used inside <DataProvider>");
-  return ctx;
-}
-function DataProvider({ adapter, children }) {
-  const [cameras, setCameras] = React14.useState([]);
-  const [metadata, setMetadata] = React14.useState(null);
-  const [loading, setLoading] = React14.useState(true);
-  const [error, setError] = React14.useState(null);
-  const [rev, setRev] = React14.useState(0);
-  React14.useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const load = async () => {
-      try {
-        const [cams, meta] = await Promise.allSettled([
-          adapter.fetchJson("cameras.json"),
-          adapter.fetchJson("metadata.json")
-        ]);
-        if (cancelled) return;
-        if (cams.status === "fulfilled") {
-          const resolved = (cams.value ?? []).map((cam) => ({
-            ...cam,
-            image: cam.image ? adapter.resolveUrl(cam.image) : null,
-            thumbnail: cam.thumbnail ? adapter.resolveUrl(cam.thumbnail) : null
-          }));
-          setCameras(resolved);
-        }
-        if (meta.status === "fulfilled") setMetadata(meta.value);
-      } catch (e) {
-        if (!cancelled) setError(String(e));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [adapter, rev]);
-  const reload = () => setRev((r) => r + 1);
-  return /* @__PURE__ */ jsxRuntime.jsx(DataContext.Provider, { value: { cameras, metadata, loading, error, reload }, children });
-}
-var DataContext;
-var init_data_provider = __esm({
-  "src/providers/data-provider.tsx"() {
-    "use client";
-    DataContext = React14.createContext(null);
-  }
-});
-
-// src/i18n/en.ts
-exports.en = void 0;
-var init_en = __esm({
-  "src/i18n/en.ts"() {
-    exports.en = {
-      toolbar: {
-        viewTop: "Top view",
-        viewTopLabel: "T",
-        viewFront: "Front view",
-        viewFrontLabel: "Fr",
-        viewBack: "Back view",
-        viewBackLabel: "Bk",
-        viewLeft: "Left view",
-        viewLeftLabel: "L",
-        viewRight: "Right view",
-        viewRightLabel: "R",
-        viewBottom: "Bottom view",
-        viewBottomLabel: "Bt",
-        budget: "Budget",
-        pointBudgetTitle: (m) => `Point budget: ${m.toFixed(1)}M`,
-        size: "Size",
-        pointSizeTitle: (s) => `Point size: ${s.toFixed(1)}`,
-        panoramas: "Panoramas",
-        togglePanoramas: "Toggle panorama markers",
-        minimap: "Minimap",
-        toggleMinimap: "Toggle minimap",
-        clouds: "Clouds",
-        cloudSelector: "Point cloud selector",
-        theme: "Theme",
-        switchToLight: "Switch to light",
-        switchToDark: "Switch to dark",
-        about: "About",
-        sidebar: "Sidebar",
-        toggleSidebar: "Toggle sidebar",
-        colorMode: "Color mode",
-        colorRgb: "RGB",
-        colorElevation: "Elevation",
-        colorIntensity: "Intensity",
-        colorIntensityGradient: "Intensity Gradient",
-        colorClassification: "Classification",
-        colorReturnNumber: "Return Number",
-        colorSource: "Source",
-        quality: "Quality",
-        qualityPerformance: "Performance",
-        qualityBalanced: "Balanced",
-        qualityHigh: "High Quality",
-        navOrbit: "Orbit",
-        navFly: "Fly",
-        navEarth: "Earth",
-        navOrbitTitle: "Orbit navigation \u2014 rotate around target",
-        navFlyTitle: "Fly navigation \u2014 WASD + drag to look",
-        navEarthTitle: "Earth navigation \u2014 pan-focused, horizon locked",
-        camPerspective: "Persp",
-        camOrthographic: "Ortho",
-        camPerspectiveTitle: "Perspective camera",
-        camOrthographicTitle: "Orthographic camera"
-      },
-      exportPanel: {
-        exportImageTitle: "Export orthographic image",
-        title: "Export Image",
-        view: "View",
-        viewTop: "Top (Plan)",
-        viewFront: "Front",
-        viewSide: "Side",
-        viewBack: "Back",
-        scale: "Scale",
-        background: "Background",
-        bgWhite: "white",
-        bgBlack: "black",
-        bgTransparent: "\u03B1",
-        format: "Format",
-        exporting: "Exporting\u2026",
-        download: "Download"
-      },
-      toolRail: {
-        measureGroup: "M",
-        sectionGroup: "S",
-        measurePoint: "Point coordinate",
-        measureDistance: "Distance",
-        measureHeight: "Height difference",
-        measureArea: "Area",
-        measureVolume: "Volume",
-        measureAngle: "Angle",
-        measureProfile: "Profile",
-        clearMeasurements: "Clear all measurements",
-        drawClipBox: "Draw clip box (drag in viewport)",
-        clipModeKeepInside: "Mode: keep inside (click to invert)",
-        clipModeKeepOutside: "Mode: keep outside (click to invert)",
-        removeClipBox: "Remove clip box"
-      },
-      sidebar: {
-        tabPanoramas: "Panoramas",
-        tabScene: "Scene",
-        tabMeasurements: "Measurements",
-        tabClassification: "Classification",
-        tabScenes: "Scenes"
-      },
-      scenePanel: {
-        pointClouds: "Point Clouds",
-        noCloudLoaded: "No cloud loaded",
-        measurements: "Measurements",
-        clearAll: "Clear all",
-        none: "None",
-        sections: "Sections",
-        sectionHint: "Use toolbar to add clipping volumes",
-        clipModeNote: "Clip mode applies to all boxes"
-      },
-      panoPanel: {
-        searchPlaceholder: "Search panoramas\u2026",
-        noResults: "No panoramas found",
-        flyTo: "Fly to"
-      },
-      classificationPanel: {
-        title: "LAS Classes",
-        all: "All",
-        none: "None",
-        classLabels: {
-          0: "Never classified",
-          1: "Unclassified",
-          2: "Ground",
-          3: "Low Vegetation",
-          4: "Medium Vegetation",
-          5: "High Vegetation",
-          6: "Building",
-          7: "Low Point (Noise)",
-          9: "Water",
-          17: "Bridge Deck",
-          18: "High Noise"
-        }
-      },
-      measurementsPanel: {
-        noMeasurements: "No measurements yet.",
-        useMeasureToolHint: "Use the toolbar to start measuring.",
-        measurementCount: (n) => `${n} measurement${n === 1 ? "" : "s"}`,
-        downloadCsv: "Download CSV",
-        csv: "CSV",
-        clearAll: "Clear all",
-        typePoint: "Point",
-        typeDistance: "Distance",
-        typeHeight: "Height",
-        typeArea: "Area",
-        typeVolume: "Volume",
-        typeAngle: "Angle",
-        typeProfile: "Profile"
-      },
-      viewport: {
-        overview: "OVERVIEW",
-        hintPoint: "Click to place point \u2022 Esc to cancel",
-        hintDistance: "Click 2 points \u2022 Right-click to finish",
-        hintHeight: "Click start then end point",
-        hintArea: "Click polygon vertices \u2022 Right-click to close",
-        hintAngle: "Click 3 points (vertex is middle)",
-        hintSectionBox: "Drag to define clipping box",
-        initialisingRenderer: "Initialising renderer\u2026",
-        statusPts: (m) => `${m.toFixed(1)}M pts`,
-        statusBudget: (m) => `Budget: ${m.toFixed(1)}M`,
-        statusFps: (fps) => `${fps} fps`
-      },
-      renderingSettings: {
-        title: "Rendering Settings",
-        rgbSection: "RGB Adjustments",
-        intensitySection: "Intensity Adjustments",
-        elevationSection: "Elevation Range",
-        generalSection: "General",
-        gamma: "Gamma",
-        brightness: "Brightness",
-        contrast: "Contrast",
-        range: "Range",
-        elevMin: "Min Z",
-        elevMax: "Max Z",
-        opacity: "Opacity",
-        reset: "Reset to defaults"
-      },
-      scenesPanel: {
-        saveScene: "Save Current View",
-        namePlaceholder: "Scene name\u2026",
-        save: "Save",
-        savedScenes: "Saved Scenes",
-        noScenes: "No saved scenes yet.",
-        restore: "Restore scene",
-        exportJson: "Export scenes as JSON",
-        importJson: "Import scenes from JSON"
-      },
-      displaySettings: {
-        title: "Display Settings",
-        presetsTab: "Presets",
-        advancedTab: "Advanced",
-        preset_compact: "Compact",
-        preset_compact_desc: "Small labels & markers",
-        preset_standard: "Standard",
-        preset_standard_desc: "Default sizes",
-        preset_prominent: "Prominent",
-        preset_prominent_desc: "Large labels & markers",
-        measurementsSection: "Measurements",
-        lineWidth: "Line Width",
-        labelScale: "Label Size",
-        sphereRadius: "Point Size",
-        markersSection: "Panorama Markers",
-        markerScale: "Sphere Size",
-        markerOpacity: "Sphere Opacity",
-        markerLabelScale: "Label Size"
-      },
-      about: {
-        title: "About",
-        productName: "PanoCloud Viewer",
-        description: "A modular point cloud and panorama viewer built with Next.js 15, potree-core, Three.js, and shadcn/ui.",
-        engineLabel: "Engine: potree-core + Three.js",
-        panoramasLabel: "Panoramas: Pannellum 2.5.6",
-        uiLabel: "UI: shadcn/ui + Tailwind CSS"
-      },
-      panoViewer: {
-        close: "Close panorama"
-      }
-    };
-  }
-});
-function useLocale() {
-  return React14.useContext(LocaleContext);
-}
-function LocaleProvider({ locale = exports.en, children }) {
-  return /* @__PURE__ */ jsxRuntime.jsx(LocaleContext.Provider, { value: locale, children });
-}
-var LocaleContext;
-var init_locale_context = __esm({
-  "src/i18n/locale-context.tsx"() {
-    "use client";
-    init_en();
-    LocaleContext = React14.createContext(exports.en);
-  }
-});
-function cn(...inputs) {
-  return tailwindMerge.twMerge(clsx.clsx(inputs));
+function easeOutQuart(t) {
+  return 1 - Math.pow(1 - t, 4);
 }
 function formatLength(meters) {
   if (meters < 1) return `${(meters * 100).toFixed(1)} cm`;
@@ -553,99 +133,47 @@ function exportMeasurementsCSV(measurements) {
   });
   return rows.join("\n");
 }
-var init_utils = __esm({
-  "src/lib/utils.ts"() {
+function nextId() {
+  return `m-${++_idCounter}`;
+}
+function genId() {
+  return `clip_${_nextId++}`;
+}
+function genSceneId() {
+  return `scene_${Date.now()}_${_nextId2++}`;
+}
+function captureScene(name, cameraPos, cameraTarget, clipBoxes, colorMode, pointSize, pointBudget) {
+  return {
+    name,
+    camera: {
+      position: [cameraPos.x, cameraPos.y, cameraPos.z],
+      target: [cameraTarget.x, cameraTarget.y, cameraTarget.z]
+    },
+    clipBoxes: clipBoxes.map((b) => ({
+      name: b.name,
+      min: [b.box.min.x, b.box.min.y, b.box.min.z],
+      max: [b.box.max.x, b.box.max.y, b.box.max.z],
+      mode: b.mode,
+      visible: b.visible
+    })),
+    colorMode,
+    pointSize,
+    pointBudget
+  };
+}
+function createAdapter(source) {
+  switch (source.type) {
+    case "s3":
+      return new exports.S3SourceAdapter(source.baseUrl, source.headers);
+    case "electron":
+      return new exports.ElectronSourceAdapter(source.basePath);
+    case "local":
+      return new exports.S3SourceAdapter(source.basePath);
   }
-});
-var VIEW_DIRECTIONS; exports.ExportManager = void 0;
-var init_export_manager = __esm({
-  "src/core/export-manager.ts"() {
-    VIEW_DIRECTIONS = {
-      top: { pos: new THREE6__namespace.Vector3(0, 0, 1), up: new THREE6__namespace.Vector3(0, 1, 0) },
-      front: { pos: new THREE6__namespace.Vector3(0, -1, 0), up: new THREE6__namespace.Vector3(0, 0, 1) },
-      side: { pos: new THREE6__namespace.Vector3(1, 0, 0), up: new THREE6__namespace.Vector3(0, 0, 1) },
-      back: { pos: new THREE6__namespace.Vector3(0, 1, 0), up: new THREE6__namespace.Vector3(0, 0, 1) },
-      custom: { pos: new THREE6__namespace.Vector3(0, 0, 1), up: new THREE6__namespace.Vector3(0, 1, 0) }
-    };
-    exports.ExportManager = class {
-      sceneManager;
-      constructor(sceneManager) {
-        this.sceneManager = sceneManager;
-      }
-      /** Capture an orthographic view and return as data URL */
-      async capture(options) {
-        const { view, scale, background, format, quality = 0.95 } = options;
-        const { scene, renderer } = this.sceneManager;
-        const box = new THREE6__namespace.Box3();
-        scene.traverse((obj) => {
-          if (obj instanceof THREE6__namespace.Mesh || obj.name === "pointcloud") {
-            try {
-              box.expandByObject(obj);
-            } catch {
-            }
-          }
-        });
-        const size = new THREE6__namespace.Vector3();
-        const center = new THREE6__namespace.Vector3();
-        box.getSize(size);
-        box.getCenter(center);
-        const dir = VIEW_DIRECTIONS[view] ?? VIEW_DIRECTIONS.top;
-        const baseW = renderer.domElement.width;
-        const baseH = renderer.domElement.height;
-        const outW = baseW * scale;
-        const outH = baseH * scale;
-        const aspect = outW / outH;
-        const halfH = Math.max(size.x, size.y, size.z) * 0.6;
-        const halfW = halfH * aspect;
-        const orthoCamera = new THREE6__namespace.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 1e5);
-        orthoCamera.position.copy(center).addScaledVector(dir.pos, halfH * 3);
-        orthoCamera.up.copy(dir.up);
-        orthoCamera.lookAt(center);
-        orthoCamera.updateMatrixWorld();
-        const rt = new THREE6__namespace.WebGLRenderTarget(outW, outH, {
-          minFilter: THREE6__namespace.LinearFilter,
-          magFilter: THREE6__namespace.LinearFilter,
-          format: THREE6__namespace.RGBAFormat
-        });
-        const prevBg = scene.background;
-        if (background === "white") scene.background = new THREE6__namespace.Color(16777215);
-        else if (background === "black") scene.background = new THREE6__namespace.Color(0);
-        else scene.background = null;
-        renderer.setRenderTarget(rt);
-        renderer.setSize(outW, outH);
-        renderer.render(scene, orthoCamera);
-        renderer.setRenderTarget(null);
-        renderer.setSize(renderer.domElement.clientWidth, renderer.domElement.clientHeight);
-        scene.background = prevBg;
-        const pixels = new Uint8Array(outW * outH * 4);
-        renderer.readRenderTargetPixels(rt, 0, 0, outW, outH, pixels);
-        rt.dispose();
-        const flipped = new Uint8ClampedArray(outW * outH * 4);
-        for (let y = 0; y < outH; y++) {
-          const src = (outH - 1 - y) * outW * 4;
-          const dst = y * outW * 4;
-          flipped.set(pixels.subarray(src, src + outW * 4), dst);
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = outW;
-        canvas.height = outH;
-        canvas.getContext("2d").putImageData(new ImageData(flipped, outW, outH), 0, 0);
-        const mime = format === "jpeg" ? "image/jpeg" : "image/png";
-        return canvas.toDataURL(mime, quality);
-      }
-      /** Download a data URL as a file */
-      static download(dataUrl, filename) {
-        const a = document.createElement("a");
-        a.href = dataUrl;
-        a.download = filename;
-        a.click();
-      }
-    };
-  }
-});
-var FpsControls;
-var init_fps_controls = __esm({
-  "src/core/fps-controls.ts"() {
+}
+var FpsControls; exports.SceneManager = void 0; exports.PointCloudLoader = void 0; exports.CameraAnimator = void 0; exports.DISPLAY_PRESETS = void 0; var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED; exports.MarkerManager = void 0; var _idCounter, COLORS; exports.MeasurementManager = void 0; var VIEW_DIRECTIONS; exports.ExportManager = void 0; exports.MinimapRenderer = void 0; var HANDLE_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId; exports.ClipManager = void 0; exports.AxisWidget = void 0; var MAX_SCENES, _nextId2; exports.PresentationManager = void 0; exports.S3SourceAdapter = void 0; exports.ElectronSourceAdapter = void 0;
+var init_dist = __esm({
+  "../core/dist/index.js"() {
     FpsControls = class {
       camera;
       domElement;
@@ -748,12 +276,6 @@ var init_fps_controls = __esm({
         this.domElement.removeEventListener("contextmenu", this._onContextMenu);
       }
     };
-  }
-});
-exports.SceneManager = void 0;
-var init_scene_manager = __esm({
-  "src/core/scene-manager.ts"() {
-    init_fps_controls();
     exports.SceneManager = class {
       scene;
       camera;
@@ -1000,11 +522,6 @@ var init_scene_manager = __esm({
         return null;
       }
     };
-  }
-});
-exports.PointCloudLoader = void 0;
-var init_point_cloud_loader = __esm({
-  "src/core/point-cloud-loader.ts"() {
     exports.PointCloudLoader = class {
       sceneManager;
       adapter;
@@ -1198,16 +715,223 @@ var init_point_cloud_loader = __esm({
         return Math.min(Math.max(Math.round(raw / 1e5) * 1e5, 5e5), 1e7);
       }
     };
-  }
-});
-function nextId() {
-  return `m-${++_idCounter}`;
-}
-var _idCounter, COLORS; exports.MeasurementManager = void 0;
-var init_measurement_manager = __esm({
-  "src/core/measurement-manager.ts"() {
-    init_types();
-    init_utils();
+    exports.CameraAnimator = class {
+      camera;
+      controls;
+      animId = null;
+      constructor(camera, controls) {
+        this.camera = camera;
+        this.controls = controls;
+      }
+      flyTo({ position, target, duration = 800 }) {
+        return new Promise((resolve) => {
+          if (this.animId !== null) cancelAnimationFrame(this.animId);
+          const startPos = this.camera.position.clone();
+          const startTarget = this.controls.target.clone();
+          const startTime = performance.now();
+          const animate = (now) => {
+            const t = Math.min((now - startTime) / duration, 1);
+            const e = easeOutQuart(t);
+            this.camera.position.lerpVectors(startPos, position, e);
+            this.controls.target.lerpVectors(startTarget, target, e);
+            this.controls.update();
+            if (t < 1) {
+              this.animId = requestAnimationFrame(animate);
+            } else {
+              this.animId = null;
+              resolve();
+            }
+          };
+          this.animId = requestAnimationFrame(animate);
+        });
+      }
+      /** Fly to a camera marker position (offset behind the camera by `offset` units) */
+      flyToCamera(camPos, yawDeg = 0, offset = 5, duration = 800) {
+        const pos = Array.isArray(camPos) ? new THREE6__namespace.Vector3(camPos[0], camPos[1], camPos[2]) : camPos;
+        const yaw = yawDeg * Math.PI / 180;
+        const viewerPos = new THREE6__namespace.Vector3(
+          pos.x - Math.sin(yaw) * offset,
+          pos.y - Math.cos(yaw) * offset,
+          pos.z + 2
+        );
+        return this.flyTo({ position: viewerPos, target: pos, duration });
+      }
+      cancel() {
+        if (this.animId !== null) {
+          cancelAnimationFrame(this.animId);
+          this.animId = null;
+        }
+      }
+    };
+    exports.DISPLAY_PRESETS = {
+      compact: {
+        preset: "compact",
+        measurementLineWidth: 1,
+        measurementLabelScale: 0.6,
+        measurementSphereRadius: 0.08,
+        markerSphereScale: 0.5,
+        markerSphereOpacity: 0.7,
+        markerLabelScale: 0.5
+      },
+      standard: {
+        preset: "standard",
+        measurementLineWidth: 2,
+        measurementLabelScale: 1,
+        measurementSphereRadius: 0.15,
+        markerSphereScale: 1,
+        markerSphereOpacity: 0.92,
+        markerLabelScale: 1
+      },
+      prominent: {
+        preset: "prominent",
+        measurementLineWidth: 4,
+        measurementLabelScale: 1.6,
+        measurementSphereRadius: 0.3,
+        markerSphereScale: 2,
+        markerSphereOpacity: 1,
+        markerLabelScale: 1.5
+      }
+    };
+    MARKER_COLOR_DEFAULT = 14472518;
+    MARKER_COLOR_HOVER = 16777215;
+    MARKER_COLOR_SELECTED = 16737860;
+    exports.MarkerManager = class {
+      scene;
+      entries = [];
+      group;
+      hoveredIdx = -1;
+      selectedIdx = -1;
+      sphereRadius = 0.5;
+      _displaySettings = exports.DISPLAY_PRESETS.standard;
+      _cameras = [];
+      _worldBox;
+      constructor(scene) {
+        this.scene = scene;
+        this.group = new THREE6__namespace.Group();
+        this.group.name = "pano-markers";
+        this.scene.add(this.group);
+      }
+      /** Apply new display settings and rebuild all markers */
+      applyDisplaySettings(settings) {
+        this._displaySettings = settings;
+        if (this._cameras.length > 0) {
+          this.build(this._cameras, this._worldBox);
+        }
+      }
+      /** Build markers from camera data. Pass worldBox for auto-scaling. */
+      build(cameras, worldBox) {
+        this._cameras = cameras;
+        this._worldBox = worldBox;
+        this.clear();
+        if (worldBox && !worldBox.isEmpty()) {
+          const size = new THREE6__namespace.Vector3();
+          worldBox.getSize(size);
+          const maxDim = Math.max(size.x, size.y, size.z);
+          this.sphereRadius = Math.max(0.25, Math.min(5, maxDim * 8e-3));
+        }
+        cameras.forEach((cam, i) => {
+          if (!cam.position) return;
+          const { x, y, z } = cam.position;
+          const mesh = this._makeSphere(MARKER_COLOR_DEFAULT);
+          mesh.position.set(x, y, z);
+          mesh.userData = { cameraIndex: i, cameraData: cam };
+          this.group.add(mesh);
+          const label = this._makeLabel(cam.name);
+          const scaledRadius = this.sphereRadius * this._displaySettings.markerSphereScale;
+          label.position.set(x, y, z + scaledRadius * 3);
+          this.group.add(label);
+          this.entries.push({ mesh, label });
+        });
+      }
+      _makeSphere(color) {
+        const scaledRadius = this.sphereRadius * this._displaySettings.markerSphereScale;
+        const geo = new THREE6__namespace.SphereGeometry(scaledRadius, 16, 16);
+        const mat = new THREE6__namespace.MeshBasicMaterial({
+          color,
+          depthTest: false,
+          // Always visible through the point cloud
+          depthWrite: false,
+          transparent: true,
+          opacity: this._displaySettings.markerSphereOpacity
+        });
+        return new THREE6__namespace.Mesh(geo, mat);
+      }
+      _makeLabel(text) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 256;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "rgba(0,0,0,0.65)";
+        ctx.beginPath();
+        ctx.roundRect(0, 0, 256, 64, 8);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 20px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text.substring(0, 20), 128, 34);
+        const tex = new THREE6__namespace.CanvasTexture(canvas);
+        const mat = new THREE6__namespace.SpriteMaterial({
+          map: tex,
+          depthTest: false,
+          depthWrite: false,
+          transparent: true
+        });
+        const sprite = new THREE6__namespace.Sprite(mat);
+        const ls = this._displaySettings.markerLabelScale;
+        sprite.scale.set(this.sphereRadius * 8 * ls, this.sphereRadius * 2 * ls, 1);
+        return sprite;
+      }
+      /** Update sphere color by index */
+      _recolor(idx, color) {
+        const entry = this.entries[idx];
+        if (!entry) return;
+        entry.mesh.material.color.setHex(color);
+      }
+      setVisible(visible) {
+        this.group.visible = visible;
+      }
+      /** Return sphere meshes for raycasting */
+      getMeshes() {
+        return this.entries.map((e) => e.mesh);
+      }
+      setHovered(idx) {
+        if (this.hoveredIdx === idx) return;
+        if (this.hoveredIdx >= 0 && this.hoveredIdx !== this.selectedIdx) {
+          this._recolor(this.hoveredIdx, MARKER_COLOR_DEFAULT);
+        }
+        this.hoveredIdx = idx;
+        if (idx >= 0 && idx !== this.selectedIdx) {
+          this._recolor(idx, MARKER_COLOR_HOVER);
+        }
+      }
+      setSelected(idx) {
+        if (this.selectedIdx >= 0) {
+          this._recolor(this.selectedIdx, MARKER_COLOR_DEFAULT);
+        }
+        this.selectedIdx = idx;
+        if (idx >= 0) {
+          this._recolor(idx, MARKER_COLOR_SELECTED);
+        }
+      }
+      clear() {
+        for (const { mesh, label } of this.entries) {
+          mesh.material.dispose();
+          mesh.geometry.dispose();
+          this.group.remove(mesh);
+          label.material.map?.dispose();
+          label.material.dispose();
+          this.group.remove(label);
+        }
+        this.entries = [];
+        this.hoveredIdx = -1;
+        this.selectedIdx = -1;
+      }
+      dispose() {
+        this.clear();
+        this.scene.remove(this.group);
+      }
+    };
     _idCounter = 0;
     COLORS = {
       point: "#DCD546",
@@ -1666,213 +1390,87 @@ var init_measurement_manager = __esm({
         this.scene.remove(this.group);
       }
     };
-  }
-});
-var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED; exports.MarkerManager = void 0;
-var init_marker_manager = __esm({
-  "src/core/marker-manager.ts"() {
-    init_types();
-    MARKER_COLOR_DEFAULT = 14472518;
-    MARKER_COLOR_HOVER = 16777215;
-    MARKER_COLOR_SELECTED = 16737860;
-    exports.MarkerManager = class {
-      scene;
-      entries = [];
-      group;
-      hoveredIdx = -1;
-      selectedIdx = -1;
-      sphereRadius = 0.5;
-      _displaySettings = exports.DISPLAY_PRESETS.standard;
-      _cameras = [];
-      _worldBox;
-      constructor(scene) {
-        this.scene = scene;
-        this.group = new THREE6__namespace.Group();
-        this.group.name = "pano-markers";
-        this.scene.add(this.group);
-      }
-      /** Apply new display settings and rebuild all markers */
-      applyDisplaySettings(settings) {
-        this._displaySettings = settings;
-        if (this._cameras.length > 0) {
-          this.build(this._cameras, this._worldBox);
-        }
-      }
-      /** Build markers from camera data. Pass worldBox for auto-scaling. */
-      build(cameras, worldBox) {
-        this._cameras = cameras;
-        this._worldBox = worldBox;
-        this.clear();
-        if (worldBox && !worldBox.isEmpty()) {
-          const size = new THREE6__namespace.Vector3();
-          worldBox.getSize(size);
-          const maxDim = Math.max(size.x, size.y, size.z);
-          this.sphereRadius = Math.max(0.25, Math.min(5, maxDim * 8e-3));
-        }
-        cameras.forEach((cam, i) => {
-          if (!cam.position) return;
-          const { x, y, z } = cam.position;
-          const mesh = this._makeSphere(MARKER_COLOR_DEFAULT);
-          mesh.position.set(x, y, z);
-          mesh.userData = { cameraIndex: i, cameraData: cam };
-          this.group.add(mesh);
-          const label = this._makeLabel(cam.name);
-          const scaledRadius = this.sphereRadius * this._displaySettings.markerSphereScale;
-          label.position.set(x, y, z + scaledRadius * 3);
-          this.group.add(label);
-          this.entries.push({ mesh, label });
-        });
-      }
-      _makeSphere(color) {
-        const scaledRadius = this.sphereRadius * this._displaySettings.markerSphereScale;
-        const geo = new THREE6__namespace.SphereGeometry(scaledRadius, 16, 16);
-        const mat = new THREE6__namespace.MeshBasicMaterial({
-          color,
-          depthTest: false,
-          // Always visible through the point cloud
-          depthWrite: false,
-          transparent: true,
-          opacity: this._displaySettings.markerSphereOpacity
-        });
-        return new THREE6__namespace.Mesh(geo, mat);
-      }
-      _makeLabel(text) {
-        const canvas = document.createElement("canvas");
-        canvas.width = 256;
-        canvas.height = 64;
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "rgba(0,0,0,0.65)";
-        ctx.beginPath();
-        ctx.roundRect(0, 0, 256, 64, 8);
-        ctx.fill();
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 20px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(text.substring(0, 20), 128, 34);
-        const tex = new THREE6__namespace.CanvasTexture(canvas);
-        const mat = new THREE6__namespace.SpriteMaterial({
-          map: tex,
-          depthTest: false,
-          depthWrite: false,
-          transparent: true
-        });
-        const sprite = new THREE6__namespace.Sprite(mat);
-        const ls = this._displaySettings.markerLabelScale;
-        sprite.scale.set(this.sphereRadius * 8 * ls, this.sphereRadius * 2 * ls, 1);
-        return sprite;
-      }
-      /** Update sphere color by index */
-      _recolor(idx, color) {
-        const entry = this.entries[idx];
-        if (!entry) return;
-        entry.mesh.material.color.setHex(color);
-      }
-      setVisible(visible) {
-        this.group.visible = visible;
-      }
-      /** Return sphere meshes for raycasting */
-      getMeshes() {
-        return this.entries.map((e) => e.mesh);
-      }
-      setHovered(idx) {
-        if (this.hoveredIdx === idx) return;
-        if (this.hoveredIdx >= 0 && this.hoveredIdx !== this.selectedIdx) {
-          this._recolor(this.hoveredIdx, MARKER_COLOR_DEFAULT);
-        }
-        this.hoveredIdx = idx;
-        if (idx >= 0 && idx !== this.selectedIdx) {
-          this._recolor(idx, MARKER_COLOR_HOVER);
-        }
-      }
-      setSelected(idx) {
-        if (this.selectedIdx >= 0) {
-          this._recolor(this.selectedIdx, MARKER_COLOR_DEFAULT);
-        }
-        this.selectedIdx = idx;
-        if (idx >= 0) {
-          this._recolor(idx, MARKER_COLOR_SELECTED);
-        }
-      }
-      clear() {
-        for (const { mesh, label } of this.entries) {
-          mesh.material.dispose();
-          mesh.geometry.dispose();
-          this.group.remove(mesh);
-          label.material.map?.dispose();
-          label.material.dispose();
-          this.group.remove(label);
-        }
-        this.entries = [];
-        this.hoveredIdx = -1;
-        this.selectedIdx = -1;
-      }
-      dispose() {
-        this.clear();
-        this.scene.remove(this.group);
-      }
+    VIEW_DIRECTIONS = {
+      top: { pos: new THREE6__namespace.Vector3(0, 0, 1), up: new THREE6__namespace.Vector3(0, 1, 0) },
+      front: { pos: new THREE6__namespace.Vector3(0, -1, 0), up: new THREE6__namespace.Vector3(0, 0, 1) },
+      side: { pos: new THREE6__namespace.Vector3(1, 0, 0), up: new THREE6__namespace.Vector3(0, 0, 1) },
+      back: { pos: new THREE6__namespace.Vector3(0, 1, 0), up: new THREE6__namespace.Vector3(0, 0, 1) },
+      custom: { pos: new THREE6__namespace.Vector3(0, 0, 1), up: new THREE6__namespace.Vector3(0, 1, 0) }
     };
-  }
-});
-function easeOutQuart(t) {
-  return 1 - Math.pow(1 - t, 4);
-}
-exports.CameraAnimator = void 0;
-var init_camera_animator = __esm({
-  "src/core/camera-animator.ts"() {
-    exports.CameraAnimator = class {
-      camera;
-      controls;
-      animId = null;
-      constructor(camera, controls) {
-        this.camera = camera;
-        this.controls = controls;
+    exports.ExportManager = class {
+      sceneManager;
+      constructor(sceneManager) {
+        this.sceneManager = sceneManager;
       }
-      flyTo({ position, target, duration = 800 }) {
-        return new Promise((resolve) => {
-          if (this.animId !== null) cancelAnimationFrame(this.animId);
-          const startPos = this.camera.position.clone();
-          const startTarget = this.controls.target.clone();
-          const startTime = performance.now();
-          const animate = (now) => {
-            const t = Math.min((now - startTime) / duration, 1);
-            const e = easeOutQuart(t);
-            this.camera.position.lerpVectors(startPos, position, e);
-            this.controls.target.lerpVectors(startTarget, target, e);
-            this.controls.update();
-            if (t < 1) {
-              this.animId = requestAnimationFrame(animate);
-            } else {
-              this.animId = null;
-              resolve();
+      /** Capture an orthographic view and return as data URL */
+      async capture(options) {
+        const { view, scale, background, format, quality = 0.95 } = options;
+        const { scene, renderer } = this.sceneManager;
+        const box = new THREE6__namespace.Box3();
+        scene.traverse((obj) => {
+          if (obj instanceof THREE6__namespace.Mesh || obj.name === "pointcloud") {
+            try {
+              box.expandByObject(obj);
+            } catch {
             }
-          };
-          this.animId = requestAnimationFrame(animate);
+          }
         });
-      }
-      /** Fly to a camera marker position (offset behind the camera by `offset` units) */
-      flyToCamera(camPos, yawDeg = 0, offset = 5, duration = 800) {
-        const pos = Array.isArray(camPos) ? new THREE6__namespace.Vector3(camPos[0], camPos[1], camPos[2]) : camPos;
-        const yaw = yawDeg * Math.PI / 180;
-        const viewerPos = new THREE6__namespace.Vector3(
-          pos.x - Math.sin(yaw) * offset,
-          pos.y - Math.cos(yaw) * offset,
-          pos.z + 2
-        );
-        return this.flyTo({ position: viewerPos, target: pos, duration });
-      }
-      cancel() {
-        if (this.animId !== null) {
-          cancelAnimationFrame(this.animId);
-          this.animId = null;
+        const size = new THREE6__namespace.Vector3();
+        const center = new THREE6__namespace.Vector3();
+        box.getSize(size);
+        box.getCenter(center);
+        const dir = VIEW_DIRECTIONS[view] ?? VIEW_DIRECTIONS.top;
+        const baseW = renderer.domElement.width;
+        const baseH = renderer.domElement.height;
+        const outW = baseW * scale;
+        const outH = baseH * scale;
+        const aspect = outW / outH;
+        const halfH = Math.max(size.x, size.y, size.z) * 0.6;
+        const halfW = halfH * aspect;
+        const orthoCamera = new THREE6__namespace.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 1e5);
+        orthoCamera.position.copy(center).addScaledVector(dir.pos, halfH * 3);
+        orthoCamera.up.copy(dir.up);
+        orthoCamera.lookAt(center);
+        orthoCamera.updateMatrixWorld();
+        const rt = new THREE6__namespace.WebGLRenderTarget(outW, outH, {
+          minFilter: THREE6__namespace.LinearFilter,
+          magFilter: THREE6__namespace.LinearFilter,
+          format: THREE6__namespace.RGBAFormat
+        });
+        const prevBg = scene.background;
+        if (background === "white") scene.background = new THREE6__namespace.Color(16777215);
+        else if (background === "black") scene.background = new THREE6__namespace.Color(0);
+        else scene.background = null;
+        renderer.setRenderTarget(rt);
+        renderer.setSize(outW, outH);
+        renderer.render(scene, orthoCamera);
+        renderer.setRenderTarget(null);
+        renderer.setSize(renderer.domElement.clientWidth, renderer.domElement.clientHeight);
+        scene.background = prevBg;
+        const pixels = new Uint8Array(outW * outH * 4);
+        renderer.readRenderTargetPixels(rt, 0, 0, outW, outH, pixels);
+        rt.dispose();
+        const flipped = new Uint8ClampedArray(outW * outH * 4);
+        for (let y = 0; y < outH; y++) {
+          const src = (outH - 1 - y) * outW * 4;
+          const dst = y * outW * 4;
+          flipped.set(pixels.subarray(src, src + outW * 4), dst);
         }
+        const canvas = document.createElement("canvas");
+        canvas.width = outW;
+        canvas.height = outH;
+        canvas.getContext("2d").putImageData(new ImageData(flipped, outW, outH), 0, 0);
+        const mime = format === "jpeg" ? "image/jpeg" : "image/png";
+        return canvas.toDataURL(mime, quality);
+      }
+      /** Download a data URL as a file */
+      static download(dataUrl, filename) {
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = filename;
+        a.click();
       }
     };
-  }
-});
-exports.MinimapRenderer = void 0;
-var init_minimap_renderer = __esm({
-  "src/core/minimap-renderer.ts"() {
     exports.MinimapRenderer = class {
       sceneManager;
       bounds = null;
@@ -2055,11 +1653,6 @@ var init_minimap_renderer = __esm({
         this.container = null;
       }
     };
-  }
-});
-var HANDLE_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController;
-var init_face_handles = __esm({
-  "src/core/face-handles.ts"() {
     HANDLE_COLOR = 14472518;
     HANDLE_HOVER_COLOR = 16777215;
     HANDLE_DRAG_COLOR = 16347926;
@@ -2236,16 +1829,7 @@ var init_face_handles = __esm({
         handle.mesh.material.color.setHex(color);
       }
     };
-  }
-});
-function genId() {
-  return `clip_${_nextId2++}`;
-}
-var _nextId2; exports.ClipManager = void 0;
-var init_clip_manager = __esm({
-  "src/core/clip-manager.ts"() {
-    init_face_handles();
-    _nextId2 = 1;
+    _nextId = 1;
     exports.ClipManager = class {
       sm;
       entries = [];
@@ -2592,11 +2176,6 @@ var init_clip_manager = __esm({
         }
       }
     };
-  }
-});
-exports.AxisWidget = void 0;
-var init_axis_widget = __esm({
-  "src/core/axis-widget.ts"() {
     exports.AxisWidget = class {
       _scene;
       _camera;
@@ -2721,23 +2300,87 @@ var init_axis_widget = __esm({
         this._materials = [];
       }
     };
-  }
-});
-
-// src/data/file-source-adapter.ts
-function createAdapter(source) {
-  switch (source.type) {
-    case "s3":
-      return new exports.S3SourceAdapter(source.baseUrl, source.headers);
-    case "electron":
-      return new exports.ElectronSourceAdapter(source.basePath);
-    case "local":
-      return new exports.S3SourceAdapter(source.basePath);
-  }
-}
-exports.S3SourceAdapter = void 0; exports.ElectronSourceAdapter = void 0;
-var init_file_source_adapter = __esm({
-  "src/data/file-source-adapter.ts"() {
+    MAX_SCENES = 50;
+    _nextId2 = 1;
+    exports.PresentationManager = class {
+      storageKey;
+      scenes = [];
+      onChange;
+      constructor(sourceKey) {
+        this.storageKey = `pcv_scenes_${sourceKey}`;
+        this.load();
+      }
+      load() {
+        try {
+          const raw = localStorage.getItem(this.storageKey);
+          if (raw) this.scenes = JSON.parse(raw);
+        } catch {
+          this.scenes = [];
+        }
+      }
+      persist() {
+        try {
+          localStorage.setItem(this.storageKey, JSON.stringify(this.scenes));
+        } catch {
+        }
+        this.onChange?.(this.getScenes());
+      }
+      getScenes() {
+        return [...this.scenes];
+      }
+      addScene(scene) {
+        const entry = {
+          ...scene,
+          id: genSceneId(),
+          createdAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        this.scenes.unshift(entry);
+        if (this.scenes.length > MAX_SCENES) this.scenes.length = MAX_SCENES;
+        this.persist();
+        return entry;
+      }
+      removeScene(id) {
+        this.scenes = this.scenes.filter((s) => s.id !== id);
+        this.persist();
+      }
+      renameScene(id, name) {
+        const scene = this.scenes.find((s) => s.id === id);
+        if (scene) {
+          scene.name = name;
+          this.persist();
+        }
+      }
+      /** Export all scenes as a JSON string (for sharing / backup) */
+      exportJSON() {
+        return JSON.stringify(this.scenes, null, 2);
+      }
+      /** Import scenes from JSON string, merging with existing */
+      importJSON(json) {
+        try {
+          const imported = JSON.parse(json);
+          if (!Array.isArray(imported)) return 0;
+          const existingIds = new Set(this.scenes.map((s) => s.id));
+          let count = 0;
+          for (const scene of imported) {
+            if (!scene.id || !scene.name || !scene.camera) continue;
+            if (existingIds.has(scene.id)) {
+              scene.id = genSceneId();
+            }
+            this.scenes.push(scene);
+            count++;
+          }
+          if (this.scenes.length > MAX_SCENES) this.scenes.length = MAX_SCENES;
+          this.persist();
+          return count;
+        } catch {
+          return 0;
+        }
+      }
+      clear() {
+        this.scenes = [];
+        this.persist();
+      }
+    };
     exports.S3SourceAdapter = class {
       baseUrl;
       headers;
@@ -2792,6 +2435,402 @@ var init_file_source_adapter = __esm({
         return win.electronFS.readdir(this.basePath + path);
       }
     };
+  }
+});
+function useViewer() {
+  const ctx = React14.useContext(ViewerContext);
+  if (!ctx) throw new Error("useViewer must be used inside <ViewerProvider>");
+  return ctx;
+}
+function ViewerProvider({ config, children }) {
+  const [sceneManager, _setSceneManager] = React14.useState(null);
+  const [loader, _setLoader] = React14.useState(null);
+  const [measurementManager, _setMeasurementManager] = React14.useState(null);
+  const [markerManager, _setMarkerManager] = React14.useState(null);
+  const [cameraAnimator, _setCameraAnimator] = React14.useState(null);
+  const [exporter, _setExporter] = React14.useState(null);
+  const [minimap, _setMinimap] = React14.useState(null);
+  const [clipManager, _setClipManager] = React14.useState(null);
+  const [activeTool, setActiveTool] = React14.useState("none");
+  const [pointBudget, setPointBudget] = React14.useState(config.pointBudget ?? 2e6);
+  const [pointSize, setPointSize] = React14.useState(1.5);
+  const [fps, setFps] = React14.useState(0);
+  const [pointCount, setPointCount] = React14.useState(0);
+  const [measurementList, setMeasurementList] = React14.useState([]);
+  const [showMarkers, setShowMarkers] = React14.useState(true);
+  const [showMinimap, setShowMinimap] = React14.useState(config.showMinimap ?? true);
+  const [selectedCamera, setSelectedCamera] = React14.useState(null);
+  const [clipBoxEntries, setClipBoxEntries] = React14.useState([]);
+  const [selectedClipBoxId, setSelectedClipBoxId] = React14.useState(null);
+  const [colorMode, setColorMode] = React14.useState("rgb");
+  const [navigationMode, _setNavigationMode] = React14.useState("orbit");
+  const [projection, _setProjection] = React14.useState("perspective");
+  const [displaySettings, setDisplaySettings] = React14.useState(() => ({
+    ...exports.DISPLAY_PRESETS.standard,
+    ...config.displaySettings
+  }));
+  const setNavigationMode = React14.useCallback((mode) => {
+    _setNavigationMode(mode);
+  }, []);
+  const setProjection = React14.useCallback((mode) => {
+    _setProjection(mode);
+  }, []);
+  const setSceneManager = React14.useCallback((sm) => _setSceneManager(sm), []);
+  const setLoader = React14.useCallback((l) => _setLoader(l), []);
+  const setMeasurementManager = React14.useCallback((m) => _setMeasurementManager(m), []);
+  const setMarkerManager = React14.useCallback((m) => _setMarkerManager(m), []);
+  const setCameraAnimator = React14.useCallback((a) => _setCameraAnimator(a), []);
+  const setExporter = React14.useCallback((e) => _setExporter(e), []);
+  const setMinimap = React14.useCallback((r) => _setMinimap(r), []);
+  const setClipManager = React14.useCallback((c) => _setClipManager(c), []);
+  const value = {
+    sceneManager,
+    loader,
+    measurementManager,
+    markerManager,
+    cameraAnimator,
+    exporter,
+    minimap,
+    clipManager,
+    setSceneManager,
+    setLoader,
+    setMeasurementManager,
+    setMarkerManager,
+    setCameraAnimator,
+    setExporter,
+    setMinimap,
+    setClipManager,
+    activeTool,
+    setActiveTool,
+    pointBudget,
+    setPointBudget,
+    pointSize,
+    setPointSize,
+    fps,
+    setFps,
+    pointCount,
+    setPointCount,
+    measurementList,
+    setMeasurementList,
+    showMarkers,
+    setShowMarkers,
+    showMinimap,
+    setShowMinimap,
+    selectedCamera,
+    setSelectedCamera,
+    clipBoxEntries,
+    setClipBoxEntries,
+    selectedClipBoxId,
+    setSelectedClipBoxId,
+    colorMode,
+    setColorMode,
+    navigationMode,
+    setNavigationMode,
+    projection,
+    setProjection,
+    displaySettings,
+    setDisplaySettings,
+    config
+  };
+  return /* @__PURE__ */ jsxRuntime.jsx(ViewerContext.Provider, { value, children });
+}
+var ViewerContext;
+var init_viewer_provider = __esm({
+  "src/providers/viewer-provider.tsx"() {
+    "use client";
+    init_dist();
+    ViewerContext = React14.createContext(null);
+  }
+});
+function useData() {
+  const ctx = React14.useContext(DataContext);
+  if (!ctx) throw new Error("useData must be used inside <DataProvider>");
+  return ctx;
+}
+function DataProvider({ adapter, children }) {
+  const [cameras, setCameras] = React14.useState([]);
+  const [metadata, setMetadata] = React14.useState(null);
+  const [loading, setLoading] = React14.useState(true);
+  const [error, setError] = React14.useState(null);
+  const [rev, setRev] = React14.useState(0);
+  React14.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const load = async () => {
+      try {
+        const [cams, meta] = await Promise.allSettled([
+          adapter.fetchJson("cameras.json"),
+          adapter.fetchJson("metadata.json")
+        ]);
+        if (cancelled) return;
+        if (cams.status === "fulfilled") {
+          const resolved = (cams.value ?? []).map((cam) => ({
+            ...cam,
+            image: cam.image ? adapter.resolveUrl(cam.image) : null,
+            thumbnail: cam.thumbnail ? adapter.resolveUrl(cam.thumbnail) : null
+          }));
+          setCameras(resolved);
+        }
+        if (meta.status === "fulfilled") setMetadata(meta.value);
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [adapter, rev]);
+  const reload = () => setRev((r) => r + 1);
+  return /* @__PURE__ */ jsxRuntime.jsx(DataContext.Provider, { value: { cameras, metadata, loading, error, reload }, children });
+}
+var DataContext;
+var init_data_provider = __esm({
+  "src/providers/data-provider.tsx"() {
+    "use client";
+    DataContext = React14.createContext(null);
+  }
+});
+
+// src/i18n/en.ts
+exports.en = void 0;
+var init_en = __esm({
+  "src/i18n/en.ts"() {
+    exports.en = {
+      toolbar: {
+        viewTop: "Top view",
+        viewTopLabel: "T",
+        viewFront: "Front view",
+        viewFrontLabel: "Fr",
+        viewBack: "Back view",
+        viewBackLabel: "Bk",
+        viewLeft: "Left view",
+        viewLeftLabel: "L",
+        viewRight: "Right view",
+        viewRightLabel: "R",
+        viewBottom: "Bottom view",
+        viewBottomLabel: "Bt",
+        budget: "Budget",
+        pointBudgetTitle: (m) => `Point budget: ${m.toFixed(1)}M`,
+        size: "Size",
+        pointSizeTitle: (s) => `Point size: ${s.toFixed(1)}`,
+        panoramas: "Panoramas",
+        togglePanoramas: "Toggle panorama markers",
+        minimap: "Minimap",
+        toggleMinimap: "Toggle minimap",
+        clouds: "Clouds",
+        cloudSelector: "Point cloud selector",
+        theme: "Theme",
+        switchToLight: "Switch to light",
+        switchToDark: "Switch to dark",
+        about: "About",
+        sidebar: "Sidebar",
+        toggleSidebar: "Toggle sidebar",
+        colorMode: "Color mode",
+        colorRgb: "RGB",
+        colorElevation: "Elevation",
+        colorIntensity: "Intensity",
+        colorIntensityGradient: "Intensity Gradient",
+        colorClassification: "Classification",
+        colorReturnNumber: "Return Number",
+        colorSource: "Source",
+        quality: "Quality",
+        qualityPerformance: "Performance",
+        qualityBalanced: "Balanced",
+        qualityHigh: "High Quality",
+        navOrbit: "Orbit",
+        navFly: "Fly",
+        navEarth: "Earth",
+        navOrbitTitle: "Orbit navigation \u2014 rotate around target",
+        navFlyTitle: "Fly navigation \u2014 WASD + drag to look",
+        navEarthTitle: "Earth navigation \u2014 pan-focused, horizon locked",
+        camPerspective: "Persp",
+        camOrthographic: "Ortho",
+        camPerspectiveTitle: "Perspective camera",
+        camOrthographicTitle: "Orthographic camera"
+      },
+      exportPanel: {
+        exportImageTitle: "Export orthographic image",
+        title: "Export Image",
+        view: "View",
+        viewTop: "Top (Plan)",
+        viewFront: "Front",
+        viewSide: "Side",
+        viewBack: "Back",
+        scale: "Scale",
+        background: "Background",
+        bgWhite: "white",
+        bgBlack: "black",
+        bgTransparent: "\u03B1",
+        format: "Format",
+        exporting: "Exporting\u2026",
+        download: "Download"
+      },
+      toolRail: {
+        measureGroup: "M",
+        sectionGroup: "S",
+        measurePoint: "Point coordinate",
+        measureDistance: "Distance",
+        measureHeight: "Height difference",
+        measureArea: "Area",
+        measureVolume: "Volume",
+        measureAngle: "Angle",
+        measureProfile: "Profile",
+        clearMeasurements: "Clear all measurements",
+        drawClipBox: "Draw clip box (drag in viewport)",
+        clipModeKeepInside: "Mode: keep inside (click to invert)",
+        clipModeKeepOutside: "Mode: keep outside (click to invert)",
+        removeClipBox: "Remove clip box"
+      },
+      sidebar: {
+        tabPanoramas: "Panoramas",
+        tabScene: "Scene",
+        tabMeasurements: "Measurements",
+        tabClassification: "Classification",
+        tabScenes: "Scenes"
+      },
+      scenePanel: {
+        pointClouds: "Point Clouds",
+        noCloudLoaded: "No cloud loaded",
+        measurements: "Measurements",
+        clearAll: "Clear all",
+        none: "None",
+        sections: "Sections",
+        sectionHint: "Use toolbar to add clipping volumes",
+        clipModeNote: "Clip mode applies to all boxes"
+      },
+      panoPanel: {
+        searchPlaceholder: "Search panoramas\u2026",
+        noResults: "No panoramas found",
+        flyTo: "Fly to"
+      },
+      classificationPanel: {
+        title: "LAS Classes",
+        all: "All",
+        none: "None",
+        classLabels: {
+          0: "Never classified",
+          1: "Unclassified",
+          2: "Ground",
+          3: "Low Vegetation",
+          4: "Medium Vegetation",
+          5: "High Vegetation",
+          6: "Building",
+          7: "Low Point (Noise)",
+          9: "Water",
+          17: "Bridge Deck",
+          18: "High Noise"
+        }
+      },
+      measurementsPanel: {
+        noMeasurements: "No measurements yet.",
+        useMeasureToolHint: "Use the toolbar to start measuring.",
+        measurementCount: (n) => `${n} measurement${n === 1 ? "" : "s"}`,
+        downloadCsv: "Download CSV",
+        csv: "CSV",
+        clearAll: "Clear all",
+        typePoint: "Point",
+        typeDistance: "Distance",
+        typeHeight: "Height",
+        typeArea: "Area",
+        typeVolume: "Volume",
+        typeAngle: "Angle",
+        typeProfile: "Profile"
+      },
+      viewport: {
+        overview: "OVERVIEW",
+        hintPoint: "Click to place point \u2022 Esc to cancel",
+        hintDistance: "Click 2 points \u2022 Right-click to finish",
+        hintHeight: "Click start then end point",
+        hintArea: "Click polygon vertices \u2022 Right-click to close",
+        hintAngle: "Click 3 points (vertex is middle)",
+        hintSectionBox: "Drag to define clipping box",
+        initialisingRenderer: "Initialising renderer\u2026",
+        statusPts: (m) => `${m.toFixed(1)}M pts`,
+        statusBudget: (m) => `Budget: ${m.toFixed(1)}M`,
+        statusFps: (fps) => `${fps} fps`
+      },
+      renderingSettings: {
+        title: "Rendering Settings",
+        rgbSection: "RGB Adjustments",
+        intensitySection: "Intensity Adjustments",
+        elevationSection: "Elevation Range",
+        generalSection: "General",
+        gamma: "Gamma",
+        brightness: "Brightness",
+        contrast: "Contrast",
+        range: "Range",
+        elevMin: "Min Z",
+        elevMax: "Max Z",
+        opacity: "Opacity",
+        reset: "Reset to defaults"
+      },
+      scenesPanel: {
+        saveScene: "Save Current View",
+        namePlaceholder: "Scene name\u2026",
+        save: "Save",
+        savedScenes: "Saved Scenes",
+        noScenes: "No saved scenes yet.",
+        restore: "Restore scene",
+        exportJson: "Export scenes as JSON",
+        importJson: "Import scenes from JSON"
+      },
+      displaySettings: {
+        title: "Display Settings",
+        presetsTab: "Presets",
+        advancedTab: "Advanced",
+        preset_compact: "Compact",
+        preset_compact_desc: "Small labels & markers",
+        preset_standard: "Standard",
+        preset_standard_desc: "Default sizes",
+        preset_prominent: "Prominent",
+        preset_prominent_desc: "Large labels & markers",
+        measurementsSection: "Measurements",
+        lineWidth: "Line Width",
+        labelScale: "Label Size",
+        sphereRadius: "Point Size",
+        markersSection: "Panorama Markers",
+        markerScale: "Sphere Size",
+        markerOpacity: "Sphere Opacity",
+        markerLabelScale: "Label Size"
+      },
+      about: {
+        title: "About",
+        productName: "PanoCloud Viewer",
+        description: "A modular point cloud and panorama viewer built with Next.js 15, potree-core, Three.js, and shadcn/ui.",
+        engineLabel: "Engine: potree-core + Three.js",
+        panoramasLabel: "Panoramas: Pannellum 2.5.6",
+        uiLabel: "UI: shadcn/ui + Tailwind CSS"
+      },
+      panoViewer: {
+        close: "Close panorama"
+      }
+    };
+  }
+});
+function useLocale() {
+  return React14.useContext(LocaleContext);
+}
+function LocaleProvider({ locale = exports.en, children }) {
+  return /* @__PURE__ */ jsxRuntime.jsx(LocaleContext.Provider, { value: locale, children });
+}
+var LocaleContext;
+var init_locale_context = __esm({
+  "src/i18n/locale-context.tsx"() {
+    "use client";
+    init_en();
+    LocaleContext = React14.createContext(exports.en);
+  }
+});
+function cn(...inputs) {
+  return tailwindMerge.twMerge(clsx.clsx(inputs));
+}
+var init_utils = __esm({
+  "src/lib/utils.ts"() {
+    init_dist();
   }
 });
 
@@ -3296,18 +3335,21 @@ var init_viewport = __esm({
     init_viewer_provider();
     init_data_provider();
     init_locale_context();
-    init_scene_manager();
-    init_point_cloud_loader();
-    init_measurement_manager();
-    init_marker_manager();
-    init_camera_animator();
-    init_export_manager();
-    init_minimap_renderer();
-    init_clip_manager();
-    init_axis_widget();
-    init_file_source_adapter();
+    init_dist();
+    init_dist();
+    init_dist();
+    init_dist();
+    init_dist();
+    init_dist();
+    init_dist();
+    init_dist();
+    init_dist();
+    init_dist();
   }
 });
+
+// src/index.ts
+init_dist();
 var ThemeContext = React14.createContext(null);
 function useTheme() {
   const ctx = React14.useContext(ThemeContext);
@@ -3619,7 +3661,7 @@ function DisplayControls() {
 // src/components/toolbar/export-tools.tsx
 init_viewer_provider();
 init_locale_context();
-init_export_manager();
+init_dist();
 function ExportTools() {
   const { exporter } = useViewer();
   const t = useLocale().exportPanel;
@@ -4436,9 +4478,9 @@ function ClassificationPanel() {
       if (cloud?.material) {
         const mat = cloud.material;
         if (mat.classification) {
-          const THREE14 = window.THREE;
+          const THREE3 = window.THREE;
           const hexColor = CLASS_DEFS.find((c) => c.code === code)?.color ?? "#ffffff";
-          mat.classification[code] = { visible: next[code], color: THREE14 ? new THREE14.Color(hexColor) : hexColor };
+          mat.classification[code] = { visible: next[code], color: THREE3 ? new THREE3.Color(hexColor) : hexColor };
         }
       }
       return next;
@@ -4477,111 +4519,7 @@ function ClassificationPanel() {
 // src/components/sidebar/scenes-panel.tsx
 init_viewer_provider();
 init_locale_context();
-
-// src/core/presentation-manager.ts
-var MAX_SCENES = 50;
-var _nextId = 1;
-function genSceneId() {
-  return `scene_${Date.now()}_${_nextId++}`;
-}
-var PresentationManager = class {
-  storageKey;
-  scenes = [];
-  onChange;
-  constructor(sourceKey) {
-    this.storageKey = `pcv_scenes_${sourceKey}`;
-    this.load();
-  }
-  load() {
-    try {
-      const raw = localStorage.getItem(this.storageKey);
-      if (raw) this.scenes = JSON.parse(raw);
-    } catch {
-      this.scenes = [];
-    }
-  }
-  persist() {
-    try {
-      localStorage.setItem(this.storageKey, JSON.stringify(this.scenes));
-    } catch {
-    }
-    this.onChange?.(this.getScenes());
-  }
-  getScenes() {
-    return [...this.scenes];
-  }
-  addScene(scene) {
-    const entry = {
-      ...scene,
-      id: genSceneId(),
-      createdAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    this.scenes.unshift(entry);
-    if (this.scenes.length > MAX_SCENES) this.scenes.length = MAX_SCENES;
-    this.persist();
-    return entry;
-  }
-  removeScene(id) {
-    this.scenes = this.scenes.filter((s) => s.id !== id);
-    this.persist();
-  }
-  renameScene(id, name) {
-    const scene = this.scenes.find((s) => s.id === id);
-    if (scene) {
-      scene.name = name;
-      this.persist();
-    }
-  }
-  /** Export all scenes as a JSON string (for sharing / backup) */
-  exportJSON() {
-    return JSON.stringify(this.scenes, null, 2);
-  }
-  /** Import scenes from JSON string, merging with existing */
-  importJSON(json) {
-    try {
-      const imported = JSON.parse(json);
-      if (!Array.isArray(imported)) return 0;
-      const existingIds = new Set(this.scenes.map((s) => s.id));
-      let count = 0;
-      for (const scene of imported) {
-        if (!scene.id || !scene.name || !scene.camera) continue;
-        if (existingIds.has(scene.id)) {
-          scene.id = genSceneId();
-        }
-        this.scenes.push(scene);
-        count++;
-      }
-      if (this.scenes.length > MAX_SCENES) this.scenes.length = MAX_SCENES;
-      this.persist();
-      return count;
-    } catch {
-      return 0;
-    }
-  }
-  clear() {
-    this.scenes = [];
-    this.persist();
-  }
-};
-function captureScene(name, cameraPos, cameraTarget, clipBoxes, colorMode, pointSize, pointBudget) {
-  return {
-    name,
-    camera: {
-      position: [cameraPos.x, cameraPos.y, cameraPos.z],
-      target: [cameraTarget.x, cameraTarget.y, cameraTarget.z]
-    },
-    clipBoxes: clipBoxes.map((b) => ({
-      name: b.name,
-      min: [b.box.min.x, b.box.min.y, b.box.min.z],
-      max: [b.box.max.x, b.box.max.y, b.box.max.z],
-      mode: b.mode,
-      visible: b.visible
-    })),
-    colorMode,
-    pointSize,
-    pointBudget
-  };
-}
+init_dist();
 function InlineEditSceneName({ value, onSave }) {
   const [editing, setEditing] = React14.useState(false);
   const [draft, setDraft] = React14.useState(value);
@@ -4646,7 +4584,7 @@ function ScenesPanel() {
   const fileInputRef = React14.useRef(null);
   React14.useEffect(() => {
     const key = config.source.type === "s3" ? config.source.baseUrl : config.source.type === "electron" ? config.source.basePath : "local";
-    const pm = new PresentationManager(key);
+    const pm = new exports.PresentationManager(key);
     pm.onChange = (s) => setScenes(s);
     pmRef.current = pm;
     setScenes(pm.getScenes());
@@ -5211,7 +5149,7 @@ function WorkspaceLayout({ className }) {
 }
 
 // src/components/pano-cloud-viewer.tsx
-init_file_source_adapter();
+init_dist();
 var Viewport3 = React14.lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
 function ViewportFallback2() {
   return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-full h-full flex items-center justify-center bg-[hsl(var(--background))]", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex flex-col items-center gap-3", children: [
@@ -5823,7 +5761,7 @@ function ViewSettingsPalette() {
 // src/layouts/workstation/export-palette.tsx
 init_utils();
 init_viewer_provider();
-init_export_manager();
+init_dist();
 var VIEWS = [
   { value: "top", label: "Top" },
   { value: "front", label: "Front" },
@@ -6017,18 +5955,203 @@ function AboutDialog({ onClose }) {
   ) });
 }
 
-// src/index.ts
-init_scene_manager();
-init_point_cloud_loader();
-init_camera_animator();
-init_marker_manager();
-init_measurement_manager();
-init_export_manager();
-init_minimap_renderer();
-init_clip_manager();
-init_axis_widget();
-init_file_source_adapter();
-init_types();
+// src/components/overlays/display-settings-dialog.tsx
+init_utils();
+init_viewer_provider();
+init_locale_context();
+init_dist();
+var tabTriggerClass = "px-3 py-1.5 text-xs font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-[hsl(var(--brand))] -mb-px transition-colors";
+var PRESET_ICONS = {
+  compact: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Minus, { size: 18 }),
+  standard: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Circle, { size: 18 }),
+  prominent: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Plus, { size: 18 })
+};
+function PresetCard({
+  preset,
+  label,
+  description,
+  active,
+  onClick
+}) {
+  return /* @__PURE__ */ jsxRuntime.jsxs(
+    "button",
+    {
+      type: "button",
+      onClick,
+      className: cn(
+        "flex flex-col items-center gap-2 rounded-md border p-3 text-center transition-colors",
+        "hover:bg-[hsl(var(--muted)/.4)]",
+        active ? "border-[hsl(var(--brand))] bg-[hsl(var(--brand)/.08)]" : "border-[hsl(var(--border))]"
+      ),
+      children: [
+        /* @__PURE__ */ jsxRuntime.jsx(
+          "span",
+          {
+            className: cn(
+              "text-muted-foreground",
+              active && "text-[hsl(var(--brand))]"
+            ),
+            children: PRESET_ICONS[preset]
+          }
+        ),
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-xs font-semibold", children: label }),
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-[10px] leading-tight text-muted-foreground", children: description })
+      ]
+    }
+  );
+}
+function SettingsSection({
+  title,
+  children
+}) {
+  return /* @__PURE__ */ jsxRuntime.jsxs("div", { children: [
+    /* @__PURE__ */ jsxRuntime.jsx("h4", { className: "mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground", children: title }),
+    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "space-y-3", children })
+  ] });
+}
+function SliderRow({
+  label,
+  min,
+  max,
+  step,
+  value,
+  onChange
+}) {
+  return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex items-center gap-3", children: [
+    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "w-24 shrink-0 text-xs text-muted-foreground", children: label }),
+    /* @__PURE__ */ jsxRuntime.jsx(
+      "input",
+      {
+        type: "range",
+        className: "pcv-slider flex-1",
+        min,
+        max,
+        step,
+        value,
+        onChange: (e) => onChange(parseFloat(e.target.value))
+      }
+    ),
+    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "w-10 text-right text-xs tabular-nums text-muted-foreground", children: value.toFixed(step < 0.1 ? 2 : 1) })
+  ] });
+}
+function DisplaySettingsDialog({
+  open,
+  onOpenChange
+}) {
+  const viewer = useViewer();
+  const [localSettings, setLocalSettings] = React14.useState(
+    exports.DISPLAY_PRESETS.standard
+  );
+  const settings = viewer.displaySettings ?? localSettings;
+  const setSettings = viewer.setDisplaySettings ?? setLocalSettings;
+  const t = useLocale().displaySettings;
+  const applyPreset = (preset) => {
+    setSettings({ ...exports.DISPLAY_PRESETS[preset] });
+  };
+  const updateField = (key, value) => {
+    setSettings({ ...settings, [key]: value, preset: settings.preset });
+  };
+  return /* @__PURE__ */ jsxRuntime.jsx(Dialog__namespace.Root, { open, onOpenChange, children: /* @__PURE__ */ jsxRuntime.jsxs(Dialog__namespace.Portal, { children: [
+    /* @__PURE__ */ jsxRuntime.jsx(Dialog__namespace.Overlay, { className: "fixed inset-0 z-50 bg-black/50" }),
+    /* @__PURE__ */ jsxRuntime.jsxs(Dialog__namespace.Content, { className: "fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-[420px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] shadow-xl", children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex items-center justify-between border-b border-[hsl(var(--border))] px-4 py-3", children: [
+        /* @__PURE__ */ jsxRuntime.jsx(Dialog__namespace.Title, { className: "text-sm font-semibold", children: t.title }),
+        /* @__PURE__ */ jsxRuntime.jsx(Dialog__namespace.Close, { className: "rounded p-1 text-muted-foreground hover:bg-[hsl(var(--muted)/.6)]", children: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.X, { size: 14 }) })
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsxs(Tabs__namespace.Root, { defaultValue: "presets", className: "px-4 py-3", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs(Tabs__namespace.List, { className: "mb-4 flex gap-1 border-b border-[hsl(var(--border))]", children: [
+          /* @__PURE__ */ jsxRuntime.jsx(Tabs__namespace.Trigger, { value: "presets", className: tabTriggerClass, children: t.presetsTab }),
+          /* @__PURE__ */ jsxRuntime.jsx(Tabs__namespace.Trigger, { value: "advanced", className: tabTriggerClass, children: t.advancedTab })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx(Tabs__namespace.Content, { value: "presets", children: /* @__PURE__ */ jsxRuntime.jsx("div", { className: "grid grid-cols-3 gap-3", children: ["compact", "standard", "prominent"].map(
+          (preset) => /* @__PURE__ */ jsxRuntime.jsx(
+            PresetCard,
+            {
+              preset,
+              label: t[`preset_${preset}`] ?? preset,
+              description: t[`preset_${preset}_desc`] ?? "",
+              active: settings.preset === preset,
+              onClick: () => applyPreset(preset)
+            },
+            preset
+          )
+        ) }) }),
+        /* @__PURE__ */ jsxRuntime.jsx(Tabs__namespace.Content, { value: "advanced", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "space-y-4", children: [
+          /* @__PURE__ */ jsxRuntime.jsxs(SettingsSection, { title: t.measurementsSection, children: [
+            /* @__PURE__ */ jsxRuntime.jsx(
+              SliderRow,
+              {
+                label: t.lineWidth,
+                min: 1,
+                max: 6,
+                step: 0.5,
+                value: settings.measurementLineWidth,
+                onChange: (v) => updateField("measurementLineWidth", v)
+              }
+            ),
+            /* @__PURE__ */ jsxRuntime.jsx(
+              SliderRow,
+              {
+                label: t.labelScale,
+                min: 0.3,
+                max: 2.5,
+                step: 0.1,
+                value: settings.measurementLabelScale,
+                onChange: (v) => updateField("measurementLabelScale", v)
+              }
+            ),
+            /* @__PURE__ */ jsxRuntime.jsx(
+              SliderRow,
+              {
+                label: t.sphereRadius,
+                min: 0.02,
+                max: 0.5,
+                step: 0.01,
+                value: settings.measurementSphereRadius,
+                onChange: (v) => updateField("measurementSphereRadius", v)
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxRuntime.jsxs(SettingsSection, { title: t.markersSection, children: [
+            /* @__PURE__ */ jsxRuntime.jsx(
+              SliderRow,
+              {
+                label: t.markerScale,
+                min: 0.2,
+                max: 3,
+                step: 0.1,
+                value: settings.markerSphereScale,
+                onChange: (v) => updateField("markerSphereScale", v)
+              }
+            ),
+            /* @__PURE__ */ jsxRuntime.jsx(
+              SliderRow,
+              {
+                label: t.markerOpacity,
+                min: 0.1,
+                max: 1,
+                step: 0.05,
+                value: settings.markerSphereOpacity,
+                onChange: (v) => updateField("markerSphereOpacity", v)
+              }
+            ),
+            /* @__PURE__ */ jsxRuntime.jsx(
+              SliderRow,
+              {
+                label: t.markerLabelScale,
+                min: 0.3,
+                max: 2.5,
+                step: 0.1,
+                value: settings.markerLabelScale,
+                onChange: (v) => updateField("markerLabelScale", v)
+              }
+            )
+          ] })
+        ] }) })
+      ] })
+    ] })
+  ] }) });
+}
 
 // src/hooks/use-navigation-actions.ts
 init_viewer_provider();
@@ -6197,7 +6320,7 @@ function useDisplayActions() {
 
 // src/hooks/use-export-actions.ts
 init_viewer_provider();
-init_export_manager();
+init_dist();
 function useExportActions() {
   const { exporter } = useViewer();
   const capture = React14.useCallback(async (options) => {
@@ -6230,7 +6353,7 @@ function useVisibilityActions() {
 
 // src/hooks/use-display-settings.ts
 init_viewer_provider();
-init_types();
+init_dist();
 function useDisplaySettings() {
   const viewer = useViewer();
   const [localSettings, setLocalSettings] = React14.useState(exports.DISPLAY_PRESETS.standard);
@@ -6487,6 +6610,7 @@ exports.ClassificationPanel = ClassificationPanel;
 exports.CollapsibleSidebar = CollapsibleSidebar;
 exports.DataProvider = DataProvider;
 exports.DisplayControls = DisplayControls;
+exports.DisplaySettingsDialog = DisplaySettingsDialog;
 exports.ExportTools = ExportTools;
 exports.FloatingPalette = FloatingPalette;
 exports.LocaleProvider = LocaleProvider;
@@ -6497,7 +6621,6 @@ exports.MinimalLayout = MinimalLayout;
 exports.PanoCloudViewer = PanoCloudViewer;
 exports.PanoPanel = PanoPanel;
 exports.PanoViewer = PanoViewer;
-exports.PresentationManager = PresentationManager;
 exports.RenderingSettings = RenderingSettings;
 exports.ScenePanel = ScenePanel;
 exports.ScenesPanel = ScenesPanel;

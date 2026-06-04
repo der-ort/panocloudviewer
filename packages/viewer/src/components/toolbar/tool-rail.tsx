@@ -8,8 +8,8 @@ import {
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
-import type { ActiveTool, MeasurementType } from "../../types";
-import type { ClipMode } from "../../core/clip-manager";
+import type { ActiveTool, MeasurementType } from "@der-ort/pano-cloud-viewer-core";
+import type { ClipMode } from "@der-ort/pano-cloud-viewer-core";
 
 interface RailBtnProps {
   icon: React.ReactNode;

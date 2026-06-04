@@ -4,7 +4,7 @@ import React from "react";
 import { MapPin, Ruler, ArrowUpDown, Pentagon, Package, Triangle, Waypoints } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { ToolbarIconBtn } from "./main-toolbar";
-import type { ActiveTool, MeasurementType } from "../../types";
+import type { ActiveTool, MeasurementType } from "@der-ort/pano-cloud-viewer-core";
 
 const TOOLS: { type: MeasurementType; tool: ActiveTool; icon: React.ReactNode; title: string }[] = [
   { type: "point",    tool: "measure-point",    icon: <MapPin size={14} />,       title: "Point coordinate" },

@@ -7,8 +7,8 @@ import { DataProvider } from "../providers/data-provider";
 import { LocaleProvider } from "../i18n/locale-context";
 import { WorkspaceLayout } from "./workspace-layout";
 import { PanoViewer } from "./overlays/pano-viewer";
-import { createAdapter } from "../data/file-source-adapter";
-import type { PointCloudSource } from "../types";
+import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
+import type { PointCloudSource } from "@der-ort/pano-cloud-viewer-core";
 import type { ViewerLocale } from "../i18n/types";
 
 const Viewport = lazy(() => import("./viewport").then(m => ({ default: m.Viewport })));

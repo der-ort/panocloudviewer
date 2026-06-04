@@ -2,8 +2,8 @@
 
 import { useCallback } from "react";
 import { useViewer } from "../providers/viewer-provider";
-import { ExportManager } from "../core/export-manager";
-import type { ExportOptions } from "../types";
+import { ExportManager } from "@der-ort/pano-cloud-viewer-core";
+import type { ExportOptions } from "@der-ort/pano-cloud-viewer-core";
 
 export function useExportActions() {
   const { exporter } = useViewer();

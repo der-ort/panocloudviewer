@@ -4,9 +4,9 @@ import React, { useState, useCallback } from "react";
 import { Download, Image } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
-import { ExportManager } from "../../core/export-manager";
+import { ExportManager } from "@der-ort/pano-cloud-viewer-core";
 import { FloatingPalette } from "./floating-palette";
-import type { ExportView, ExportFormat } from "../../types";
+import type { ExportView, ExportFormat } from "@der-ort/pano-cloud-viewer-core";
 
 const VIEWS: { value: ExportView; label: string }[] = [
   { value: "top", label: "Top" },

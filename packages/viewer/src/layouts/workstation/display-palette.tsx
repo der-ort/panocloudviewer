@@ -5,7 +5,7 @@ import { Palette } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { FloatingPalette } from "./floating-palette";
-import type { ColorMode } from "../../core/point-cloud-loader";
+import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
 
 const COLOR_MODES: { value: ColorMode; label: string }[] = [
   { value: "rgb", label: "RGB" },

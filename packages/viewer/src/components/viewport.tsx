@@ -5,16 +5,16 @@ import { cn } from "../lib/utils";
 import { useViewer } from "../providers/viewer-provider";
 import { useData } from "../providers/data-provider";
 import { useLocale } from "../i18n/locale-context";
-import { SceneManager } from "../core/scene-manager";
-import { PointCloudLoader } from "../core/point-cloud-loader";
-import { MeasurementManager } from "../core/measurement-manager";
-import { MarkerManager } from "../core/marker-manager";
-import { CameraAnimator } from "../core/camera-animator";
-import { ExportManager } from "../core/export-manager";
-import { MinimapRenderer } from "../core/minimap-renderer";
-import { ClipManager } from "../core/clip-manager";
-import { AxisWidget } from "../core/axis-widget";
-import { createAdapter } from "../data/file-source-adapter";
+import { SceneManager } from "@der-ort/pano-cloud-viewer-core";
+import { PointCloudLoader } from "@der-ort/pano-cloud-viewer-core";
+import { MeasurementManager } from "@der-ort/pano-cloud-viewer-core";
+import { MarkerManager } from "@der-ort/pano-cloud-viewer-core";
+import { CameraAnimator } from "@der-ort/pano-cloud-viewer-core";
+import { ExportManager } from "@der-ort/pano-cloud-viewer-core";
+import { MinimapRenderer } from "@der-ort/pano-cloud-viewer-core";
+import { ClipManager } from "@der-ort/pano-cloud-viewer-core";
+import { AxisWidget } from "@der-ort/pano-cloud-viewer-core";
+import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
 import * as THREE from "three";
 
 interface ViewportProps {
@@ -513,7 +513,7 @@ export function Viewport({ className }: ViewportProps) {
 
     // Measurement clicks — snap to point cloud via GPU picking (volume uses drag, not clicks)
     if (activeTool.startsWith("measure-") && activeTool !== "measure-volume" && measureRef.current) {
-      const type = activeTool.replace("measure-", "") as import("../types").MeasurementType;
+      const type = activeTool.replace("measure-", "") as import("@der-ort/pano-cloud-viewer-core").MeasurementType;
       // Try potree GPU pick first, fall back to plane projection
       const hit = sm.pickPoint(nx, ny) ?? projectToPlaneZ(nx, ny, sm.controls.target.z);
       if (hit) {

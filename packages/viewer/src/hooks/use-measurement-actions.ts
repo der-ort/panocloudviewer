@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { useViewer } from "../providers/viewer-provider";
 import { exportMeasurementsCSV } from "../lib/utils";
-import type { ActiveTool, MeasurementType } from "../types";
+import type { ActiveTool, MeasurementType } from "@der-ort/pano-cloud-viewer-core";
 
 export function useMeasurementActions() {
   const { activeTool, setActiveTool, measurementManager, measurementList, setMeasurementList } = useViewer();

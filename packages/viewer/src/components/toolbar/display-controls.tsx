@@ -3,8 +3,8 @@
 import React, { useState } from "react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
-import type { ColorMode } from "../../core/point-cloud-loader";
-import type { CameraProjection, NavigationMode } from "../../types";
+import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
+import type { CameraProjection, NavigationMode } from "@der-ort/pano-cloud-viewer-core";
 
 const COLOR_MODES: { value: ColorMode; labelKey: string }[] = [
   { value: "rgb",                labelKey: "colorRgb" },

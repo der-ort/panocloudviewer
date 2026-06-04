@@ -15,7 +15,7 @@ import {
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { MinimalSettingsPopover } from "./minimal-settings-popover";
-import type { ActiveTool } from "../../types";
+import type { ActiveTool } from "@der-ort/pano-cloud-viewer-core";
 
 function GlassButton({
   icon,

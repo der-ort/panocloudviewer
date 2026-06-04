@@ -7,8 +7,8 @@ import { X, Minus, Circle, Plus } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
-import { DISPLAY_PRESETS } from "../../types";
-import type { DisplayPreset, DisplaySettings } from "../../types";
+import { DISPLAY_PRESETS } from "@der-ort/pano-cloud-viewer-core";
+import type { DisplayPreset, DisplaySettings } from "@der-ort/pano-cloud-viewer-core";
 
 /* ── Styling constants ───────────────────────────────────────────────── */
 

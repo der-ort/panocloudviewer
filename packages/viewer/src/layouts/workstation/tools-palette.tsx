@@ -8,8 +8,8 @@ import {
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { FloatingPalette } from "./floating-palette";
-import type { ActiveTool } from "../../types";
-import type { ClipMode } from "../../core/clip-manager";
+import type { ActiveTool } from "@der-ort/pano-cloud-viewer-core";
+import type { ClipMode } from "@der-ort/pano-cloud-viewer-core";
 
 function ToolBtn({ icon, label, active, onClick, disabled }: {
   icon: React.ReactNode; label: string; active?: boolean; onClick: () => void; disabled?: boolean;

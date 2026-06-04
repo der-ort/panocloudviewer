@@ -4,7 +4,7 @@ import React from "react";
 import { Camera, Map } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
-import type { ColorMode } from "../../core/point-cloud-loader";
+import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
 
 interface MinimalSettingsPopoverProps {
   onClose?: () => void;

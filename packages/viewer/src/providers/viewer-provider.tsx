@@ -1,18 +1,18 @@
 "use client";
 
 import React, { createContext, useContext, useRef, useState, useCallback, type ReactNode } from "react";
-import type { SceneManager } from "../core/scene-manager";
-import type { PointCloudLoader } from "../core/point-cloud-loader";
-import type { MeasurementManager } from "../core/measurement-manager";
-import type { MarkerManager } from "../core/marker-manager";
-import type { CameraAnimator } from "../core/camera-animator";
-import type { ExportManager } from "../core/export-manager";
-import type { MinimapRenderer } from "../core/minimap-renderer";
-import type { ClipManager } from "../core/clip-manager";
-import type { ClipBoxEntry } from "../core/clip-manager";
-import type { ColorMode } from "../core/point-cloud-loader";
-import type { ActiveTool, CameraData, CameraProjection, DisplaySettings, Measurement, NavigationMode, ViewerConfig } from "../types";
-import { DISPLAY_PRESETS } from "../types";
+import type { SceneManager } from "@der-ort/pano-cloud-viewer-core";
+import type { PointCloudLoader } from "@der-ort/pano-cloud-viewer-core";
+import type { MeasurementManager } from "@der-ort/pano-cloud-viewer-core";
+import type { MarkerManager } from "@der-ort/pano-cloud-viewer-core";
+import type { CameraAnimator } from "@der-ort/pano-cloud-viewer-core";
+import type { ExportManager } from "@der-ort/pano-cloud-viewer-core";
+import type { MinimapRenderer } from "@der-ort/pano-cloud-viewer-core";
+import type { ClipManager } from "@der-ort/pano-cloud-viewer-core";
+import type { ClipBoxEntry } from "@der-ort/pano-cloud-viewer-core";
+import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
+import type { ActiveTool, CameraData, CameraProjection, DisplaySettings, Measurement, NavigationMode, ViewerConfig } from "@der-ort/pano-cloud-viewer-core";
+import { DISPLAY_PRESETS } from "@der-ort/pano-cloud-viewer-core";
 
 interface ViewerContextValue {
   // Core managers (set after Three.js init)
@@ -101,7 +101,7 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const [measurementList, setMeasurementList] = useState<Measurement[]>([]);
   const [showMarkers, setShowMarkers] = useState(true);
   const [showMinimap, setShowMinimap] = useState(config.showMinimap ?? true);
-  const [selectedCamera, setSelectedCamera] = useState<import("../types").CameraData | null>(null);
+  const [selectedCamera, setSelectedCamera] = useState<import("@der-ort/pano-cloud-viewer-core").CameraData | null>(null);
   const [clipBoxEntries, setClipBoxEntries] = useState<ClipBoxEntry[]>([]);
   const [selectedClipBoxId, setSelectedClipBoxId] = useState<string | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>("rgb");
