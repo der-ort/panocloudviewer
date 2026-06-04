@@ -18,9 +18,16 @@ interface DragState {
   startIntersect: THREE.Vector3;
   /** The initial value of box.min[axis] or box.max[axis] at drag start */
   startValue: number;
+  /** World-space unit vector of the box-local face axis (Z-rotated). */
+  worldAxis: THREE.Vector3;
 }
 
-const HANDLE_COLOR = 0xdcd546;
+/** Per-axis base colors: X=red, Y=green, Z=blue. */
+const AXIS_COLOR: Record<FaceAxis, number> = {
+  x: 0xef4444,
+  y: 0x22c55e,
+  z: 0x3b82f6,
+};
 const HANDLE_HOVER_COLOR = 0xffffff;
 const HANDLE_DRAG_COLOR = 0xf97316;
 
@@ -40,6 +47,8 @@ export class FaceHandleController {
   private raycaster = new THREE.Raycaster();
   private group: THREE.Group;
   private disposed = false;
+  /** Rotation of the box about the world Z axis, in radians. */
+  private _rotationZ = 0;
 
   constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement) {
     this.scene = scene;
@@ -59,7 +68,7 @@ export class FaceHandleController {
     for (const axis of axes) {
       for (const sign of signs) {
         const mat = new THREE.MeshBasicMaterial({
-          color: HANDLE_COLOR,
+          color: AXIS_COLOR[axis],
           transparent: true,
           opacity: 0.7,
           depthTest: false,
@@ -79,6 +88,12 @@ export class FaceHandleController {
     this.onChange = onChange;
     this.updatePositions();
     for (const h of this.handles) h.mesh.visible = true;
+  }
+
+  /** Set the box's rotation about the world Z axis (radians) so handles follow it. */
+  setRotationZ(r: number): void {
+    this._rotationZ = r;
+    if (this.box) this.updatePositions();
   }
 
   detach(): void {
@@ -113,14 +128,21 @@ export class FaceHandleController {
     const diag = size.length();
     const radius = Math.max(0.05, Math.min(diag * 0.02, 2));
 
+    const cos = Math.cos(this._rotationZ);
+    const sin = Math.sin(this._rotationZ);
+
     for (const h of this.handles) {
-      const pos = center.clone();
+      // Face-center offset from the box center, in box-local (unrotated) space.
+      const offset = new THREE.Vector3();
       if (h.sign === 1) {
-        pos[h.axis] = this.box.max[h.axis];
+        offset[h.axis] = this.box.max[h.axis] - center[h.axis];
       } else {
-        pos[h.axis] = this.box.min[h.axis];
+        offset[h.axis] = this.box.min[h.axis] - center[h.axis];
       }
-      h.mesh.position.copy(pos);
+      // Rotate the offset around Z (Z component unchanged), then translate by center.
+      const rx = offset.x * cos - offset.y * sin;
+      const ry = offset.x * sin + offset.y * cos;
+      h.mesh.position.set(center.x + rx, center.y + ry, center.z + offset.z);
       h.mesh.scale.setScalar(radius);
     }
   }
@@ -151,9 +173,21 @@ export class FaceHandleController {
       ? this.box.max[handle.axis]
       : this.box.min[handle.axis];
 
-    this.drag = { handle, plane, startIntersect, startValue };
+    this.drag = {
+      handle, plane, startIntersect, startValue,
+      worldAxis: this.worldAxisFor(handle.axis),
+    };
     this.setHandleColor(handle, HANDLE_DRAG_COLOR);
     return true;
+  }
+
+  /** World-space unit vector for a box-local face axis, rotated by _rotationZ around Z. */
+  private worldAxisFor(axis: FaceAxis): THREE.Vector3 {
+    const cos = Math.cos(this._rotationZ);
+    const sin = Math.sin(this._rotationZ);
+    if (axis === "x") return new THREE.Vector3(cos, sin, 0);
+    if (axis === "y") return new THREE.Vector3(-sin, cos, 0);
+    return new THREE.Vector3(0, 0, 1);
   }
 
   /** Update the box during a drag. Call on pointermove. */
@@ -164,9 +198,11 @@ export class FaceHandleController {
     const currentIntersect = new THREE.Vector3();
     if (!this.raycaster.ray.intersectPlane(this.drag.plane, currentIntersect)) return;
 
-    // Compute delta along the face axis
+    // Project the world-space movement onto the (Z-rotated) box-local axis so
+    // dragging a face of a rotated box resizes along the box's own axis.
     const axis = this.drag.handle.axis;
-    const delta = currentIntersect[axis] - this.drag.startIntersect[axis];
+    const worldDelta = currentIntersect.clone().sub(this.drag.startIntersect);
+    const delta = worldDelta.dot(this.drag.worldAxis);
     const newValue = this.drag.startValue + delta;
 
     // Update the correct face, clamping so min < max with a minimum box size
@@ -186,7 +222,7 @@ export class FaceHandleController {
   /** End the drag. Call on pointerup. */
   onPointerUp(): void {
     if (this.drag) {
-      this.setHandleColor(this.drag.handle, HANDLE_COLOR);
+      this.setHandleColor(this.drag.handle, AXIS_COLOR[this.drag.handle.axis]);
       this.drag = null;
     }
   }
@@ -198,7 +234,7 @@ export class FaceHandleController {
     const hit = this.hitTest(clientX, clientY);
     if (hit !== this.hoveredHandle) {
       if (this.hoveredHandle) {
-        this.setHandleColor(this.hoveredHandle, HANDLE_COLOR);
+        this.setHandleColor(this.hoveredHandle, AXIS_COLOR[this.hoveredHandle.axis]);
       }
       this.hoveredHandle = hit;
       if (hit) {

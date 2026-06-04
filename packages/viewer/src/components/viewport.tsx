@@ -59,8 +59,10 @@ export function Viewport({ className }: ViewportProps) {
   const animRef = useRef<CameraAnimator | null>(null);
   const axisRef = useRef<AxisWidget | null>(null);
 
-  // Clip-box drag state
-  const clipDragRef = useRef<{ startWorld: THREE.Vector3; planeZ: number } | null>(null);
+  // Clip-box cursor-drop state: current draft box + pointer-down screen pos
+  // (used to distinguish a placement click from an orbit drag).
+  const clipDraftRef = useRef<THREE.Box3 | null>(null);
+  const clipDownRef = useRef<{ x: number; y: number } | null>(null);
 
   // Volume measurement drag state (two-phase: footprint → height)
   const volumeDragRef = useRef<{
@@ -237,6 +239,11 @@ export function Viewport({ className }: ViewportProps) {
       volumeDragRef.current = null;
       measureRef.current?.setVolumeDraft(null);
     }
+    if (activeTool !== "section-box") {
+      clipDraftRef.current = null;
+      clipDownRef.current = null;
+      clipRef.current?.setDraft(null);
+    }
   }, [activeTool]);
 
   // Sync navigation mode
@@ -265,6 +272,32 @@ export function Viewport({ className }: ViewportProps) {
     const hit = new THREE.Vector3();
     return raycaster.ray.intersectPlane(plane, hit) ? hit : null;
   }, []);
+
+  // Build a section-box draft centered at the cursor's ground point, with each
+  // dimension capped at 1/3 of the project bounds.
+  const buildClipDraftAt = useCallback((nx: number, ny: number): THREE.Box3 | null => {
+    const sm = smRef.current;
+    if (!sm) return null;
+    const zMid = metaZRef.current
+      ? (metaZRef.current.min + metaZRef.current.max) / 2
+      : sm.controls.target.z;
+    const center = projectToPlaneZ(nx, ny, zMid);
+    if (!center) return null;
+
+    // Project bounds → per-axis cap at 1/3.
+    const wb = loaderRef.current?.worldBox;
+    const bounds = new THREE.Vector3(20, 20, 20);
+    if (wb && !wb.isEmpty()) wb.getSize(bounds);
+    const half = new THREE.Vector3(
+      Math.max(0.1, Math.min(bounds.x, bounds.x / 3)) / 2,
+      Math.max(0.1, Math.min(bounds.y, bounds.y / 3)) / 2,
+      Math.max(0.1, Math.min(bounds.z, bounds.z / 3)) / 2,
+    );
+    return new THREE.Box3(
+      center.clone().sub(half),
+      center.clone().add(half),
+    );
+  }, [projectToPlaneZ]);
 
   const getNDC = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -326,15 +359,10 @@ export function Viewport({ className }: ViewportProps) {
     }
 
     if (activeTool !== "section-box" || e.button !== 0) return;
-    e.preventDefault();
-    sm.controls.enabled = false;
-    const { nx, ny } = getNDC(e);
-    const planeZ = sm.controls.target.z;
-    const startWorld = projectToPlaneZ(nx, ny, planeZ);
-    if (startWorld) {
-      clipDragRef.current = { startWorld, planeZ };
-    }
-  }, [activeTool, projectToPlaneZ]);
+    // Cursor-drop placement: record the down position so mouseup can tell a
+    // placement click apart from an orbit drag. Controls stay enabled.
+    clipDownRef.current = { x: e.clientX, y: e.clientY };
+  }, [activeTool]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     // Face handle drag
@@ -378,20 +406,11 @@ export function Viewport({ className }: ViewportProps) {
       return;
     }
 
-    // Clip-box drag preview
-    if (clipDragRef.current && activeTool === "section-box") {
+    // Clip-box cursor-drop preview — draft box follows the cursor on the ground.
+    if (activeTool === "section-box") {
       const { nx, ny } = getNDC(e);
-      const endWorld = projectToPlaneZ(nx, ny, clipDragRef.current.planeZ);
-      if (!endWorld) return;
-      const { startWorld } = clipDragRef.current;
-      const sm = smRef.current;
-      if (!sm) return;
-      const zMin = metaZRef.current?.min ?? (sm.controls.target.z - 50);
-      const zMax = metaZRef.current?.max ?? (sm.controls.target.z + 50);
-      const box = new THREE.Box3(
-        new THREE.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
-        new THREE.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax),
-      );
+      const box = buildClipDraftAt(nx, ny);
+      clipDraftRef.current = box;
       clipRef.current?.setDraft(box);
       return;
     }
@@ -406,7 +425,7 @@ export function Viewport({ className }: ViewportProps) {
         measureRef.current.updateSnap(hit);
       }
     }
-  }, [activeTool, projectToPlaneZ]);
+  }, [activeTool, projectToPlaneZ, buildClipDraftAt]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const sm = smRef.current;
@@ -455,25 +474,28 @@ export function Viewport({ className }: ViewportProps) {
 
     if (sm) sm.controls.enabled = true;
 
-    if (!clipDragRef.current || activeTool !== "section-box") {
-      clipDragRef.current = null;
+    // Section-box cursor-drop: place a box on a click (down→up without an orbit drag).
+    if (activeTool === "section-box" && e.button === 0) {
+      const down = clipDownRef.current;
+      clipDownRef.current = null;
+      const DRAG_THRESHOLD = 5; // px — beyond this we treat it as an orbit drag, not a drop
+      const moved = down
+        ? Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_THRESHOLD
+        : true;
+      if (!moved) {
+        const { nx, ny } = getNDC(e);
+        const box = clipDraftRef.current ?? buildClipDraftAt(nx, ny);
+        if (box && !box.isEmpty() && clipRef.current) {
+          const entry = clipRef.current.addBox(box);
+          clipRef.current.selectBox(entry.id);
+          clipRef.current.setTransformMode("scale");
+          clipDraftRef.current = null;
+          clipRef.current.setDraft(null);
+        }
+      }
       return;
     }
-
-    const { nx, ny } = getNDC(e);
-    const endWorld = projectToPlaneZ(nx, ny, clipDragRef.current.planeZ);
-    if (endWorld && sm) {
-      const { startWorld } = clipDragRef.current;
-      const zMin = sm.controls.target.z - 50;
-      const zMax = sm.controls.target.z + 50;
-      const box = new THREE.Box3(
-        new THREE.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
-        new THREE.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax),
-      );
-      if (!box.isEmpty()) clipRef.current?.addBox(box);
-    }
-    clipDragRef.current = null;
-  }, [activeTool, projectToPlaneZ]);
+  }, [activeTool, buildClipDraftAt]);
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (activeTool === "section-box") return;
@@ -520,6 +542,9 @@ export function Viewport({ className }: ViewportProps) {
       measureRef.current.finish();
     }
     if (activeTool === "section-box") {
+      clipDraftRef.current = null;
+      clipDownRef.current = null;
+      clipRef.current?.setDraft(null);
       clipRef.current?.clear();
     }
   }, [activeTool]);

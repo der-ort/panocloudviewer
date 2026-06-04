@@ -10,6 +10,8 @@ export interface ClipBoxEntry {
   box: THREE.Box3;
   mode: ClipMode;
   visible: boolean;
+  /** Rotation about the world Z axis, in radians. Defaults to 0. */
+  rotationZ: number;
 }
 
 let _nextId = 1;
@@ -62,6 +64,7 @@ export class ClipManager {
       box: box.clone(),
       mode: "outside",
       visible: true,
+      rotationZ: 0,
     };
     this.entries.push(entry);
     this.updateHelper(entry);
@@ -107,6 +110,7 @@ export class ClipManager {
     this.pivot = new THREE.Mesh(geo, mat);
     this.pivot.position.copy(center);
     this.pivot.scale.copy(size);
+    this.pivot.rotation.set(0, 0, entry.rotationZ ?? 0);
     this.pivot.userData.clipId = id;
     this.sm.scene.add(this.pivot);
 
@@ -119,6 +123,7 @@ export class ClipManager {
         this.sm.scene, this.sm.camera, this.sm.renderer.domElement,
       );
     }
+    this._faceHandles.setRotationZ(entry.rotationZ ?? 0);
     this._faceHandles.attach(entry.box, () => {
       this.updateHelper(entry);
       this.applyAll();
@@ -160,6 +165,7 @@ export class ClipManager {
       if (this._faceHandles && this.selectedId) {
         const entry = this.entries.find(e => e.id === this.selectedId);
         if (entry && !this._faceHandles.isAttached()) {
+          this._faceHandles.setRotationZ(entry.rotationZ ?? 0);
           this._faceHandles.attach(entry.box, () => {
             this.updateHelper(entry);
             this.applyAll();
@@ -334,14 +340,25 @@ export class ClipManager {
     const entry = this.entries.find(e => e.id === this.selectedId);
     if (!entry) return;
 
-    const center = this.pivot.position.clone();
-    const halfSize = new THREE.Vector3(
-      Math.abs(this.pivot.scale.x) * 0.5,
-      Math.abs(this.pivot.scale.y) * 0.5,
-      Math.abs(this.pivot.scale.z) * 0.5,
-    );
-    entry.box.min.copy(center).sub(halfSize);
-    entry.box.max.copy(center).add(halfSize);
+    if (this._transformMode === "rotate") {
+      // Rotate is constrained to the world Z axis. Extract the Z component,
+      // store it on the entry, and flatten the pivot back to Z-only so the
+      // gizmo can never tilt the box off-axis.
+      const zRot = new THREE.Euler().setFromQuaternion(this.pivot.quaternion, "ZYX").z;
+      entry.rotationZ = zRot;
+      this.pivot.rotation.set(0, 0, zRot);
+      this._faceHandles?.setRotationZ(zRot);
+    } else {
+      // Translate (TransformControls) — box center follows the pivot, size unchanged.
+      const center = this.pivot.position.clone();
+      const halfSize = new THREE.Vector3(
+        Math.abs(this.pivot.scale.x) * 0.5,
+        Math.abs(this.pivot.scale.y) * 0.5,
+        Math.abs(this.pivot.scale.z) * 0.5,
+      );
+      entry.box.min.copy(center).sub(halfSize);
+      entry.box.max.copy(center).add(halfSize);
+    }
 
     this.updateHelper(entry);
     this.applyAll();
@@ -371,6 +388,10 @@ export class ClipManager {
       this.sm.scene.add(helper);
       this.helpers.set(entry.id, helper);
     }
+    // Box3Helper recomputes position/scale from the box each frame but leaves
+    // rotation untouched, so set rotation.z to match the oriented clip box.
+    const helper = this.helpers.get(entry.id);
+    if (helper) helper.rotation.z = entry.rotationZ ?? 0;
 
     // ── Semi-transparent fill ───────────────────────────────────────────────
     const center = new THREE.Vector3();
@@ -383,6 +404,7 @@ export class ClipManager {
       // Update in-place — avoids per-frame geometry allocation during drag
       existingFill.position.copy(center);
       existingFill.scale.copy(size);
+      existingFill.rotation.z = entry.rotationZ ?? 0;
     } else {
       const fillGeo = new THREE.BoxGeometry(1, 1, 1);
       const fillMat = new THREE.MeshBasicMaterial({
@@ -395,6 +417,7 @@ export class ClipManager {
       const fillMesh = new THREE.Mesh(fillGeo, fillMat);
       fillMesh.position.copy(center);
       fillMesh.scale.copy(size);
+      fillMesh.rotation.z = entry.rotationZ ?? 0;
       fillMesh.renderOrder = 2; // behind the wireframe (renderOrder 3)
       fillMesh.visible = entry.visible;
       this.sm.scene.add(fillMesh);
@@ -421,9 +444,10 @@ export class ClipManager {
         const center = new THREE.Vector3();
         entry.box.getSize(size);
         entry.box.getCenter(center);
-        const matrix = new THREE.Matrix4()
-          .makeScale(size.x, size.y, size.z)
-          .setPosition(center);
+        const q = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 0, 1), entry.rotationZ ?? 0,
+        );
+        const matrix = new THREE.Matrix4().compose(center, q, size);
         const inverse = matrix.clone().invert();
         return {
           box: entry.box.clone(),
