@@ -3,13 +3,12 @@
 import React from "react";
 import {
   MapPin, Ruler, ArrowUpDown, Pentagon, Package, Triangle, Waypoints,
-  BoxSelect, Scissors, RotateCcw, X, Move, Maximize2,
+  BoxSelect, X,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
 import type { ActiveTool, MeasurementType } from "@der-ort/pano-cloud-viewer-core";
-import type { ClipMode } from "@der-ort/pano-cloud-viewer-core";
 
 interface RailBtnProps {
   icon: React.ReactNode;
@@ -85,14 +84,6 @@ export function ToolRail() {
 
   const boxes = clipManager?.getBoxes() ?? [];
   const hasClipBox = boxes.length > 0;
-  const clipMode: ClipMode = boxes[0]?.mode ?? "outside";
-
-  const toggleClipMode = () => {
-    const next: ClipMode = clipMode === "outside" ? "inside" : "outside";
-    for (const b of boxes) {
-      clipManager?.setBoxMode(b.id, next);
-    }
-  };
 
   const clearClipBox = () => {
     clipManager?.clear();
@@ -162,51 +153,6 @@ export function ToolRail() {
             active={hasClipBox}
             onClick={hasClipBox ? clearClipBox : addClipBox}
           />
-          {hasClipBox && (
-            <>
-              <RailBtn
-                icon={<Scissors size={15} />}
-                title={clipMode === "outside" ? t.clipModeKeepInside : t.clipModeKeepOutside}
-                active={false}
-                onClick={toggleClipMode}
-              />
-              <SubLabel>Transform</SubLabel>
-              <div className="flex gap-0.5">
-                <RailBtn
-                  icon={<Move size={12} />}
-                  title="Move clip box"
-                  onClick={() => {
-                    const id = clipManager?.getSelectedId();
-                    if (id) clipManager?.setTransformMode("translate");
-                    else {
-                      const b = boxes[0];
-                      if (b) { clipManager?.selectBox(b.id); clipManager?.setTransformMode("translate"); }
-                    }
-                  }}
-                  compact
-                />
-                <RailBtn
-                  icon={<Maximize2 size={12} />}
-                  title="Resize clip box faces"
-                  onClick={() => {
-                    const id = clipManager?.getSelectedId();
-                    if (id) clipManager?.setTransformMode("scale");
-                    else {
-                      const b = boxes[0];
-                      if (b) { clipManager?.selectBox(b.id); clipManager?.setTransformMode("scale"); }
-                    }
-                  }}
-                  compact
-                />
-              </div>
-              <RailBtn
-                icon={<RotateCcw size={13} />}
-                title={t.removeClipBox}
-                onClick={clearClipBox}
-                compact
-              />
-            </>
-          )}
         </>
       )}
     </div>
