@@ -112,8 +112,53 @@ const PROJ_MODES: { value: CameraProjection; icon: React.FC<{ className?: string
   { value: "orthographic", icon: OrthoIcon,       titleKey: "camOrthographicTitle" },
 ];
 
+const iconBtnClass = (active: boolean) =>
+  `p-1 rounded transition-colors cursor-pointer border ${
+    active
+      ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] border-[hsl(var(--brand)/0.4)]"
+      : "text-muted-foreground hover:text-foreground border-transparent hover:border-[hsl(var(--border))]"
+  }`;
+
+/** Navigation mode + camera projection toggle buttons — placed in the View section. */
+export function ViewModeControls() {
+  const { navigationMode, setNavigationMode, projection, setProjection } = useViewer();
+  const t = useLocale().toolbar;
+
+  return (
+    <div className="flex items-center gap-1.5 px-1">
+      {/* Navigation mode */}
+      <div className="flex items-center gap-0.5 border border-[hsl(var(--border))] rounded p-0.5">
+        {NAV_MODES.map(nm => (
+          <button
+            key={nm.value}
+            className={iconBtnClass(navigationMode === nm.value)}
+            title={t[nm.titleKey]}
+            onClick={() => setNavigationMode(nm.value)}
+          >
+            <nm.icon />
+          </button>
+        ))}
+      </div>
+
+      {/* Camera projection */}
+      <div className="flex items-center gap-0.5 border border-[hsl(var(--border))] rounded p-0.5">
+        {PROJ_MODES.map(pm => (
+          <button
+            key={pm.value}
+            className={iconBtnClass(projection === pm.value)}
+            title={t[pm.titleKey]}
+            onClick={() => setProjection(pm.value)}
+          >
+            <pm.icon />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function DisplayControls() {
-  const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, navigationMode, setNavigationMode, projection, setProjection, uiMode } = useViewer();
+  const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, uiMode } = useViewer();
   const t = useLocale().toolbar;
   const [quality, setQuality] = useState("balanced");
 
@@ -146,43 +191,9 @@ export function DisplayControls() {
   };
 
   const selectClass = "bg-[hsl(var(--toolbar-bg))] border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-[hsl(var(--brand))] cursor-pointer";
-  const iconBtnClass = (active: boolean) =>
-    `p-1 rounded transition-colors cursor-pointer border ${
-      active
-        ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] border-[hsl(var(--brand)/0.4)]"
-        : "text-muted-foreground hover:text-foreground border-transparent hover:border-[hsl(var(--border))]"
-    }`;
 
   return (
     <div className="flex items-center gap-2 px-1">
-      {/* Navigation mode */}
-      <div className="flex items-center gap-0.5 border border-[hsl(var(--border))] rounded p-0.5">
-        {NAV_MODES.map(nm => (
-          <button
-            key={nm.value}
-            className={iconBtnClass(navigationMode === nm.value)}
-            title={t[nm.titleKey]}
-            onClick={() => setNavigationMode(nm.value)}
-          >
-            <nm.icon />
-          </button>
-        ))}
-      </div>
-
-      {/* Camera projection */}
-      <div className="flex items-center gap-0.5 border border-[hsl(var(--border))] rounded p-0.5">
-        {PROJ_MODES.map(pm => (
-          <button
-            key={pm.value}
-            className={iconBtnClass(projection === pm.value)}
-            title={t[pm.titleKey]}
-            onClick={() => setProjection(pm.value)}
-          >
-            <pm.icon />
-          </button>
-        ))}
-      </div>
-
       {/* Color mode — Professional only */}
       {isPro && (
         <select
