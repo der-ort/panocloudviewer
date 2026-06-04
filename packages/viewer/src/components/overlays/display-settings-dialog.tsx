@@ -1,21 +1,15 @@
 "use client";
 
 import React, { useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
-import * as Tabs from "@radix-ui/react-tabs";
 import { X, Minus, Circle, Plus } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
+import { useComponents } from "../../providers/components-provider";
 import { DISPLAY_PRESETS } from "@der-ort/pano-cloud-viewer-core";
 import type { DisplayPreset, DisplaySettings } from "@der-ort/pano-cloud-viewer-core";
 
-/* ── Styling constants ───────────────────────────────────────────────── */
-
-const tabTriggerClass =
-  "px-3 py-1.5 text-xs font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-[hsl(var(--brand))] -mb-px transition-colors";
-
-/* ── Sub-components ──────────────────────────────────────────────────── */
+/* ── Sub-components ──────────────────────────────────────────────────────── */
 
 const PRESET_ICONS: Record<DisplayPreset, React.ReactNode> = {
   compact: <Minus size={18} />,
@@ -117,7 +111,7 @@ function SliderRow({
   );
 }
 
-/* ── Main dialog ─────────────────────────────────────────────────────── */
+/* ── Main dialog ─────────────────────────────────────────────────────────── */
 
 interface DisplaySettingsDialogProps {
   open: boolean;
@@ -129,6 +123,17 @@ export function DisplaySettingsDialog({
   onOpenChange,
 }: DisplaySettingsDialogProps) {
   const viewer = useViewer();
+  const {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogClose,
+    Tabs,
+    TabsList,
+    TabsTrigger,
+    TabsContent,
+  } = useComponents();
 
   // Use provider displaySettings if available, otherwise local state
   const [localSettings, setLocalSettings] = useState<DisplaySettings>(
@@ -155,115 +160,106 @@ export function DisplaySettingsDialog({
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-[420px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] shadow-xl">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-[hsl(var(--border))] px-4 py-3">
-            <Dialog.Title className="text-sm font-semibold">
-              {t.title}
-            </Dialog.Title>
-            <Dialog.Close className="rounded p-1 text-muted-foreground hover:bg-[hsl(var(--muted)/.6)]">
-              <X size={14} />
-            </Dialog.Close>
-          </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[420px]">
+        {/* Header */}
+        <DialogHeader>
+          <DialogTitle>{t.title}</DialogTitle>
+          <DialogClose>
+            <X size={14} />
+          </DialogClose>
+        </DialogHeader>
 
-          <Tabs.Root defaultValue="presets" className="px-4 py-3">
-            <Tabs.List className="mb-4 flex gap-1 border-b border-[hsl(var(--border))]">
-              <Tabs.Trigger value="presets" className={tabTriggerClass}>
-                {t.presetsTab}
-              </Tabs.Trigger>
-              <Tabs.Trigger value="advanced" className={tabTriggerClass}>
-                {t.advancedTab}
-              </Tabs.Trigger>
-            </Tabs.List>
+        <Tabs defaultValue="presets" className="px-4 py-3">
+          <TabsList className="mb-4">
+            <TabsTrigger value="presets">{t.presetsTab}</TabsTrigger>
+            <TabsTrigger value="advanced">{t.advancedTab}</TabsTrigger>
+          </TabsList>
 
-            {/* Presets Tab */}
-            <Tabs.Content value="presets">
-              <div className="grid grid-cols-3 gap-3">
-                {(["compact", "standard", "prominent"] as DisplayPreset[]).map(
-                  (preset) => (
-                    <PresetCard
-                      key={preset}
-                      preset={preset}
-                      label={
-                        (t[`preset_${preset}` as keyof typeof t] as string) ??
-                        preset
-                      }
-                      description={
-                        (t[
-                          `preset_${preset}_desc` as keyof typeof t
-                        ] as string) ?? ""
-                      }
-                      active={settings.preset === preset}
-                      onClick={() => applyPreset(preset)}
-                    />
-                  ),
-                )}
-              </div>
-            </Tabs.Content>
+          {/* Presets Tab */}
+          <TabsContent value="presets">
+            <div className="grid grid-cols-3 gap-3">
+              {(["compact", "standard", "prominent"] as DisplayPreset[]).map(
+                (preset) => (
+                  <PresetCard
+                    key={preset}
+                    preset={preset}
+                    label={
+                      (t[`preset_${preset}` as keyof typeof t] as string) ??
+                      preset
+                    }
+                    description={
+                      (t[
+                        `preset_${preset}_desc` as keyof typeof t
+                      ] as string) ?? ""
+                    }
+                    active={settings.preset === preset}
+                    onClick={() => applyPreset(preset)}
+                  />
+                ),
+              )}
+            </div>
+          </TabsContent>
 
-            {/* Advanced Tab */}
-            <Tabs.Content value="advanced">
-              <div className="space-y-4">
-                <SettingsSection title={t.measurementsSection}>
-                  <SliderRow
-                    label={t.lineWidth}
-                    min={1}
-                    max={6}
-                    step={0.5}
-                    value={settings.measurementLineWidth}
-                    onChange={(v) => updateField("measurementLineWidth", v)}
-                  />
-                  <SliderRow
-                    label={t.labelScale}
-                    min={0.3}
-                    max={2.5}
-                    step={0.1}
-                    value={settings.measurementLabelScale}
-                    onChange={(v) => updateField("measurementLabelScale", v)}
-                  />
-                  <SliderRow
-                    label={t.sphereRadius}
-                    min={0.02}
-                    max={0.5}
-                    step={0.01}
-                    value={settings.measurementSphereRadius}
-                    onChange={(v) => updateField("measurementSphereRadius", v)}
-                  />
-                </SettingsSection>
-                <SettingsSection title={t.markersSection}>
-                  <SliderRow
-                    label={t.markerScale}
-                    min={0.2}
-                    max={3.0}
-                    step={0.1}
-                    value={settings.markerSphereScale}
-                    onChange={(v) => updateField("markerSphereScale", v)}
-                  />
-                  <SliderRow
-                    label={t.markerOpacity}
-                    min={0.1}
-                    max={1.0}
-                    step={0.05}
-                    value={settings.markerSphereOpacity}
-                    onChange={(v) => updateField("markerSphereOpacity", v)}
-                  />
-                  <SliderRow
-                    label={t.markerLabelScale}
-                    min={0.3}
-                    max={2.5}
-                    step={0.1}
-                    value={settings.markerLabelScale}
-                    onChange={(v) => updateField("markerLabelScale", v)}
-                  />
-                </SettingsSection>
-              </div>
-            </Tabs.Content>
-          </Tabs.Root>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          {/* Advanced Tab */}
+          <TabsContent value="advanced">
+            <div className="space-y-4">
+              <SettingsSection title={t.measurementsSection}>
+                <SliderRow
+                  label={t.lineWidth}
+                  min={1}
+                  max={6}
+                  step={0.5}
+                  value={settings.measurementLineWidth}
+                  onChange={(v) => updateField("measurementLineWidth", v)}
+                />
+                <SliderRow
+                  label={t.labelScale}
+                  min={0.3}
+                  max={2.5}
+                  step={0.1}
+                  value={settings.measurementLabelScale}
+                  onChange={(v) => updateField("measurementLabelScale", v)}
+                />
+                <SliderRow
+                  label={t.sphereRadius}
+                  min={0.02}
+                  max={0.5}
+                  step={0.01}
+                  value={settings.measurementSphereRadius}
+                  onChange={(v) => updateField("measurementSphereRadius", v)}
+                />
+              </SettingsSection>
+              <SettingsSection title={t.markersSection}>
+                <SliderRow
+                  label={t.markerScale}
+                  min={0.2}
+                  max={3.0}
+                  step={0.1}
+                  value={settings.markerSphereScale}
+                  onChange={(v) => updateField("markerSphereScale", v)}
+                />
+                <SliderRow
+                  label={t.markerOpacity}
+                  min={0.1}
+                  max={1.0}
+                  step={0.05}
+                  value={settings.markerSphereOpacity}
+                  onChange={(v) => updateField("markerSphereOpacity", v)}
+                />
+                <SliderRow
+                  label={t.markerLabelScale}
+                  min={0.3}
+                  max={2.5}
+                  step={0.1}
+                  value={settings.markerLabelScale}
+                  onChange={(v) => updateField("markerLabelScale", v)}
+                />
+              </SettingsSection>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
   );
 }

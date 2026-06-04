@@ -7,9 +7,11 @@ import { DataProvider } from "../providers/data-provider";
 import { LocaleProvider } from "../i18n/locale-context";
 import { WorkspaceLayout } from "./workspace-layout";
 import { PanoViewer } from "./overlays/pano-viewer";
+import { ComponentsProvider } from "../providers/components-provider";
 import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
 import type { PointCloudSource } from "@der-ort/pano-cloud-viewer-core";
 import type { ViewerLocale } from "../i18n/types";
+import type { ViewerComponents } from "../providers/components-provider";
 
 const Viewport = lazy(() => import("./viewport").then(m => ({ default: m.Viewport })));
 
@@ -45,6 +47,16 @@ export interface PanoCloudViewerProps {
    * </PanoCloudViewer>
    */
   children?: (viewport: React.ReactNode) => React.ReactNode;
+  /**
+   * Override any of the default shadcn-style UI primitives.
+   * Shallow-merged over the built-in defaults. Useful for consumers who
+   * already have a component library and want to swap out e.g. Dialog or Button.
+   *
+   * @example
+   * import { Button } from '@/components/ui/button'; // your own shadcn button
+   * <PanoCloudViewer components={{ Button }} ... />
+   */
+  components?: Partial<ViewerComponents>;
 }
 
 function ViewportFallback() {
@@ -78,7 +90,7 @@ function PanoOverlayBridge() {
  * />
  * ```
  */
-export function PanoCloudViewer({ source, theme = "dark", className, locale, children }: PanoCloudViewerProps) {
+export function PanoCloudViewer({ source, theme = "dark", className, locale, children, components }: PanoCloudViewerProps) {
   const adapter = createAdapter(source);
   const config = { source };
 
@@ -87,6 +99,7 @@ export function PanoCloudViewer({ source, theme = "dark", className, locale, chi
       <ThemeProvider defaultTheme={theme}>
         <DataProvider adapter={adapter}>
           <ViewerProvider config={config}>
+            <ComponentsProvider components={components}>
             <div className={`w-full h-full ${className ?? ""}`}>
               {children ? (
                 <>
@@ -101,6 +114,7 @@ export function PanoCloudViewer({ source, theme = "dark", className, locale, chi
                 <WorkspaceLayout />
               )}
             </div>
+            </ComponentsProvider>
           </ViewerProvider>
         </DataProvider>
       </ThemeProvider>
