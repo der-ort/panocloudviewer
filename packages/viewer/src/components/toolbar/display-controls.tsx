@@ -40,22 +40,23 @@ function OrbitIcon({ className }: { className?: string }) {
   );
 }
 
-/** Fly — cube with wing/arrow suggesting free flight */
-function FlyIcon({ className }: { className?: string }) {
+/** Free — cube with full-sphere rotation arrows (Blender-style) */
+function FreeIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} width="14" height="14">
       {/* Wireframe cube (smaller) */}
       <path d="M7 9l5-3 5 3v6l-5 3-5-3V9z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
       <path d="M7 9l5 3 5-3" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
       <path d="M12 12v6" stroke="currentColor" strokeWidth="1.3" />
-      {/* Arrow suggesting forward flight */}
-      <path d="M3 7l4 5-4 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Circular arrows — free rotation in any direction */}
+      <path d="M4 8a8.5 8.5 0 0 1 2-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M4 8l-1.5-1.5M4 8l1.5-2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
     </svg>
   );
 }
 
-/** Earth — cube seen from above with top face filled */
-function EarthIcon({ className }: { className?: string }) {
+/** Pan — cube with top face filled and horizontal arrow (map-view) */
+function PanIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} width="14" height="14">
       {/* Wireframe cube */}
@@ -64,6 +65,8 @@ function EarthIcon({ className }: { className?: string }) {
       <path d="M12 12v8" stroke="currentColor" strokeWidth="1.3" />
       {/* Top face filled */}
       <path d="M5 8l7-4 7 4-7 4z" fill="currentColor" fillOpacity="0.25" />
+      {/* Horizontal pan arrow */}
+      <path d="M3 20h4M3 20l1.5-1.5M3 20l1.5 1.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
     </svg>
   );
 }
@@ -98,10 +101,10 @@ function OrthoIcon({ className }: { className?: string }) {
   );
 }
 
-const NAV_MODES: { value: NavigationMode; icon: React.FC<{ className?: string }>; titleKey: "navOrbitTitle" | "navFlyTitle" | "navEarthTitle" }[] = [
-  { value: "orbit", icon: OrbitIcon,  titleKey: "navOrbitTitle" },
-  { value: "fly",   icon: FlyIcon,    titleKey: "navFlyTitle" },
-  { value: "earth", icon: EarthIcon,  titleKey: "navEarthTitle" },
+const NAV_MODES: { value: NavigationMode; icon: React.FC<{ className?: string }>; titleKey: "navOrbitTitle" | "navFreeTitle" | "navPanTitle" }[] = [
+  { value: "orbit", icon: OrbitIcon, titleKey: "navOrbitTitle" },
+  { value: "free",  icon: FreeIcon,  titleKey: "navFreeTitle" },
+  { value: "pan",   icon: PanIcon,   titleKey: "navPanTitle" },
 ];
 
 const PROJ_MODES: { value: CameraProjection; icon: React.FC<{ className?: string }>; titleKey: "camPerspectiveTitle" | "camOrthographicTitle" }[] = [

@@ -3,8 +3,8 @@
 import React, { useState, useCallback } from "react";
 import {
   Orbit,
-  Navigation,
-  Globe,
+  Rotate3d,
+  Map,
   Maximize,
   Ruler,
   ArrowUpDown,
@@ -96,16 +96,16 @@ export function MinimalToolbar() {
             onClick={() => setNavigationMode("orbit")}
           />
           <GlassButton
-            icon={<Navigation size={16} />}
-            title="Fly"
-            active={navigationMode === "fly"}
-            onClick={() => setNavigationMode("fly")}
+            icon={<Rotate3d size={16} />}
+            title="Free rotate"
+            active={navigationMode === "free"}
+            onClick={() => setNavigationMode("free")}
           />
           <GlassButton
-            icon={<Globe size={16} />}
-            title="Earth"
-            active={navigationMode === "earth"}
-            onClick={() => setNavigationMode("earth")}
+            icon={<Map size={16} />}
+            title="Pan / Map"
+            active={navigationMode === "pan"}
+            onClick={() => setNavigationMode("pan")}
           />
 
           <Separator />

@@ -51,11 +51,11 @@ export interface ViewerLocale {
     qualityHigh: string;
     // Navigation modes
     navOrbit: string;
-    navFly: string;
-    navEarth: string;
+    navFree: string;
+    navPan: string;
     navOrbitTitle: string;
-    navFlyTitle: string;
-    navEarthTitle: string;
+    navFreeTitle: string;
+    navPanTitle: string;
     // Camera projection
     camPerspective: string;
     camOrthographic: string;

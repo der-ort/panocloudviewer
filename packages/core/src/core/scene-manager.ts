@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { FpsControls } from "./fps-controls";
 import type { NavigationMode, CameraProjection } from "../types";
 
 export interface SceneManagerOptions {
@@ -15,11 +14,10 @@ export class SceneManager {
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
   controls: OrbitControls;
-  private _fpsControls: FpsControls | null = null;
   private _navMode: NavigationMode = "orbit";
   private _projection: CameraProjection = "perspective";
   private _orthoCamera: THREE.OrthographicCamera | null = null;
-  /** Movement speed for fly mode — auto-scaled when point cloud loads */
+  /** Kept for API compatibility — no longer drives navigation */
   flySpeed = 10;
   private animationId: number | null = null;
   private lastTime = 0;
@@ -64,17 +62,20 @@ export class SceneManager {
     this.renderer.autoClear = false;
     canvas.appendChild(this.renderer.domElement);
 
-    // Controls — orbit mode is the default
+    // Controls — orbit mode is the default (CAD/Blender-style turntable)
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
     this.controls.screenSpacePanning = true;
     this.controls.maxPolarAngle = Math.PI;
     this.controls.zoomSpeed = 1.5;
-    // Invert orbit drag direction — in a Z-up scene, the default orbit
-    // direction feels backwards. Negative rotateSpeed makes dragging feel
-    // natural: drag up = camera moves up (like grabbing the scene).
-    this.controls.rotateSpeed = -1;
+    this.controls.rotateSpeed = 0.8;
+    this.controls.zoomToCursor = true;
+    this.controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    };
 
     // Lights
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.5));
@@ -109,11 +110,10 @@ export class SceneManager {
       this.renderer.setScissorTest(false);
       this.renderer.clear();
 
-      if (this._navMode === "fly" && this._fpsControls) {
-        this._fpsControls.update(Math.min(delta / 1000, 0.1)); // cap at 100ms
-      } else {
-        this.controls.update();
-      }
+      // Single OrbitControls instance drives all three navigation modes (each
+      // mode just reconfigures it), so its target stays the one source of truth
+      // for clipping, minimap, camera-animator and the ortho-camera sync.
+      this.controls.update();
 
       // potree-core update — always use PerspectiveCamera for correct LOD
       if (this.potree && this.pointClouds.length > 0) {
@@ -219,50 +219,55 @@ export class SceneManager {
   }
 
   /**
-   * Switch between navigation modes.
-   * - orbit: standard orbit / tumble around a target point
-   * - fly:   free-flight (WASD + mouse-drag to look), no camera roll
-   * - earth: pan-primary mode (like Google Earth / map view)
+   * Switch between navigation modes. All three reconfigure the SAME OrbitControls
+   * instance (zoom-to-cursor + damping throughout) so the orbit target remains
+   * authoritative for clipping, minimap, camera animation and ortho sync.
+   * - orbit: CAD turntable — left-drag rotate, middle dolly, right pan, full sphere.
+   * - free:  Blender-ish free orbit — left/middle drag rotate, right pan, full sphere.
+   * - pan:   Map / top-down — left-drag pans, horizon-locked, right-drag rotates.
    */
   setNavigationMode(mode: NavigationMode): void {
     if (mode === this._navMode) return;
     this._navMode = mode;
 
-    if (mode === "fly") {
-      // Disable orbit, activate FPS-style fly controls
-      this.controls.enabled = false;
-      if (!this._fpsControls) {
-        this._fpsControls = new FpsControls(this.camera, this.renderer.domElement);
-      }
-      this._fpsControls.syncFromCamera();
-      this._fpsControls.movementSpeed = this.flySpeed;
-      this._fpsControls.enabled = true;
-    } else {
-      // Re-enable orbit controls
-      if (this._fpsControls) this._fpsControls.enabled = false;
-      this.controls.enabled = true;
+    const c = this.controls;
+    c.enableRotate = true;
+    c.screenSpacePanning = true;
+    c.minPolarAngle = 0;
 
-      if (mode === "orbit") {
-        // Standard orbit: screen-space panning (matches CAD conventions)
-        this.controls.screenSpacePanning = true;
-        this.controls.maxPolarAngle = Math.PI;
-        this.controls.enableRotate = true;
-      } else {
-        // Earth mode: camera stays above horizon, screen-space panning (like Google Maps)
-        this.controls.screenSpacePanning = true;
-        this.controls.maxPolarAngle = Math.PI / 2.05; // slightly above 90° to feel natural
-        this.controls.enableRotate = true;
-      }
+    if (mode === "pan") {
+      // Map-style: camera stays above the horizon, left-drag pans the scene.
+      c.maxPolarAngle = Math.PI / 2.05;
+      c.mouseButtons = {
+        LEFT: THREE.MOUSE.PAN,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.ROTATE,
+      };
+    } else if (mode === "free") {
+      // Blender-ish: full-sphere rotation on both left and middle drag.
+      c.maxPolarAngle = Math.PI;
+      c.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.ROTATE,
+        RIGHT: THREE.MOUSE.PAN,
+      };
+    } else {
+      // Orbit (default) CAD turntable.
+      c.maxPolarAngle = Math.PI;
+      c.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN,
+      };
     }
+    c.update();
   }
 
   /**
-   * Set fly movement speed. Propagates to active FlyControls if instantiated.
-   * Call this instead of setting flySpeed directly when fly mode is active.
+   * Set fly movement speed. Kept for API compatibility.
    */
   setFlySpeed(speed: number): void {
     this.flySpeed = speed;
-    if (this._fpsControls) this._fpsControls.movementSpeed = speed;
   }
 
   /** Stop animation loop and dispose resources */
@@ -270,7 +275,6 @@ export class SceneManager {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
     this.resizeObserver.disconnect();
     this.controls.dispose();
-    this._fpsControls?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

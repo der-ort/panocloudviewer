@@ -157,7 +157,7 @@ export type ActiveTool =
   | "section-plane"
   | "annotate";
 
-export type NavigationMode = "orbit" | "fly" | "earth";
+export type NavigationMode = "orbit" | "free" | "pan";
 export type CameraProjection = "perspective" | "orthographic";
 
 // ── Display settings ────────────────────────────────────────

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Eye, Camera, Map, Orbit, Navigation, Globe, Box, Square } from "lucide-react";
+import { Eye, Camera, Map, Orbit, Rotate3d, Box, Square } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { FloatingPalette } from "./floating-palette";
@@ -41,8 +41,8 @@ export function ViewSettingsPalette() {
       <p className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1">Navigation</p>
       <div className="flex gap-1">
         <ModeBtn icon={<Orbit size={14} />} label="Orbit" active={navigationMode === "orbit"} onClick={() => setNavigationMode("orbit")} />
-        <ModeBtn icon={<Navigation size={14} />} label="Fly" active={navigationMode === "fly"} onClick={() => setNavigationMode("fly")} />
-        <ModeBtn icon={<Globe size={14} />} label="Earth" active={navigationMode === "earth"} onClick={() => setNavigationMode("earth")} />
+        <ModeBtn icon={<Rotate3d size={14} />} label="Free" active={navigationMode === "free"} onClick={() => setNavigationMode("free")} />
+        <ModeBtn icon={<Map size={14} />} label="Pan" active={navigationMode === "pan"} onClick={() => setNavigationMode("pan")} />
       </div>
 
       <p className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1">Projection</p>

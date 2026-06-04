@@ -126,24 +126,9 @@ export function Viewport({ className }: ViewportProps) {
 
     sm.start();
 
-    // Fly speed adjustment via scroll wheel (only active in fly mode)
-    const canvas = containerRef.current!;
-    const onWheel = (e: WheelEvent) => {
-      if (smRef.current?.navigationMode !== "fly") return;
-      const next = Math.max(0.5, smRef.current.flySpeed * (e.deltaY > 0 ? 0.9 : 1.1));
-      smRef.current.setFlySpeed(next);
-    };
-    canvas.addEventListener("wheel", onWheel, { passive: true });
-
     // Load point cloud and set minimap bounds
     loader.load("metadata.json", pointBudget).then(() => {
-      // Scale fly speed to bounding box size so movement feels natural
       const pc = loader.getPointCloud();
-      if (pc && !loader.worldBox.isEmpty()) {
-        const size = new THREE.Vector3();
-        loader.worldBox.getSize(size);
-        sm.flySpeed = Math.max(size.x, size.y, size.z) / 20;
-      }
 
       // After load, compute world bounding box for minimap
       if (pc) {
@@ -169,7 +154,6 @@ export function Viewport({ className }: ViewportProps) {
     }).catch(console.error);
 
     return () => {
-      canvas.removeEventListener("wheel", onWheel);
       sm.removeFrameCallback(minimapFrame);
       sm.removePostRenderCallback(axisFrame);
       sm.dispose();
@@ -295,8 +279,6 @@ export function Viewport({ className }: ViewportProps) {
     const sm = smRef.current;
     const anim = animRef.current;
     if (!sm || !anim) return;
-    const mode = sm.navigationMode;
-    if (mode !== "orbit" && mode !== "earth") return;
     const { nx, ny } = getNDC(e);
     // Snap to point cloud first, fall back to plane
     const hit = sm.pickPoint(nx, ny) ?? projectToPlaneZ(nx, ny, sm.controls.target.z);
