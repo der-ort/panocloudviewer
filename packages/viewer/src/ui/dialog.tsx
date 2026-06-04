@@ -26,22 +26,36 @@ export const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     /** Portal container — pass the `.pcv` root so themed tokens apply to the portalled dialog. */
     container?: HTMLElement | null;
+    /**
+     * Drag offset in pixels. When provided the dialog is translated by this amount
+     * relative to its centered position. Centering (-50%, -50%) is always preserved
+     * and composed with the drag offset so the dialog stays centered when offset is {0,0}.
+     */
+    dragOffset?: { x: number; y: number };
   }
->(({ className, children, container, ...props }, ref) => (
-  <DialogPortal container={container ?? undefined}>
-    <DialogOverlay />
-    <DialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        "fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] shadow-xl",
-        className,
-      )}
-      {...props}
-    >
-      {children}
-    </DialogPrimitive.Content>
-  </DialogPortal>
-));
+>(({ className, children, container, dragOffset, style, ...props }, ref) => {
+  const dx = dragOffset?.x ?? 0;
+  const dy = dragOffset?.y ?? 0;
+  return (
+    <DialogPortal container={container ?? undefined}>
+      <DialogOverlay />
+      <DialogPrimitive.Content
+        ref={ref}
+        className={cn(
+          "fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] shadow-xl",
+          className,
+        )}
+        style={{
+          ...style,
+          transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px)`,
+        }}
+        {...props}
+      >
+        {children}
+      </DialogPrimitive.Content>
+    </DialogPortal>
+  );
+});
 DialogContent.displayName = "DialogContent";
 
 export const DialogHeader = ({

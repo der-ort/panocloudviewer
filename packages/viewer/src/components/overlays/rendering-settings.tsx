@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import { X, Sliders } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
+import { usePcvRoot } from "../pano-cloud-viewer";
+import { useDraggable } from "../../hooks/use-draggable";
 
 interface RenderingSettingsProps {
   open: boolean;
@@ -13,6 +15,11 @@ interface RenderingSettingsProps {
 export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
   const { loader } = useViewer();
   const t = useLocale().renderingSettings;
+  const pcvRoot = usePcvRoot();
+  const { position, onDragStart, reset } = useDraggable({ bounds: pcvRoot ?? undefined });
+
+  // Return to the anchored position each time the panel is reopened.
+  useEffect(() => { if (!open) reset(); }, [open, reset]);
 
   const [rgbGamma, setRgbGamma] = useState(1.0);
   const [rgbBrightness, setRgbBrightness] = useState(0);
@@ -84,14 +91,24 @@ export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
   const zRange = zMax - zMin;
 
   return (
-    <div className="absolute top-12 left-12 z-50 w-80 max-h-[calc(100vh-6rem)] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--border))]">
+    <div
+      className="absolute top-12 left-12 z-50 w-80 max-h-[calc(100vh-6rem)] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl"
+      style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
+    >
+      {/* Header — drag handle */}
+      <div
+        className="flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--border))] cursor-move select-none"
+        onMouseDown={onDragStart}
+      >
         <div className="flex items-center gap-2">
           <Sliders size={14} className="text-[hsl(var(--brand))]" />
           <span className="text-xs font-semibold">{t.title}</span>
         </div>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors p-0.5">
+        <button
+          onClick={onClose}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="text-muted-foreground hover:text-foreground transition-colors p-0.5"
+        >
           <X size={14} />
         </button>
       </div>
