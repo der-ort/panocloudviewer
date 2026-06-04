@@ -515,9 +515,10 @@ var DISPLAY_PRESETS = {
     measurementLineWidth: 1,
     measurementLabelScale: 0.6,
     measurementSphereRadius: 0.08,
-    markerSphereScale: 0.5,
-    markerSphereOpacity: 0.7,
-    markerLabelScale: 0.5
+    markerSphereScale: 0.7,
+    markerSphereOpacity: 0.8,
+    markerLabelScale: 0.85,
+    markerLabelMode: "hover"
   },
   standard: {
     preset: "standard",
@@ -525,17 +526,19 @@ var DISPLAY_PRESETS = {
     measurementLabelScale: 1,
     measurementSphereRadius: 0.15,
     markerSphereScale: 1,
-    markerSphereOpacity: 0.92,
-    markerLabelScale: 1
+    markerSphereOpacity: 0.9,
+    markerLabelScale: 1,
+    markerLabelMode: "hover"
   },
   prominent: {
     preset: "prominent",
     measurementLineWidth: 4,
     measurementLabelScale: 1.6,
     measurementSphereRadius: 0.3,
-    markerSphereScale: 2,
+    markerSphereScale: 1.6,
     markerSphereOpacity: 1,
-    markerLabelScale: 1.5
+    markerLabelScale: 1.3,
+    markerLabelMode: "always"
   }
 };
 
@@ -543,16 +546,21 @@ var DISPLAY_PRESETS = {
 var MARKER_COLOR_DEFAULT = 14472518;
 var MARKER_COLOR_HOVER = 16777215;
 var MARKER_COLOR_SELECTED = 16737860;
+var PIN_BASE_SCALE = 0.022;
 var MarkerManager = class {
   scene;
   entries = [];
   group;
   hoveredIdx = -1;
   selectedIdx = -1;
-  sphereRadius = 0.5;
+  labelMode = "hover";
   _displaySettings = DISPLAY_PRESETS.standard;
   _cameras = [];
   _worldBox;
+  /** Shared circular pin texture (reused across all pins; tinted via material.color). */
+  _pinTexture;
+  /** World-space vertical offset for the label anchor above the pin. */
+  _labelOffset = 0.5;
   constructor(scene) {
     this.scene = scene;
     this.group = new THREE5.Group();
@@ -570,103 +578,156 @@ var MarkerManager = class {
   build(cameras, worldBox) {
     this._cameras = cameras;
     this._worldBox = worldBox;
+    this.labelMode = this._displaySettings.markerLabelMode ?? "hover";
     this.clear();
     if (worldBox && !worldBox.isEmpty()) {
       const size = new THREE5.Vector3();
       worldBox.getSize(size);
       const maxDim = Math.max(size.x, size.y, size.z);
-      this.sphereRadius = Math.max(0.25, Math.min(5, maxDim * 8e-3));
+      this._labelOffset = Math.max(0.2, Math.min(4, maxDim * 0.01));
     }
+    const pinScale = PIN_BASE_SCALE * this._displaySettings.markerSphereScale;
     cameras.forEach((cam, i) => {
       if (!cam.position) return;
       const { x, y, z } = cam.position;
-      const mesh = this._makeSphere(MARKER_COLOR_DEFAULT);
-      mesh.position.set(x, y, z);
-      mesh.userData = { cameraIndex: i, cameraData: cam };
-      this.group.add(mesh);
+      const pin = this._makePin(MARKER_COLOR_DEFAULT, pinScale);
+      pin.position.set(x, y, z);
+      pin.userData = { cameraIndex: i, cameraData: cam };
+      this.group.add(pin);
       const label = this._makeLabel(cam.name);
-      const scaledRadius = this.sphereRadius * this._displaySettings.markerSphereScale;
-      label.position.set(x, y, z + scaledRadius * 3);
+      label.position.set(x, y, z + this._labelOffset);
+      label.visible = this.labelMode === "always";
       this.group.add(label);
-      this.entries.push({ mesh, label });
+      this.entries.push({ pin, label });
     });
   }
-  _makeSphere(color) {
-    const scaledRadius = this.sphereRadius * this._displaySettings.markerSphereScale;
-    const geo = new THREE5.SphereGeometry(scaledRadius, 16, 16);
-    const mat = new THREE5.MeshBasicMaterial({
+  /** Lazily build (and cache) the shared circular pin texture. */
+  _getPinTexture() {
+    if (this._pinTexture) return this._pinTexture;
+    const S = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = S;
+    canvas.height = S;
+    const ctx = canvas.getContext("2d");
+    const c = S / 2;
+    ctx.beginPath();
+    ctx.arc(c, c, S * 0.46, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(c, c, S * 0.34, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(20,20,20,0.85)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(c, c, S * 0.27, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    const tex = new THREE5.CanvasTexture(canvas);
+    tex.minFilter = THREE5.LinearFilter;
+    this._pinTexture = tex;
+    return tex;
+  }
+  _makePin(color, scale) {
+    const mat = new THREE5.SpriteMaterial({
+      map: this._getPinTexture(),
       color,
+      sizeAttenuation: false,
+      // constant on-screen size at any zoom
       depthTest: false,
-      // Always visible through the point cloud
+      // always visible through the point cloud
       depthWrite: false,
       transparent: true,
       opacity: this._displaySettings.markerSphereOpacity
     });
-    return new THREE5.Mesh(geo, mat);
+    const sprite = new THREE5.Sprite(mat);
+    sprite.scale.set(scale, scale, 1);
+    return sprite;
   }
   _makeLabel(text) {
+    const W = 200;
+    const H = 48;
     const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 64;
+    canvas.width = W;
+    canvas.height = H;
     const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.fillStyle = "rgba(15,15,15,0.55)";
     ctx.beginPath();
-    ctx.roundRect(0, 0, 256, 64, 8);
+    ctx.roundRect(0, 0, W, H, 8);
     ctx.fill();
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 20px sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.font = "500 18px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(text.substring(0, 20), 128, 34);
+    ctx.fillText(text.substring(0, 22), W / 2, H / 2 + 1);
     const tex = new THREE5.CanvasTexture(canvas);
+    tex.minFilter = THREE5.LinearFilter;
     const mat = new THREE5.SpriteMaterial({
       map: tex,
+      sizeAttenuation: false,
+      // constant on-screen size — never huge
       depthTest: false,
       depthWrite: false,
       transparent: true
     });
     const sprite = new THREE5.Sprite(mat);
     const ls = this._displaySettings.markerLabelScale;
-    sprite.scale.set(this.sphereRadius * 8 * ls, this.sphereRadius * 2 * ls, 1);
+    const h = 0.05 * ls;
+    sprite.scale.set(h * (W / H), h, 1);
     return sprite;
   }
-  /** Update sphere color by index */
+  /** Update pin color by index */
   _recolor(idx, color) {
     const entry = this.entries[idx];
     if (!entry) return;
-    entry.mesh.material.color.setHex(color);
+    entry.pin.material.color.setHex(color);
+  }
+  /** Resolve whether a marker's label should be visible under the current mode. */
+  _labelShouldShow(idx) {
+    if (this.labelMode === "always") return true;
+    if (this.labelMode === "hidden") return false;
+    return idx === this.hoveredIdx || idx === this.selectedIdx;
+  }
+  _applyLabelVisibility(idx) {
+    const entry = this.entries[idx];
+    if (!entry) return;
+    entry.label.visible = this._labelShouldShow(idx);
   }
   setVisible(visible) {
     this.group.visible = visible;
   }
-  /** Return sphere meshes for raycasting */
+  /** Return pin sprites for raycasting (one per camera, index order) */
   getMeshes() {
-    return this.entries.map((e) => e.mesh);
+    return this.entries.map((e) => e.pin);
   }
   setHovered(idx) {
     if (this.hoveredIdx === idx) return;
-    if (this.hoveredIdx >= 0 && this.hoveredIdx !== this.selectedIdx) {
-      this._recolor(this.hoveredIdx, MARKER_COLOR_DEFAULT);
-    }
+    const prev = this.hoveredIdx;
     this.hoveredIdx = idx;
+    if (prev >= 0 && prev !== this.selectedIdx) {
+      this._recolor(prev, MARKER_COLOR_DEFAULT);
+      this._applyLabelVisibility(prev);
+    }
     if (idx >= 0 && idx !== this.selectedIdx) {
       this._recolor(idx, MARKER_COLOR_HOVER);
+      this._applyLabelVisibility(idx);
     }
   }
   setSelected(idx) {
-    if (this.selectedIdx >= 0) {
-      this._recolor(this.selectedIdx, MARKER_COLOR_DEFAULT);
-    }
+    const prev = this.selectedIdx;
     this.selectedIdx = idx;
+    if (prev >= 0) {
+      this._recolor(prev, prev === this.hoveredIdx ? MARKER_COLOR_HOVER : MARKER_COLOR_DEFAULT);
+      this._applyLabelVisibility(prev);
+    }
     if (idx >= 0) {
       this._recolor(idx, MARKER_COLOR_SELECTED);
+      this._applyLabelVisibility(idx);
     }
   }
   clear() {
-    for (const { mesh, label } of this.entries) {
-      mesh.material.dispose();
-      mesh.geometry.dispose();
-      this.group.remove(mesh);
+    for (const { pin, label } of this.entries) {
+      pin.material.dispose();
+      this.group.remove(pin);
       label.material.map?.dispose();
       label.material.dispose();
       this.group.remove(label);
@@ -677,6 +738,8 @@ var MarkerManager = class {
   }
   dispose() {
     this.clear();
+    this._pinTexture?.dispose();
+    this._pinTexture = void 0;
     this.scene.remove(this.group);
   }
 };
@@ -1731,7 +1794,7 @@ var ClipManager = class {
     tc.addEventListener("dragging-changed", (e) => {
       this.sm.controls.enabled = !e.value;
     });
-    this.sm.scene.add(tc);
+    this.sm.scene.add(tc.getHelper());
     this.transformControls = tc;
     this._raiseGizmo();
   }
@@ -1744,8 +1807,9 @@ var ClipManager = class {
    */
   _raiseGizmo() {
     const tc = this.transformControls;
-    if (!tc) return;
-    tc.traverse((child) => {
+    const helper = tc?.getHelper?.();
+    if (!helper) return;
+    helper.traverse((child) => {
       if (!child.material) return;
       const mats = Array.isArray(child.material) ? child.material : [child.material];
       for (const m of mats) {
@@ -1990,7 +2054,7 @@ var ClipManager = class {
     this.clear();
     const tc = this.transformControls;
     if (tc) {
-      this.sm.scene.remove(tc);
+      this.sm.scene.remove(tc.getHelper());
       tc.dispose();
       this.transformControls = null;
     }

@@ -115,6 +115,14 @@ interface DisplaySettings {
     markerSphereOpacity: number;
     /** Marker label scale multiplier */
     markerLabelScale: number;
+    /**
+     * When marker labels are shown.
+     * - "hover"  (default): label shown only for the hovered/selected marker
+     * - "always": all labels shown
+     * - "hidden": no labels shown
+     * Optional for backward compatibility with existing DisplaySettings literals.
+     */
+    markerLabelMode?: "hover" | "always" | "hidden";
 }
 declare const DISPLAY_PRESETS: Record<DisplayPreset, DisplaySettings>;
 
@@ -299,9 +307,13 @@ declare class CameraAnimator {
 /**
  * 3D panorama camera markers.
  *
- * Each marker is a solid sphere mesh (always visible through the point cloud
- * via depthTest=false) + a text label sprite above it. Sphere meshes are used
- * for raycasting — they are far more reliable than sprites.
+ * Each marker is a small constant on-screen-size pin sprite
+ * (sizeAttenuation:false) in brand yellow, always visible through the point
+ * cloud via depthTest=false. A subtle text label sits above the pin and is
+ * hidden by default — it appears only on hover/selection (markerLabelMode).
+ *
+ * The pin sprites are returned from getMeshes() as the raycast targets; Sprite
+ * is raycastable in three r170. One pin per camera, in camera index order.
  */
 declare class MarkerManager {
     private scene;
@@ -309,21 +321,30 @@ declare class MarkerManager {
     private group;
     private hoveredIdx;
     private selectedIdx;
-    private sphereRadius;
+    private labelMode;
     private _displaySettings;
     private _cameras;
     private _worldBox?;
+    /** Shared circular pin texture (reused across all pins; tinted via material.color). */
+    private _pinTexture?;
+    /** World-space vertical offset for the label anchor above the pin. */
+    private _labelOffset;
     constructor(scene: THREE.Scene);
     /** Apply new display settings and rebuild all markers */
     applyDisplaySettings(settings: DisplaySettings): void;
     /** Build markers from camera data. Pass worldBox for auto-scaling. */
     build(cameras: CameraData[], worldBox?: THREE.Box3): void;
-    private _makeSphere;
+    /** Lazily build (and cache) the shared circular pin texture. */
+    private _getPinTexture;
+    private _makePin;
     private _makeLabel;
-    /** Update sphere color by index */
+    /** Update pin color by index */
     private _recolor;
+    /** Resolve whether a marker's label should be visible under the current mode. */
+    private _labelShouldShow;
+    private _applyLabelVisibility;
     setVisible(visible: boolean): void;
-    /** Return sphere meshes for raycasting */
+    /** Return pin sprites for raycasting (one per camera, index order) */
     getMeshes(): THREE.Object3D[];
     setHovered(idx: number): void;
     setSelected(idx: number): void;
