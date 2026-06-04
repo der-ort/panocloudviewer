@@ -113,6 +113,44 @@ function SliderRow({
   );
 }
 
+function SegmentedRow<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-24 shrink-0 text-xs text-muted-foreground">
+        {label}
+      </span>
+      <div className="flex flex-1 overflow-hidden rounded-md border border-[hsl(var(--border))]">
+        {options.map((opt, i) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              "flex-1 px-2 py-1 text-xs transition-colors",
+              i > 0 && "border-l border-[hsl(var(--border))]",
+              value === opt.value
+                ? "bg-[hsl(var(--brand)/.15)] font-semibold text-[hsl(var(--brand))]"
+                : "text-muted-foreground hover:bg-[hsl(var(--muted)/.4)]",
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main dialog ─────────────────────────────────────────────────────────── */
 
 interface DisplaySettingsDialogProps {
@@ -149,6 +187,18 @@ export function DisplaySettingsDialog({
     (viewer as any).setDisplaySettings ?? setLocalSettings;
 
   const t = useLocale().displaySettings;
+  // The marker-label-mode strings are not part of the strict ViewerLocale
+  // interface, so they live here as fallbacks (English + German). We pick the
+  // language heuristically from an existing localized string, then allow the
+  // locale dictionary to override if a future build adds the keys.
+  const tx = t as typeof t & Partial<Record<string, string>>;
+  const isDe = t.advancedTab === "Erweitert";
+  const labelStr = {
+    markerLabels: isDe ? "Beschriftungen" : "Labels",
+    markerLabelHover: isDe ? "Bei Hover" : "On hover",
+    markerLabelAlways: isDe ? "Immer" : "Always",
+    markerLabelHidden: isDe ? "Aus" : "Hidden",
+  };
   const pcvRoot = usePcvRoot();
   const { position, onDragStart, reset } = useDraggable();
 
@@ -268,6 +318,16 @@ export function DisplaySettingsDialog({
                   step={0.1}
                   value={settings.markerLabelScale}
                   onChange={(v) => updateField("markerLabelScale", v)}
+                />
+                <SegmentedRow<NonNullable<DisplaySettings["markerLabelMode"]>>
+                  label={tx.markerLabels ?? labelStr.markerLabels}
+                  value={settings.markerLabelMode ?? "hover"}
+                  options={[
+                    { value: "hover", label: tx.markerLabelHover ?? labelStr.markerLabelHover },
+                    { value: "always", label: tx.markerLabelAlways ?? labelStr.markerLabelAlways },
+                    { value: "hidden", label: tx.markerLabelHidden ?? labelStr.markerLabelHidden },
+                  ]}
+                  onChange={(v) => updateField("markerLabelMode", v)}
                 />
               </SettingsSection>
             </div>

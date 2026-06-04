@@ -194,8 +194,8 @@ export const en: ViewerLocale = {
     labelScale: "Label Size",
     sphereRadius: "Point Size",
     markersSection: "Panorama Markers",
-    markerScale: "Sphere Size",
-    markerOpacity: "Sphere Opacity",
+    markerScale: "Pin Size",
+    markerOpacity: "Pin Opacity",
     markerLabelScale: "Label Size",
   },
   about: {

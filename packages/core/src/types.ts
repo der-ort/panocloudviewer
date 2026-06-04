@@ -186,6 +186,14 @@ export interface DisplaySettings {
   markerSphereOpacity: number;
   /** Marker label scale multiplier */
   markerLabelScale: number;
+  /**
+   * When marker labels are shown.
+   * - "hover"  (default): label shown only for the hovered/selected marker
+   * - "always": all labels shown
+   * - "hidden": no labels shown
+   * Optional for backward compatibility with existing DisplaySettings literals.
+   */
+  markerLabelMode?: "hover" | "always" | "hidden";
 }
 
 export const DISPLAY_PRESETS: Record<DisplayPreset, DisplaySettings> = {
@@ -194,9 +202,10 @@ export const DISPLAY_PRESETS: Record<DisplayPreset, DisplaySettings> = {
     measurementLineWidth: 1,
     measurementLabelScale: 0.6,
     measurementSphereRadius: 0.08,
-    markerSphereScale: 0.5,
-    markerSphereOpacity: 0.7,
-    markerLabelScale: 0.5,
+    markerSphereScale: 0.7,
+    markerSphereOpacity: 0.8,
+    markerLabelScale: 0.85,
+    markerLabelMode: "hover",
   },
   standard: {
     preset: "standard",
@@ -204,16 +213,18 @@ export const DISPLAY_PRESETS: Record<DisplayPreset, DisplaySettings> = {
     measurementLabelScale: 1.0,
     measurementSphereRadius: 0.15,
     markerSphereScale: 1.0,
-    markerSphereOpacity: 0.92,
+    markerSphereOpacity: 0.9,
     markerLabelScale: 1.0,
+    markerLabelMode: "hover",
   },
   prominent: {
     preset: "prominent",
     measurementLineWidth: 4,
     measurementLabelScale: 1.6,
     measurementSphereRadius: 0.3,
-    markerSphereScale: 2.0,
+    markerSphereScale: 1.6,
     markerSphereOpacity: 1.0,
-    markerLabelScale: 1.5,
+    markerLabelScale: 1.3,
+    markerLabelMode: "always",
   },
 };
