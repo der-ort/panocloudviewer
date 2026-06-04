@@ -273,8 +273,8 @@ export function Viewport({ className }: ViewportProps) {
     return raycaster.ray.intersectPlane(plane, hit) ? hit : null;
   }, []);
 
-  // Build a section-box draft centered at the cursor's ground point, with each
-  // dimension capped at 1/3 of the project bounds.
+  // Build a section-box draft centered at the cursor's ground point. The box is
+  // kept compact (flat in Z) so all six face handles stay on screen.
   const buildClipDraftAt = useCallback((nx: number, ny: number): THREE.Box3 | null => {
     const sm = smRef.current;
     if (!sm) return null;
@@ -284,14 +284,16 @@ export function Viewport({ className }: ViewportProps) {
     const center = projectToPlaneZ(nx, ny, zMid);
     if (!center) return null;
 
-    // Project bounds → per-axis cap at 1/3.
+    // Compact box so all six face handles stay in frame. X/Y capped at ~1/4 of
+    // the project bounds; Z made much flatter (~1/8) so a tall dataset never
+    // produces a tall column that pushes the +Z/-Z handles off-screen.
     const wb = loaderRef.current?.worldBox;
     const bounds = new THREE.Vector3(20, 20, 20);
     if (wb && !wb.isEmpty()) wb.getSize(bounds);
     const half = new THREE.Vector3(
-      Math.max(0.1, Math.min(bounds.x, bounds.x / 3)) / 2,
-      Math.max(0.1, Math.min(bounds.y, bounds.y / 3)) / 2,
-      Math.max(0.1, Math.min(bounds.z, bounds.z / 3)) / 2,
+      Math.max(0.1, Math.min(bounds.x, bounds.x / 4)) / 2,
+      Math.max(0.1, Math.min(bounds.y, bounds.y / 4)) / 2,
+      Math.max(0.2, Math.min(bounds.z, bounds.z / 8)) / 2,
     );
     return new THREE.Box3(
       center.clone().sub(half),

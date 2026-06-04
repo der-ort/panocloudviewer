@@ -54,6 +54,31 @@ export class ClipManager {
     });
     this.sm.scene.add(tc);
     this.transformControls = tc;
+    this._raiseGizmo();
+  }
+
+  /**
+   * Force the TransformControls gizmo to render on top of the point cloud.
+   * The gizmo uses default materials (depthTest=true, renderOrder=0) so it is
+   * occluded by the dense cloud. Traverse the gizmo tree and disable depth
+   * testing so the arrows/rings draw through. Must be re-applied after every
+   * setMode() because TransformControls rebuilds its gizmo/picker meshes.
+   */
+  private _raiseGizmo(): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tc = this.transformControls as any;
+    if (!tc) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tc.traverse((child: any) => {
+      if (!child.material) return;
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      for (const m of mats) {
+        m.depthTest = false;
+        m.depthWrite = false;
+        m.transparent = true;
+      }
+      child.renderOrder = 5;
+    });
   }
 
   addBox(box: THREE.Box3, name?: string): ClipBoxEntry {
@@ -187,6 +212,20 @@ export class ClipManager {
       if (tc && this.pivot) {
         tc.attach(this.pivot);
         tc.setMode(this._transformMode);
+        if (this._transformMode === "rotate") {
+          // Constrain rotation to a single ring about world Z.
+          tc.showX = false;
+          tc.showY = false;
+          tc.showZ = true;
+          tc.setSize(1.0);
+        } else {
+          tc.showX = true;
+          tc.showY = true;
+          tc.showZ = true;
+          tc.setSize(0.8);
+        }
+        // TransformControls rebuilds its gizmo meshes on setMode — re-raise.
+        this._raiseGizmo();
       }
       this._faceHandles?.detach();
     }
