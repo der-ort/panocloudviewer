@@ -236,7 +236,7 @@ var init_dist = __esm({
         this.controls.maxPolarAngle = Math.PI - 0.01;
         this.controls.zoomSpeed = 1.5;
         this.controls.rotateSpeed = 0.8;
-        this.controls.zoomToCursor = true;
+        this.controls.zoomToCursor = false;
         this.controls.mouseButtons = {
           LEFT: THREE5__namespace.MOUSE.ROTATE,
           MIDDLE: THREE5__namespace.MOUSE.DOLLY,
@@ -1759,12 +1759,16 @@ var init_dist = __esm({
         this.setRaycasterFromClient(clientX, clientY);
         const startIntersect = new THREE5__namespace.Vector3();
         if (!this.raycaster.ray.intersectPlane(plane, startIntersect)) return false;
-        const startValue = handle.sign === 1 ? this.box.max[handle.axis] : this.box.min[handle.axis];
+        const startCenter = new THREE5__namespace.Vector3();
+        const startSize = new THREE5__namespace.Vector3();
+        this.box.getCenter(startCenter);
+        this.box.getSize(startSize);
         this.drag = {
           handle,
           plane,
           startIntersect,
-          startValue,
+          startCenter,
+          startSize,
           worldAxis: this.worldAxisFor(handle.axis)
         };
         this.setHandleColor(handle, HANDLE_DRAG_COLOR);
@@ -1785,15 +1789,19 @@ var init_dist = __esm({
         const currentIntersect = new THREE5__namespace.Vector3();
         if (!this.raycaster.ray.intersectPlane(this.drag.plane, currentIntersect)) return;
         const axis = this.drag.handle.axis;
+        const s = this.drag.handle.sign;
         const worldDelta = currentIntersect.clone().sub(this.drag.startIntersect);
         const delta = worldDelta.dot(this.drag.worldAxis);
-        const newValue = this.drag.startValue + delta;
         const MIN_SIZE = 0.1;
-        if (this.drag.handle.sign === 1) {
-          this.box.max[axis] = Math.max(this.box.min[axis] + MIN_SIZE, newValue);
-        } else {
-          this.box.min[axis] = Math.min(this.box.max[axis] - MIN_SIZE, newValue);
-        }
+        const startSizeA = this.drag.startSize[axis];
+        const newSizeA = Math.max(MIN_SIZE, startSizeA + s * delta);
+        const grow = newSizeA - startSizeA;
+        const center = this.drag.startCenter.clone().addScaledVector(this.drag.worldAxis, s * grow / 2);
+        const size = this.drag.startSize.clone();
+        size[axis] = newSizeA;
+        const half = size.clone().multiplyScalar(0.5);
+        this.box.min.copy(center).sub(half);
+        this.box.max.copy(center).add(half);
         this.updatePositions();
         this.onChange?.(this.box);
       }
@@ -2041,6 +2049,7 @@ var init_dist = __esm({
         }
         if (this.selectedId === id) {
           this.transformControls?.detach();
+          this._faceHandles?.detach();
           if (this.pivot) {
             this.sm.scene.remove(this.pivot);
             this.pivot.geometry.dispose();
@@ -2102,6 +2111,7 @@ var init_dist = __esm({
       }
       clear() {
         this.transformControls?.detach();
+        this._faceHandles?.detach();
         if (this.pivot) {
           this.sm.scene.remove(this.pivot);
           this.pivot.geometry.dispose();

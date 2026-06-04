@@ -255,6 +255,9 @@ export class ClipManager {
     if (this.selectedId === id) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this.transformControls as any)?.detach();
+      // Hide the resize handles too, or the six face spheres linger in the
+      // scene as an artifact after the box itself is gone.
+      this._faceHandles?.detach();
       if (this.pivot) {
         this.sm.scene.remove(this.pivot);
         this.pivot.geometry.dispose();
@@ -327,6 +330,8 @@ export class ClipManager {
     // Detach controls
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (this.transformControls as any)?.detach();
+    // Hide the resize handles so they don't linger after every box is cleared.
+    this._faceHandles?.detach();
     if (this.pivot) {
       this.sm.scene.remove(this.pivot);
       this.pivot.geometry.dispose();

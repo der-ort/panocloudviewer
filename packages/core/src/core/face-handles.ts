@@ -16,8 +16,10 @@ interface DragState {
   plane: THREE.Plane;
   /** Initial intersection on the drag plane */
   startIntersect: THREE.Vector3;
-  /** The initial value of box.min[axis] or box.max[axis] at drag start */
-  startValue: number;
+  /** Box center (world) at drag start. */
+  startCenter: THREE.Vector3;
+  /** Box size (local dimensions) at drag start. */
+  startSize: THREE.Vector3;
   /** World-space unit vector of the box-local face axis (Z-rotated). */
   worldAxis: THREE.Vector3;
 }
@@ -169,12 +171,13 @@ export class FaceHandleController {
     const startIntersect = new THREE.Vector3();
     if (!this.raycaster.ray.intersectPlane(plane, startIntersect)) return false;
 
-    const startValue = handle.sign === 1
-      ? this.box.max[handle.axis]
-      : this.box.min[handle.axis];
+    const startCenter = new THREE.Vector3();
+    const startSize = new THREE.Vector3();
+    this.box.getCenter(startCenter);
+    this.box.getSize(startSize);
 
     this.drag = {
-      handle, plane, startIntersect, startValue,
+      handle, plane, startIntersect, startCenter, startSize,
       worldAxis: this.worldAxisFor(handle.axis),
     };
     this.setHandleColor(handle, HANDLE_DRAG_COLOR);
@@ -201,19 +204,29 @@ export class FaceHandleController {
     // Project the world-space movement onto the (Z-rotated) box-local axis so
     // dragging a face of a rotated box resizes along the box's own axis.
     const axis = this.drag.handle.axis;
+    const s = this.drag.handle.sign;
     const worldDelta = currentIntersect.clone().sub(this.drag.startIntersect);
     const delta = worldDelta.dot(this.drag.worldAxis);
-    const newValue = this.drag.startValue + delta;
 
-    // Update the correct face, clamping so min < max with a minimum box size
+    // Recompute from the drag-start state each move (no incremental drift).
+    // The grabbed face moves +delta along the local axis: the max face (+1)
+    // grows the box, the min face (-1) shrinks it.
     const MIN_SIZE = 0.1;
-    if (this.drag.handle.sign === 1) {
-      // Dragging a max face
-      this.box.max[axis] = Math.max(this.box.min[axis] + MIN_SIZE, newValue);
-    } else {
-      // Dragging a min face
-      this.box.min[axis] = Math.min(this.box.max[axis] - MIN_SIZE, newValue);
-    }
+    const startSizeA = this.drag.startSize[axis];
+    const newSizeA = Math.max(MIN_SIZE, startSizeA + s * delta);
+    const grow = newSizeA - startSizeA;
+
+    // Keep the opposite face fixed in the box's own frame: shift the center by
+    // half the size change ALONG the local axis (its world direction), so a
+    // rotated box resizes along its orientation instead of the world axes.
+    const center = this.drag.startCenter.clone()
+      .addScaledVector(this.drag.worldAxis, (s * grow) / 2);
+    const size = this.drag.startSize.clone();
+    size[axis] = newSizeA;
+
+    const half = size.clone().multiplyScalar(0.5);
+    this.box.min.copy(center).sub(half);
+    this.box.max.copy(center).add(half);
 
     this.updatePositions();
     this.onChange?.(this.box);

@@ -81,7 +81,12 @@ export class SceneManager {
     this.controls.maxPolarAngle = Math.PI - 0.01;
     this.controls.zoomSpeed = 1.5;
     this.controls.rotateSpeed = 0.8;
-    this.controls.zoomToCursor = true;
+    // Zoom toward the orbit target (not the cursor). zoomToCursor drifts
+    // controls.target on every scroll, which inflates the camera→target
+    // distance that screen-space panning scales by — making drag/pan speed
+    // change unpredictably after zooming. Keep the target stable so navigation
+    // feels consistent at any zoom level.
+    this.controls.zoomToCursor = false;
     this.controls.mouseButtons = {
       LEFT: THREE.MOUSE.ROTATE,
       MIDDLE: THREE.MOUSE.DOLLY,
