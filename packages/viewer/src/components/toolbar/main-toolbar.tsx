@@ -41,9 +41,11 @@ interface MainToolbarProps {
 }
 
 export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, sidebarOpen, renderSettingsOpen }: MainToolbarProps) {
-  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap } = useViewer();
+  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap, uiMode } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().toolbar;
+
+  const isPro = uiMode === "professional";
 
   return (
     <div className="flex items-center h-10 px-2 gap-0 select-none overflow-x-auto">
@@ -55,12 +57,15 @@ export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar,
       {/* Display settings */}
       <ToolbarSection label="Display">
         <DisplayControls />
-        <ToolbarIconBtn
-          icon={<Sliders size={14} />}
-          active={renderSettingsOpen}
-          onClick={onToggleRenderSettings}
-          title="Rendering settings"
-        />
+        {/* Rendering settings toggle — Professional only */}
+        {isPro && (
+          <ToolbarIconBtn
+            icon={<Sliders size={14} />}
+            active={renderSettingsOpen}
+            onClick={onToggleRenderSettings}
+            title="Rendering settings"
+          />
+        )}
       </ToolbarSection>
 
       {/* Spacer */}
@@ -82,14 +87,18 @@ export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar,
           onClick={() => setShowMinimap(!showMinimap)}
           title={t.toggleMinimap}
         />
-        <ExportTools />
-        <ToolbarIconBtn
-          icon={<Layers size={14} />}
-          label={t.clouds}
-          active={false}
-          onClick={onOpenCloudSelector}
-          title={t.cloudSelector}
-        />
+        {/* Export — Professional only */}
+        {isPro && <ExportTools />}
+        {/* Cloud selector — Professional only */}
+        {isPro && (
+          <ToolbarIconBtn
+            icon={<Layers size={14} />}
+            label={t.clouds}
+            active={false}
+            onClick={onOpenCloudSelector}
+            title={t.cloudSelector}
+          />
+        )}
         <ToolbarIconBtn
           icon={resolvedTheme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
           label={t.theme}

@@ -110,9 +110,11 @@ const PROJ_MODES: { value: CameraProjection; icon: React.FC<{ className?: string
 ];
 
 export function DisplayControls() {
-  const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
+  const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, navigationMode, setNavigationMode, projection, setProjection, uiMode } = useViewer();
   const t = useLocale().toolbar;
   const [quality, setQuality] = useState("balanced");
+
+  const isPro = uiMode === "professional";
 
   const handleBudget = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = Number(e.target.value);
@@ -178,64 +180,72 @@ export function DisplayControls() {
         ))}
       </div>
 
-      {/* Color mode */}
-      <select
-        value={colorMode}
-        onChange={handleColorMode}
-        className={selectClass}
-        title={t.colorMode}
-      >
-        {COLOR_MODES.map(cm => (
-          <option key={cm.value} value={cm.value}>
-            {(t as unknown as Record<string, string>)[cm.labelKey] ?? cm.value}
-          </option>
-        ))}
-      </select>
+      {/* Color mode — Professional only */}
+      {isPro && (
+        <select
+          value={colorMode}
+          onChange={handleColorMode}
+          className={selectClass}
+          title={t.colorMode}
+        >
+          {COLOR_MODES.map(cm => (
+            <option key={cm.value} value={cm.value}>
+              {(t as unknown as Record<string, string>)[cm.labelKey] ?? cm.value}
+            </option>
+          ))}
+        </select>
+      )}
 
-      {/* Quality preset */}
-      <select
-        value={quality}
-        onChange={handleQuality}
-        className={selectClass}
-        title={t.quality}
-      >
-        {QUALITY_PRESETS.map(q => (
-          <option key={q.value} value={q.value}>
-            {(t as unknown as Record<string, string>)[q.label] ?? q.value}
-          </option>
-        ))}
-      </select>
+      {/* Quality preset — Professional only */}
+      {isPro && (
+        <select
+          value={quality}
+          onChange={handleQuality}
+          className={selectClass}
+          title={t.quality}
+        >
+          {QUALITY_PRESETS.map(q => (
+            <option key={q.value} value={q.value}>
+              {(t as unknown as Record<string, string>)[q.label] ?? q.value}
+            </option>
+          ))}
+        </select>
+      )}
 
-      {/* Budget slider */}
-      <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
-        <span className="hidden lg:block">{t.budget}</span>
-        <input
-          type="range"
-          min={500_000}
-          max={10_000_000}
-          step={100_000}
-          value={pointBudget}
-          onChange={handleBudget}
-          className="pcv-slider w-16"
-          title={t.pointBudgetTitle(pointBudget / 1e6)}
-        />
-        <span className="w-8 text-right tabular-nums">{(pointBudget / 1e6).toFixed(0)}M</span>
-      </label>
+      {/* Budget slider — Professional only */}
+      {isPro && (
+        <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
+          <span className="hidden lg:block">{t.budget}</span>
+          <input
+            type="range"
+            min={500_000}
+            max={10_000_000}
+            step={100_000}
+            value={pointBudget}
+            onChange={handleBudget}
+            className="pcv-slider w-16"
+            title={t.pointBudgetTitle(pointBudget / 1e6)}
+          />
+          <span className="w-8 text-right tabular-nums">{(pointBudget / 1e6).toFixed(0)}M</span>
+        </label>
+      )}
 
-      {/* Size slider */}
-      <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
-        <span className="hidden lg:block">{t.size}</span>
-        <input
-          type="range"
-          min={0.5}
-          max={5}
-          step={0.1}
-          value={pointSize}
-          onChange={handleSize}
-          className="pcv-slider w-12"
-          title={t.pointSizeTitle(pointSize)}
-        />
-      </label>
+      {/* Size slider — Professional only */}
+      {isPro && (
+        <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
+          <span className="hidden lg:block">{t.size}</span>
+          <input
+            type="range"
+            min={0.5}
+            max={5}
+            step={0.1}
+            value={pointSize}
+            onChange={handleSize}
+            className="pcv-slider w-12"
+            title={t.pointSizeTitle(pointSize)}
+          />
+        </label>
+      )}
     </div>
   );
 }
