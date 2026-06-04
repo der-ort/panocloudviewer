@@ -50,6 +50,7 @@ The component fills its container — give the container an explicit size.
 | `theme` | `"dark" \| "light"` | `"dark"` | Initial color theme |
 | `className` | `string` | `undefined` | Extra CSS class on the root `<div>` |
 | `locale` | `ViewerLocale` | `en` | UI language / string overrides |
+| `uiScale` | `number` | `1` | Scales the UI **chrome only** (toolbars, tool-rail, sidebar, floating palettes, dialogs) via a `--pcv-scale` CSS variable + `zoom`. The 3D viewport/canvas stays at full resolution. Use e.g. `1.25` to enlarge controls on large displays. |
 | `children` | `(viewport: ReactNode) => ReactNode` | `undefined` | Custom UI render prop — replaces default `WorkspaceLayout`. Receives the Suspense-wrapped `<Viewport>` element. |
 
 ### Custom UI via render prop
@@ -594,13 +595,15 @@ Smooth camera fly-to animations using quartic ease-out.
 
 ### `ClipManager`
 
-Manages named axis-aligned clip boxes with TransformControls.
+Manages named axis-aligned clip boxes with TransformControls. Default post-create transform mode is `scale` (axis-colored resize handles via `FaceHandleController`); `translate` shows move arrows; `rotate` shows a single world-Z ring.
+
+> **three r170 note:** `TransformControls` extends `Controls`/`EventDispatcher`, not `Object3D`. Its gizmo is added to the scene via `tc.getHelper()` (the internal `_root` Object3D), never `scene.add(tc)`. Raising the gizmo over the point cloud (`depthTest=false`/`renderOrder`) traverses `tc.getHelper()`, not the controls object.
 
 | Method | Signature | Description |
 |---|---|---|
 | `addBox` | `(box: THREE.Box3, name?: string) => ClipBoxEntry` | Add a clip box; creates scene helper; applies clipping |
 | `selectBox` | `(id: string \| null) => Promise<void>` | Select a box for transform (lazy-init TransformControls) |
-| `setTransformMode` | `(mode: "translate" \| "scale" \| "rotate") => void` | Switch TransformControls mode |
+| `setTransformMode` | `(mode: "translate" \| "scale" \| "rotate") => void` | Switch TransformControls mode (default `scale`) |
 | `removeBox` | `(id: string) => void` | Remove a clip box |
 | `setBoxMode` | `(id: string, mode: ClipMode) => void` | Set clip mode: `"outside"` (keep inside) or `"inside"` (remove inside) |
 | `setBoxVisible` | `(id: string, visible: boolean) => void` | Show/hide a clip box helper |
@@ -628,13 +631,13 @@ Renders orthographic views and exports as images.
 
 ### `MarkerManager`
 
-Renders 3D panorama camera markers as billboard sprites.
+Renders panorama camera markers as constant on-screen-size pins (`THREE.Sprite` with `sizeAttenuation:false`), so they do not grow/shrink with zoom. Labels are subtle and shown on hover/selection only by default, controlled by `DisplaySettings.markerLabelMode` (`"hover" | "always" | "hidden"`).
 
 | Method | Signature | Description |
 |---|---|---|
-| `build` | `(cameras: CameraData[], worldBox?: THREE.Box3) => void` | Create sprites for all cameras; auto-scales to scene |
+| `build` | `(cameras: CameraData[], worldBox?: THREE.Box3) => void` | Create pin sprites for all cameras |
 | `getMeshes` | `() => THREE.Object3D[]` | Get sprites for raycasting |
-| `setHovered` | `(idx: number) => void` | Highlight a marker on hover (-1 = none) |
+| `setHovered` | `(idx: number) => void` | Highlight a marker on hover (-1 = none); reveals its label when `markerLabelMode="hover"` |
 | `setSelected` | `(idx: number) => void` | Mark a marker as selected (-1 = none) |
 | `setVisible` | `(visible: boolean) => void` | Show/hide all markers |
 | `clear` | `() => void` | Remove all markers (dispose textures) |
@@ -829,12 +832,14 @@ interface DisplaySettings {
   measurementLineWidth: number;    // pixels
   measurementLabelScale: number;   // multiplier
   measurementSphereRadius: number; // world units
-  markerSphereScale: number;       // multiplier on auto-calculated radius
+  markerSphereScale: number;       // multiplier on pin size
   markerSphereOpacity: number;     // 0–1
   markerLabelScale: number;        // multiplier
+  markerLabelMode: "hover" | "always" | "hidden"; // when marker labels show
 }
 
-// Pre-defined presets — also exported as DISPLAY_PRESETS constant
+// Pre-defined presets — also exported as DISPLAY_PRESETS constant.
+// markerLabelMode defaults: compact/standard → "hover", prominent → "always".
 const DISPLAY_PRESETS: Record<DisplayPreset, DisplaySettings>;
 ```
 
