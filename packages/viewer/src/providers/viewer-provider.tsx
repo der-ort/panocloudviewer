@@ -11,7 +11,7 @@ import type { MinimapRenderer } from "@der-ort/pano-cloud-viewer-core";
 import type { ClipManager } from "@der-ort/pano-cloud-viewer-core";
 import type { ClipBoxEntry } from "@der-ort/pano-cloud-viewer-core";
 import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
-import type { ActiveTool, CameraData, CameraProjection, DisplaySettings, Measurement, NavigationMode, ViewerConfig } from "@der-ort/pano-cloud-viewer-core";
+import type { ActiveTool, CameraData, CameraProjection, DisplaySettings, Measurement, NavigationMode, UiMode, ViewerConfig } from "@der-ort/pano-cloud-viewer-core";
 import { DISPLAY_PRESETS } from "@der-ort/pano-cloud-viewer-core";
 
 interface ViewerContextValue {
@@ -66,6 +66,9 @@ interface ViewerContextValue {
   setProjection: (mode: CameraProjection) => void;
   displaySettings: DisplaySettings;
   setDisplaySettings: (settings: DisplaySettings) => void;
+
+  /** Resolved UI mode — defaults to "professional" when not set in config */
+  uiMode: UiMode;
 
   config: ViewerConfig;
 }
@@ -129,6 +132,8 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const setMinimap = useCallback((r: MinimapRenderer) => _setMinimap(r), []);
   const setClipManager = useCallback((c: ClipManager) => _setClipManager(c), []);
 
+  const uiMode: UiMode = config.uiMode ?? "professional";
+
   const value: ViewerContextValue = {
     sceneManager, loader, measurementManager, markerManager, cameraAnimator, exporter, minimap, clipManager,
     setSceneManager, setLoader, setMeasurementManager, setMarkerManager, setCameraAnimator, setExporter, setMinimap, setClipManager,
@@ -147,6 +152,7 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
     navigationMode, setNavigationMode,
     projection, setProjection,
     displaySettings, setDisplaySettings,
+    uiMode,
     config,
   };
 

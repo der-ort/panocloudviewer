@@ -111,6 +111,8 @@ export interface ExportOptions {
 
 export type Theme = "dark" | "light" | "system";
 
+export type UiMode = "professional" | "lite";
+
 export interface ViewerConfig {
   source: PointCloudSource;
   theme?: Theme;
@@ -128,6 +130,12 @@ export interface ViewerConfig {
   onMeasurementChange?: (measurements: Measurement[]) => void;
   /** Display settings overrides (marker/measurement sizing) */
   displaySettings?: Partial<DisplaySettings>;
+  /**
+   * UI complexity mode.
+   * - "professional" (default): full toolset — all measurements, clipping, display controls, export, all sidebar tabs.
+   * - "lite": beginner set — nav modes, basic measurements (point/distance/height), panorama/minimap/theme toggles only.
+   */
+  uiMode?: UiMode;
 }
 
 // ── Viewer state (context) ───────────────────────────────────

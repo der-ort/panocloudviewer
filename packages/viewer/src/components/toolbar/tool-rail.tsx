@@ -76,8 +76,10 @@ const ADVANCED_MEASURES: { type: MeasurementType; tool: ActiveTool; icon: React.
 ];
 
 export function ToolRail() {
-  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList } = useViewer();
+  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, uiMode } = useViewer();
   const t = useLocale().toolRail;
+
+  const isPro = uiMode === "professional";
 
   const toggle = (tool: ActiveTool) => setActiveTool(activeTool === tool ? "none" : tool);
 
@@ -112,7 +114,7 @@ export function ToolRail() {
   };
 
   return (
-    <div className="flex flex-col items-center gap-0.5 py-2 px-1 h-full bg-[hsl(var(--toolbar-bg,var(--card)))] border-r border-[hsl(var(--border))] w-10 shrink-0 overflow-y-auto">
+    <div className="flex flex-col items-center gap-0.5 py-2 px-1 w-10 shrink-0">
       {/* ── Measure: Basic ──────────────────────── */}
       <GroupLabel>{t.measureGroup}</GroupLabel>
       <SubLabel>Basic</SubLabel>
@@ -126,17 +128,21 @@ export function ToolRail() {
         />
       ))}
 
-      {/* ── Measure: Advanced ───────────────────── */}
-      <SubLabel>Advanced</SubLabel>
-      {ADVANCED_MEASURES.map(def => (
-        <RailBtn
-          key={def.tool}
-          icon={def.icon}
-          title={(t as unknown as Record<string, string>)[def.titleKey] ?? def.type}
-          active={activeTool === def.tool}
-          onClick={() => toggle(def.tool)}
-        />
-      ))}
+      {/* ── Measure: Advanced (Professional only) ─── */}
+      {isPro && (
+        <>
+          <SubLabel>Advanced</SubLabel>
+          {ADVANCED_MEASURES.map(def => (
+            <RailBtn
+              key={def.tool}
+              icon={def.icon}
+              title={(t as unknown as Record<string, string>)[def.titleKey] ?? def.type}
+              active={activeTool === def.tool}
+              onClick={() => toggle(def.tool)}
+            />
+          ))}
+        </>
+      )}
       <RailBtn
         icon={<X size={13} />}
         title={t.clearMeasurements}
@@ -144,59 +150,63 @@ export function ToolRail() {
         compact
       />
 
-      <Divider />
-
-      {/* ── Clipping ────────────────────────────── */}
-      <GroupLabel>{t.sectionGroup}</GroupLabel>
-      <RailBtn
-        icon={<BoxSelect size={15} />}
-        title={hasClipBox ? t.removeClipBox : t.drawClipBox}
-        active={hasClipBox}
-        onClick={hasClipBox ? clearClipBox : addClipBox}
-      />
-      {hasClipBox && (
+      {/* ── Clipping (Professional only) ────────── */}
+      {isPro && (
         <>
+          <Divider />
+
+          <GroupLabel>{t.sectionGroup}</GroupLabel>
           <RailBtn
-            icon={<Scissors size={15} />}
-            title={clipMode === "outside" ? t.clipModeKeepInside : t.clipModeKeepOutside}
-            active={false}
-            onClick={toggleClipMode}
+            icon={<BoxSelect size={15} />}
+            title={hasClipBox ? t.removeClipBox : t.drawClipBox}
+            active={hasClipBox}
+            onClick={hasClipBox ? clearClipBox : addClipBox}
           />
-          <SubLabel>Transform</SubLabel>
-          <div className="flex gap-0.5">
-            <RailBtn
-              icon={<Move size={12} />}
-              title="Move clip box"
-              onClick={() => {
-                const id = clipManager?.getSelectedId();
-                if (id) clipManager?.setTransformMode("translate");
-                else {
-                  const b = boxes[0];
-                  if (b) { clipManager?.selectBox(b.id); clipManager?.setTransformMode("translate"); }
-                }
-              }}
-              compact
-            />
-            <RailBtn
-              icon={<Maximize2 size={12} />}
-              title="Resize clip box faces"
-              onClick={() => {
-                const id = clipManager?.getSelectedId();
-                if (id) clipManager?.setTransformMode("scale");
-                else {
-                  const b = boxes[0];
-                  if (b) { clipManager?.selectBox(b.id); clipManager?.setTransformMode("scale"); }
-                }
-              }}
-              compact
-            />
-          </div>
-          <RailBtn
-            icon={<RotateCcw size={13} />}
-            title={t.removeClipBox}
-            onClick={clearClipBox}
-            compact
-          />
+          {hasClipBox && (
+            <>
+              <RailBtn
+                icon={<Scissors size={15} />}
+                title={clipMode === "outside" ? t.clipModeKeepInside : t.clipModeKeepOutside}
+                active={false}
+                onClick={toggleClipMode}
+              />
+              <SubLabel>Transform</SubLabel>
+              <div className="flex gap-0.5">
+                <RailBtn
+                  icon={<Move size={12} />}
+                  title="Move clip box"
+                  onClick={() => {
+                    const id = clipManager?.getSelectedId();
+                    if (id) clipManager?.setTransformMode("translate");
+                    else {
+                      const b = boxes[0];
+                      if (b) { clipManager?.selectBox(b.id); clipManager?.setTransformMode("translate"); }
+                    }
+                  }}
+                  compact
+                />
+                <RailBtn
+                  icon={<Maximize2 size={12} />}
+                  title="Resize clip box faces"
+                  onClick={() => {
+                    const id = clipManager?.getSelectedId();
+                    if (id) clipManager?.setTransformMode("scale");
+                    else {
+                      const b = boxes[0];
+                      if (b) { clipManager?.selectBox(b.id); clipManager?.setTransformMode("scale"); }
+                    }
+                  }}
+                  compact
+                />
+              </div>
+              <RailBtn
+                icon={<RotateCcw size={13} />}
+                title={t.removeClipBox}
+                onClick={clearClipBox}
+                compact
+              />
+            </>
+          )}
         </>
       )}
     </div>

@@ -207,6 +207,15 @@ export interface ViewerLocale {
   panoViewer: {
     close: string;
   };
+  /** UI mode labels and related toolbar strings */
+  uiModes: {
+    /** Label for the "professional" mode */
+    professional: string;
+    /** Label for the "lite" mode */
+    lite: string;
+    /** Generic label for the mode selector */
+    modeLabel: string;
+  };
 }
 
 /**

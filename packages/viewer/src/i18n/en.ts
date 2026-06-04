@@ -210,4 +210,9 @@ export const en: ViewerLocale = {
   panoViewer: {
     close: "Close panorama",
   },
+  uiModes: {
+    professional: "Professional",
+    lite: "Lite",
+    modeLabel: "Mode",
+  },
 };

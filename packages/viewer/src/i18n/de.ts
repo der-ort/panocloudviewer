@@ -211,4 +211,9 @@ export const de = createLocale(en, {
   panoViewer: {
     close: "Panorama schließen",
   },
+  uiModes: {
+    professional: "Professionell",
+    lite: "Lite",
+    modeLabel: "Modus",
+  },
 });

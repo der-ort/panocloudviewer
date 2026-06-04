@@ -42,6 +42,7 @@ export type {
   DisplaySettings,
   ViewerConfig,
   Theme,
+  UiMode,
 } from "./types";
 export { DISPLAY_PRESETS } from "./types";
 

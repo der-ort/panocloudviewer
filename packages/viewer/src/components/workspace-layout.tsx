@@ -25,6 +25,25 @@ function ViewportFallback() {
   );
 }
 
+/**
+ * Glass card wrapper — matches the minimal-toolbar glass style.
+ * Used for all floating UI clusters.
+ */
+export function GlassCard({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "backdrop-blur-xl bg-black/30 dark:bg-black/40",
+        "border border-white/15 dark:border-white/10",
+        "rounded-2xl shadow-2xl shadow-black/20",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 interface WorkspaceLayoutProps {
   className?: string;
 }
@@ -32,55 +51,76 @@ interface WorkspaceLayoutProps {
 export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
-  const { fps, pointBudget, activeTool, selectedCamera } = useViewer();
+
+  const { fps, pointBudget, activeTool, selectedCamera, uiMode } = useViewer();
   const { metadata } = useData();
   const t = useLocale().viewport;
 
+  const isPro = uiMode === "professional";
+
   return (
-    <div className={cn("flex flex-col h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden", className)}>
-      {/* Top toolbar — logo, views, display, toggles */}
-      <div className="shrink-0 border-b border-[hsl(var(--border))] bg-[hsl(var(--toolbar-bg,var(--card)))] z-20">
-        <MainToolbar
-          onToggleSidebar={() => setSidebarOpen(o => !o)}
-          sidebarOpen={sidebarOpen}
-          onToggleRenderSettings={() => setRenderSettingsOpen(o => !o)}
-          renderSettingsOpen={renderSettingsOpen}
-        />
+    <div className={cn("relative h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden", className)}>
+
+      {/* ── Viewport fills the entire area ──────────────────────────────── */}
+      <div className="absolute inset-0">
+        <Suspense fallback={<ViewportFallback />}>
+          <Viewport />
+        </Suspense>
       </div>
 
-      {/* Main content: tool rail + viewport + right sidebar */}
-      <div className="flex flex-1 overflow-hidden min-h-0">
-        {/* Left tool rail */}
-        <ToolRail />
+      {/* ── Pano viewer overlay ─────────────────────────────────────────── */}
+      {selectedCamera && <PanoViewer />}
 
-        {/* Viewport */}
-        <div className="flex-1 relative overflow-hidden">
-          <Suspense fallback={<ViewportFallback />}>
-            <Viewport />
-          </Suspense>
-          {selectedCamera && <PanoViewer />}
-          <RenderingSettings open={renderSettingsOpen} onClose={() => setRenderSettingsOpen(false)} />
-        </div>
+      {/* ── Rendering settings panel overlay ────────────────────────────── */}
+      <RenderingSettings open={renderSettingsOpen} onClose={() => setRenderSettingsOpen(false)} />
 
-        {/* Right sidebar */}
-        <div
-          className={cn(
-            "border-l border-[hsl(var(--border))] shrink-0 overflow-hidden transition-all duration-200",
-            sidebarOpen ? "w-72 xl:w-80" : "w-0"
-          )}
-        >
-          {sidebarOpen && <Sidebar />}
-        </div>
+      {/* ── Top floating toolbar ────────────────────────────────────────── */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+        <GlassCard className="pointer-events-auto">
+          <MainToolbar
+            onToggleSidebar={() => setSidebarOpen(o => !o)}
+            sidebarOpen={sidebarOpen}
+            onToggleRenderSettings={isPro ? () => setRenderSettingsOpen(o => !o) : undefined}
+            renderSettingsOpen={renderSettingsOpen}
+          />
+        </GlassCard>
       </div>
 
-      {/* Status bar */}
-      <div className="shrink-0 border-t border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground">
-        {metadata && <span>{t.statusPts(metadata.points / 1e6)}</span>}
-        <span>{t.statusBudget(pointBudget / 1e6)}</span>
-        <span>{t.statusFps(fps)}</span>
-        {activeTool !== "none" && (
-          <span className="text-[hsl(var(--brand))]">{activeTool}</span>
+      {/* ── Left floating tool rail ──────────────────────────────────────── */}
+      {/* Positioned wrapper with explicit top/bottom gives the GlassCard a height anchor */}
+      <div className="absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center">
+        <GlassCard className="pointer-events-auto overflow-y-auto max-h-full">
+          <ToolRail />
+        </GlassCard>
+      </div>
+
+      {/* ── Right collapsible sidebar ───────────────────────────────────── */}
+      <div
+        className={cn(
+          "absolute top-3 bottom-10 right-3 z-30",
+          "transition-all duration-200",
+          sidebarOpen ? "w-72 xl:w-80" : "w-0 overflow-hidden",
         )}
+      >
+        {sidebarOpen && (
+          <GlassCard className="h-full overflow-hidden">
+            <Sidebar />
+          </GlassCard>
+        )}
+      </div>
+
+      {/* ── Bottom status strip ─────────────────────────────────────────── */}
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+        <GlassCard className="pointer-events-none">
+          <div className="px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-white/50 select-none">
+            {metadata && <span>{t.statusPts(metadata.points / 1e6)}</span>}
+            <span>{t.statusBudget(pointBudget / 1e6)}</span>
+            <span>{t.statusFps(fps)}</span>
+            {activeTool !== "none" && (
+              <span className="text-[hsl(var(--brand))]">{activeTool}</span>
+            )}
+          </div>
+        </GlassCard>
       </div>
     </div>
   );

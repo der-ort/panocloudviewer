@@ -8,7 +8,7 @@ import { LocaleProvider } from "../i18n/locale-context";
 import { WorkspaceLayout } from "./workspace-layout";
 import { PanoViewer } from "./overlays/pano-viewer";
 import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
-import type { PointCloudSource } from "@der-ort/pano-cloud-viewer-core";
+import type { PointCloudSource, UiMode } from "@der-ort/pano-cloud-viewer-core";
 import type { ViewerLocale } from "../i18n/types";
 
 const Viewport = lazy(() => import("./viewport").then(m => ({ default: m.Viewport })));
@@ -30,6 +30,12 @@ export interface PanoCloudViewerProps {
    * <PanoCloudViewer locale={de} ... />
    */
   locale?: ViewerLocale;
+  /**
+   * UI complexity mode.
+   * - `"professional"` (default): full toolset — all measurements, clipping, display controls, export, all sidebar tabs.
+   * - `"lite"`: beginner set — nav modes, basic measurements, panorama/minimap/theme toggles only.
+   */
+  uiMode?: UiMode;
   /**
    * Custom UI via render prop. Receives the viewport element that must be rendered.
    * When omitted, the default WorkspaceLayout is used.
@@ -78,9 +84,9 @@ function PanoOverlayBridge() {
  * />
  * ```
  */
-export function PanoCloudViewer({ source, theme = "dark", className, locale, children }: PanoCloudViewerProps) {
+export function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, children }: PanoCloudViewerProps) {
   const adapter = createAdapter(source);
-  const config = { source };
+  const config = { source, uiMode };
 
   return (
     <LocaleProvider locale={locale}>
