@@ -4,7 +4,7 @@ import React24, { createContext, lazy, useContext, useState, useCallback, useEff
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { X, ChevronDown, ChevronUp, Check, Download, Sliders, Camera, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, BoxSelect, Scissors, Move, Maximize2, RotateCcw, Plus, Trash2, Eye, EyeOff, RotateCw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Tag, ChevronLeft, ChevronRight, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, Settings, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Check, Download, Sliders, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, BoxSelect, Plus, Trash2, Scissors, Eye, EyeOff, Move, Maximize2, RotateCw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Camera, Tag, ChevronLeft, ChevronRight, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, Settings, RotateCcw, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cva } from 'class-variance-authority';
 import * as SliderPrimitive from '@radix-ui/react-slider';
@@ -1780,6 +1780,28 @@ var init_dist = __esm({
         });
         this.sm.scene.add(tc);
         this.transformControls = tc;
+        this._raiseGizmo();
+      }
+      /**
+       * Force the TransformControls gizmo to render on top of the point cloud.
+       * The gizmo uses default materials (depthTest=true, renderOrder=0) so it is
+       * occluded by the dense cloud. Traverse the gizmo tree and disable depth
+       * testing so the arrows/rings draw through. Must be re-applied after every
+       * setMode() because TransformControls rebuilds its gizmo/picker meshes.
+       */
+      _raiseGizmo() {
+        const tc = this.transformControls;
+        if (!tc) return;
+        tc.traverse((child) => {
+          if (!child.material) return;
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          for (const m of mats) {
+            m.depthTest = false;
+            m.depthWrite = false;
+            m.transparent = true;
+          }
+          child.renderOrder = 5;
+        });
       }
       addBox(box, name) {
         const id = genId();
@@ -1888,6 +1910,18 @@ var init_dist = __esm({
           if (tc && this.pivot) {
             tc.attach(this.pivot);
             tc.setMode(this._transformMode);
+            if (this._transformMode === "rotate") {
+              tc.showX = false;
+              tc.showY = false;
+              tc.showZ = true;
+              tc.setSize(1);
+            } else {
+              tc.showX = true;
+              tc.showY = true;
+              tc.showZ = true;
+              tc.setSize(0.8);
+            }
+            this._raiseGizmo();
           }
           this._faceHandles?.detach();
         }
@@ -3018,9 +3052,9 @@ function Viewport({ className }) {
     const bounds = new THREE5.Vector3(20, 20, 20);
     if (wb && !wb.isEmpty()) wb.getSize(bounds);
     const half = new THREE5.Vector3(
-      Math.max(0.1, Math.min(bounds.x, bounds.x / 3)) / 2,
-      Math.max(0.1, Math.min(bounds.y, bounds.y / 3)) / 2,
-      Math.max(0.1, Math.min(bounds.z, bounds.z / 3)) / 2
+      Math.max(0.1, Math.min(bounds.x, bounds.x / 4)) / 2,
+      Math.max(0.1, Math.min(bounds.y, bounds.y / 4)) / 2,
+      Math.max(0.2, Math.min(bounds.z, bounds.z / 8)) / 2
     );
     return new THREE5.Box3(
       center.clone().sub(half),
@@ -3513,8 +3547,35 @@ var PROJ_MODES = [
   { value: "perspective", icon: PerspectiveIcon, titleKey: "camPerspectiveTitle" },
   { value: "orthographic", icon: OrthoIcon, titleKey: "camOrthographicTitle" }
 ];
+var iconBtnClass = (active) => `p-1 rounded transition-colors cursor-pointer border ${active ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] border-[hsl(var(--brand)/0.4)]" : "text-muted-foreground hover:text-foreground border-transparent hover:border-[hsl(var(--border))]"}`;
+function ViewModeControls() {
+  const { navigationMode, setNavigationMode, projection, setProjection } = useViewer();
+  const t = useLocale().toolbar;
+  return /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1.5 px-1", children: [
+    /* @__PURE__ */ jsx("div", { className: "flex items-center gap-0.5 border border-[hsl(var(--border))] rounded p-0.5", children: NAV_MODES.map((nm) => /* @__PURE__ */ jsx(
+      "button",
+      {
+        className: iconBtnClass(navigationMode === nm.value),
+        title: t[nm.titleKey],
+        onClick: () => setNavigationMode(nm.value),
+        children: /* @__PURE__ */ jsx(nm.icon, {})
+      },
+      nm.value
+    )) }),
+    /* @__PURE__ */ jsx("div", { className: "flex items-center gap-0.5 border border-[hsl(var(--border))] rounded p-0.5", children: PROJ_MODES.map((pm) => /* @__PURE__ */ jsx(
+      "button",
+      {
+        className: iconBtnClass(projection === pm.value),
+        title: t[pm.titleKey],
+        onClick: () => setProjection(pm.value),
+        children: /* @__PURE__ */ jsx(pm.icon, {})
+      },
+      pm.value
+    )) })
+  ] });
+}
 function DisplayControls() {
-  const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, navigationMode, setNavigationMode, projection, setProjection, uiMode } = useViewer();
+  const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, uiMode } = useViewer();
   const t = useLocale().toolbar;
   const [quality, setQuality] = useState("balanced");
   const isPro = uiMode === "professional";
@@ -3541,28 +3602,7 @@ function DisplayControls() {
     loader?.setPointSizeType(preset.sizeType);
   };
   const selectClass = "bg-[hsl(var(--toolbar-bg))] border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-[hsl(var(--brand))] cursor-pointer";
-  const iconBtnClass = (active) => `p-1 rounded transition-colors cursor-pointer border ${active ? "bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] border-[hsl(var(--brand)/0.4)]" : "text-muted-foreground hover:text-foreground border-transparent hover:border-[hsl(var(--border))]"}`;
   return /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 px-1", children: [
-    /* @__PURE__ */ jsx("div", { className: "flex items-center gap-0.5 border border-[hsl(var(--border))] rounded p-0.5", children: NAV_MODES.map((nm) => /* @__PURE__ */ jsx(
-      "button",
-      {
-        className: iconBtnClass(navigationMode === nm.value),
-        title: t[nm.titleKey],
-        onClick: () => setNavigationMode(nm.value),
-        children: /* @__PURE__ */ jsx(nm.icon, {})
-      },
-      nm.value
-    )) }),
-    /* @__PURE__ */ jsx("div", { className: "flex items-center gap-0.5 border border-[hsl(var(--border))] rounded p-0.5", children: PROJ_MODES.map((pm) => /* @__PURE__ */ jsx(
-      "button",
-      {
-        className: iconBtnClass(projection === pm.value),
-        title: t[pm.titleKey],
-        onClick: () => setProjection(pm.value),
-        children: /* @__PURE__ */ jsx(pm.icon, {})
-      },
-      pm.value
-    )) }),
     isPro && /* @__PURE__ */ jsx(
       "select",
       {
@@ -3764,12 +3804,15 @@ function ToolbarSection({ label, children, className }) {
   ] });
 }
 function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, sidebarOpen, renderSettingsOpen }) {
-  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap, uiMode } = useViewer();
+  const { showMinimap, setShowMinimap, uiMode } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().toolbar;
   const isPro = uiMode === "professional";
   return /* @__PURE__ */ jsxs("div", { className: "flex items-center h-10 px-2 gap-0 select-none overflow-x-auto", children: [
-    /* @__PURE__ */ jsx(ToolbarSection, { label: "Views", children: /* @__PURE__ */ jsx(ViewControls, {}) }),
+    /* @__PURE__ */ jsxs(ToolbarSection, { label: "Views", children: [
+      /* @__PURE__ */ jsx(ViewControls, {}),
+      /* @__PURE__ */ jsx(ViewModeControls, {})
+    ] }),
     /* @__PURE__ */ jsxs(ToolbarSection, { label: "Display", children: [
       /* @__PURE__ */ jsx(DisplayControls, {}),
       isPro && /* @__PURE__ */ jsx(
@@ -3784,16 +3827,6 @@ function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onTogg
     ] }),
     /* @__PURE__ */ jsx("div", { className: "flex-1" }),
     /* @__PURE__ */ jsxs(ToolbarSection, { children: [
-      /* @__PURE__ */ jsx(
-        ToolbarIconBtn,
-        {
-          icon: /* @__PURE__ */ jsx(Camera, { size: 14 }),
-          label: t.panoramas,
-          active: showMarkers,
-          onClick: () => setShowMarkers(!showMarkers),
-          title: t.togglePanoramas
-        }
-      ),
       /* @__PURE__ */ jsx(
         ToolbarIconBtn,
         {
@@ -3914,13 +3947,6 @@ function ToolRail() {
   const toggle = (tool) => setActiveTool(activeTool === tool ? "none" : tool);
   const boxes = clipManager?.getBoxes() ?? [];
   const hasClipBox = boxes.length > 0;
-  const clipMode = boxes[0]?.mode ?? "outside";
-  const toggleClipMode = () => {
-    const next = clipMode === "outside" ? "inside" : "outside";
-    for (const b of boxes) {
-      clipManager?.setBoxMode(b.id, next);
-    }
-  };
   const clearClipBox = () => {
     clipManager?.clear();
     if (activeTool === "section-box") setActiveTool("none");
@@ -3983,68 +4009,7 @@ function ToolRail() {
           active: hasClipBox,
           onClick: hasClipBox ? clearClipBox : addClipBox
         }
-      ),
-      hasClipBox && /* @__PURE__ */ jsxs(Fragment, { children: [
-        /* @__PURE__ */ jsx(
-          RailBtn,
-          {
-            icon: /* @__PURE__ */ jsx(Scissors, { size: 15 }),
-            title: clipMode === "outside" ? t.clipModeKeepInside : t.clipModeKeepOutside,
-            active: false,
-            onClick: toggleClipMode
-          }
-        ),
-        /* @__PURE__ */ jsx(SubLabel, { children: "Transform" }),
-        /* @__PURE__ */ jsxs("div", { className: "flex gap-0.5", children: [
-          /* @__PURE__ */ jsx(
-            RailBtn,
-            {
-              icon: /* @__PURE__ */ jsx(Move, { size: 12 }),
-              title: "Move clip box",
-              onClick: () => {
-                const id = clipManager?.getSelectedId();
-                if (id) clipManager?.setTransformMode("translate");
-                else {
-                  const b = boxes[0];
-                  if (b) {
-                    clipManager?.selectBox(b.id);
-                    clipManager?.setTransformMode("translate");
-                  }
-                }
-              },
-              compact: true
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            RailBtn,
-            {
-              icon: /* @__PURE__ */ jsx(Maximize2, { size: 12 }),
-              title: "Resize clip box faces",
-              onClick: () => {
-                const id = clipManager?.getSelectedId();
-                if (id) clipManager?.setTransformMode("scale");
-                else {
-                  const b = boxes[0];
-                  if (b) {
-                    clipManager?.selectBox(b.id);
-                    clipManager?.setTransformMode("scale");
-                  }
-                }
-              },
-              compact: true
-            }
-          )
-        ] }),
-        /* @__PURE__ */ jsx(
-          RailBtn,
-          {
-            icon: /* @__PURE__ */ jsx(RotateCcw, { size: 13 }),
-            title: t.removeClipBox,
-            onClick: clearClipBox,
-            compact: true
-          }
-        )
-      ] })
+      )
     ] })
   ] });
 }
@@ -4265,13 +4230,15 @@ init_locale_context();
 init_viewer_provider();
 
 // src/components/sidebar/pano-panel.tsx
+init_utils();
 init_viewer_provider();
 init_data_provider();
 init_locale_context();
 function PanoPanel() {
-  const { cameraAnimator, markerManager, setSelectedCamera } = useViewer();
+  const { cameraAnimator, markerManager, setSelectedCamera, showMarkers, setShowMarkers } = useViewer();
   const { cameras } = useData();
   const t = useLocale().panoPanel;
+  const tToolbar = useLocale().toolbar;
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
   const filtered = useMemo(() => {
@@ -4308,10 +4275,27 @@ function PanoPanel() {
           }
         )
       ] }),
-      /* @__PURE__ */ jsxs("p", { className: "text-[10px] text-muted-foreground mt-1 font-mono", children: [
-        filtered.length,
-        " / ",
-        cameras.length
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mt-1.5", children: [
+        /* @__PURE__ */ jsxs("p", { className: "text-[10px] text-muted-foreground font-mono", children: [
+          filtered.length,
+          " / ",
+          cameras.length
+        ] }),
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => setShowMarkers(!showMarkers),
+            title: tToolbar.togglePanoramas,
+            className: cn(
+              "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors",
+              showMarkers ? "text-[hsl(var(--brand))] bg-[hsl(var(--brand)/0.12)] hover:bg-[hsl(var(--brand)/0.2)]" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            ),
+            children: [
+              showMarkers ? /* @__PURE__ */ jsx(Eye, { size: 11 }) : /* @__PURE__ */ jsx(EyeOff, { size: 11 }),
+              /* @__PURE__ */ jsx("span", { children: tToolbar.panoramas })
+            ]
+          }
+        )
       ] })
     ] }),
     /* @__PURE__ */ jsx("div", { className: "flex-1 overflow-y-auto", children: filtered.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-xs text-muted-foreground text-center mt-8 px-4", children: t.noResults }) : filtered.map((cam) => /* @__PURE__ */ jsxs(
@@ -4453,41 +4437,6 @@ function ScenePanel() {
         },
         box.id
       )),
-      selectedClipBoxId && /* @__PURE__ */ jsxs("div", { className: "flex gap-1 mt-1.5", children: [
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            onClick: () => clipManager?.setTransformMode("translate"),
-            className: "flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono bg-muted/40 text-foreground hover:bg-muted/70 transition-colors",
-            children: [
-              /* @__PURE__ */ jsx(Move, { size: 10 }),
-              " Move"
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            onClick: () => clipManager?.setTransformMode("scale"),
-            className: "flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono bg-muted/40 text-foreground hover:bg-muted/70 transition-colors",
-            children: [
-              /* @__PURE__ */ jsx(Maximize2, { size: 10 }),
-              " Scale"
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            onClick: () => clipManager?.setTransformMode("rotate"),
-            className: "flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono bg-muted/40 text-foreground hover:bg-muted/70 transition-colors",
-            children: [
-              /* @__PURE__ */ jsx(RotateCcw, { size: 10 }),
-              " Rotate"
-            ]
-          }
-        )
-      ] }),
       clipBoxEntries.length > 1 && /* @__PURE__ */ jsx("p", { className: "text-[9px] text-muted-foreground mt-1 italic", children: t.clipModeNote })
     ] })
   ] });

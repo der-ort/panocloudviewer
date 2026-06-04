@@ -508,6 +508,14 @@ declare class ClipManager {
     onSelectChange?: (id: string | null) => void;
     constructor(sm: SceneManager);
     private initTransformControls;
+    /**
+     * Force the TransformControls gizmo to render on top of the point cloud.
+     * The gizmo uses default materials (depthTest=true, renderOrder=0) so it is
+     * occluded by the dense cloud. Traverse the gizmo tree and disable depth
+     * testing so the arrows/rings draw through. Must be re-applied after every
+     * setMode() because TransformControls rebuilds its gizmo/picker meshes.
+     */
+    private _raiseGizmo;
     addBox(box: THREE.Box3, name?: string): ClipBoxEntry;
     selectBox(id: string | null): Promise<void>;
     setTransformMode(mode: "translate" | "scale" | "rotate"): void;
