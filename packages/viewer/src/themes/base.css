@@ -19,6 +19,13 @@
 @tailwind utilities;
 
 @layer base {
+  /* CONTRAST RULE: Any theme/brand that overrides --background (or the card / popover /
+     toolbar / sidebar / statusbar backgrounds) MUST also set the matching --foreground and
+     --muted-foreground so contrast is preserved. A complete token set is required in every
+     theme block (.pcv light, .pcv.dark / .pcv[data-theme="dark"]): --foreground,
+     --muted-foreground, --accent-foreground, and the *-foreground partners for any --card /
+     --popover background it overrides. Target ≈4.5:1 for body text and ≈3:1 for muted/large
+     text against the paired background. */
   .pcv {
     /* ── Layout ─────────────────────────────── */
     --radius: 0.375rem;
@@ -100,7 +107,7 @@
     --secondary-foreground: 0 0% 95%;
 
     --muted:          0 0% 13%;
-    --muted-foreground: 0 0% 55%;
+    --muted-foreground: 0 0% 67%;   /* raised from 55% for readable secondary text on dark bg (~6:1) */
 
     --accent:         0 0% 13%;
     --accent-foreground: 0 0% 95%;
