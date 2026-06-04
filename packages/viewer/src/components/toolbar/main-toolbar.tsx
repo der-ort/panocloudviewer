@@ -1,13 +1,13 @@
 "use client";
 
 import React from "react";
-import { Sun, Moon, Camera, Map, Layers, Info, PanelRight, Sliders } from "lucide-react";
+import { Sun, Moon, Map, Layers, Info, PanelRight, Sliders } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useTheme } from "../../providers/theme-provider";
 import { useLocale } from "../../i18n/locale-context";
 import { ViewControls } from "./view-controls";
-import { DisplayControls } from "./display-controls";
+import { DisplayControls, ViewModeControls } from "./display-controls";
 import { ExportTools } from "./export-tools";
 
 interface ToolbarSectionProps {
@@ -41,7 +41,7 @@ interface MainToolbarProps {
 }
 
 export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, sidebarOpen, renderSettingsOpen }: MainToolbarProps) {
-  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap, uiMode } = useViewer();
+  const { showMinimap, setShowMinimap, uiMode } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().toolbar;
 
@@ -49,9 +49,10 @@ export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar,
 
   return (
     <div className="flex items-center h-10 px-2 gap-0 select-none overflow-x-auto">
-      {/* View controls */}
+      {/* View controls: presets + navigation mode + projection */}
       <ToolbarSection label="Views">
         <ViewControls />
+        <ViewModeControls />
       </ToolbarSection>
 
       {/* Display settings */}
@@ -73,13 +74,6 @@ export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar,
 
       {/* Right side: toggles + theme */}
       <ToolbarSection>
-        <ToolbarIconBtn
-          icon={<Camera size={14} />}
-          label={t.panoramas}
-          active={showMarkers}
-          onClick={() => setShowMarkers(!showMarkers)}
-          title={t.togglePanoramas}
-        />
         <ToolbarIconBtn
           icon={<Map size={14} />}
           label={t.minimap}

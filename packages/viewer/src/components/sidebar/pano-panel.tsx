@@ -1,15 +1,17 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { Search, Navigation } from "lucide-react";
+import { Search, Navigation, Eye, EyeOff } from "lucide-react";
+import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useData } from "../../providers/data-provider";
 import { useLocale } from "../../i18n/locale-context";
 
 export function PanoPanel() {
-  const { cameraAnimator, markerManager, setSelectedCamera } = useViewer();
+  const { cameraAnimator, markerManager, setSelectedCamera, showMarkers, setShowMarkers } = useViewer();
   const { cameras } = useData();
   const t = useLocale().panoPanel;
+  const tToolbar = useLocale().toolbar;
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<number | null>(null);
 
@@ -38,7 +40,7 @@ export function PanoPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Search */}
+      {/* Search + markers toggle */}
       <div className="p-2 border-b border-[hsl(var(--border))] shrink-0">
         <div className="flex items-center gap-1.5 bg-muted rounded px-2 py-1">
           <Search size={11} className="text-muted-foreground shrink-0" />
@@ -49,7 +51,22 @@ export function PanoPanel() {
             className="flex-1 bg-transparent text-xs outline-none text-foreground placeholder:text-muted-foreground"
           />
         </div>
-        <p className="text-[10px] text-muted-foreground mt-1 font-mono">{filtered.length} / {cameras.length}</p>
+        <div className="flex items-center justify-between mt-1.5">
+          <p className="text-[10px] text-muted-foreground font-mono">{filtered.length} / {cameras.length}</p>
+          <button
+            onClick={() => setShowMarkers(!showMarkers)}
+            title={tToolbar.togglePanoramas}
+            className={cn(
+              "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors",
+              showMarkers
+                ? "text-[hsl(var(--brand))] bg-[hsl(var(--brand)/0.12)] hover:bg-[hsl(var(--brand)/0.2)]"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            {showMarkers ? <Eye size={11} /> : <EyeOff size={11} />}
+            <span>{tToolbar.panoramas}</span>
+          </button>
+        </div>
       </div>
 
       {/* List */}
