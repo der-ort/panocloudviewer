@@ -215,4 +215,17 @@ export const en: ViewerLocale = {
     lite: "Lite",
     modeLabel: "Mode",
   },
+  clipToolbar: {
+    title: "Clipping",
+    addBox: "Add box",
+    clearAll: "Clear all",
+    keepInside: "Keep inside (all)",
+    keepOutside: "Keep outside (all)",
+    show: "Show",
+    hide: "Hide",
+    delete: "Delete",
+    move: "Move",
+    scale: "Scale",
+    rotateZ: "Rotate (Z)",
+  },
 };

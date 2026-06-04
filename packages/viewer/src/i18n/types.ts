@@ -207,6 +207,20 @@ export interface ViewerLocale {
   panoViewer: {
     close: string;
   };
+  /** Clip management toolbar strings */
+  clipToolbar: {
+    title: string;
+    addBox: string;
+    clearAll: string;
+    keepInside: string;
+    keepOutside: string;
+    show: string;
+    hide: string;
+    delete: string;
+    move: string;
+    scale: string;
+    rotateZ: string;
+  };
   /** UI mode labels and related toolbar strings */
   uiModes: {
     /** Label for the "professional" mode */

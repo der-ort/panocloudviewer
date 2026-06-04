@@ -7,6 +7,7 @@ import { useData } from "../providers/data-provider";
 import { useLocale } from "../i18n/locale-context";
 import { MainToolbar } from "./toolbar/main-toolbar";
 import { ToolRail } from "./toolbar/tool-rail";
+import { ClipToolbar } from "./toolbar/clip-toolbar";
 import { Sidebar } from "./sidebar/sidebar";
 import { PanoViewer } from "./overlays/pano-viewer";
 import { RenderingSettings } from "./overlays/rendering-settings";
@@ -52,7 +53,7 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
 
-  const { fps, pointBudget, activeTool, selectedCamera, uiMode } = useViewer();
+  const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
   const { metadata } = useData();
   const t = useLocale().viewport;
 
@@ -108,6 +109,15 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
           </GlassCard>
         )}
       </div>
+
+      {/* ── Clip management toolbar (Pro + has boxes) ───────────────────── */}
+      {isPro && clipBoxEntries.length > 0 && (
+        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <GlassCard className="pointer-events-auto">
+            <ClipToolbar />
+          </GlassCard>
+        </div>
+      )}
 
       {/* ── Bottom status strip ─────────────────────────────────────────── */}
       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
