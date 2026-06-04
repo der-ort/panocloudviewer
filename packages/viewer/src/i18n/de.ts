@@ -195,8 +195,8 @@ export const de = createLocale(en, {
     labelScale: "Beschriftungsgr\u00f6\u00dfe",
     sphereRadius: "Punktgr\u00f6\u00dfe",
     markersSection: "Panorama-Marker",
-    markerScale: "Kugelgr\u00f6\u00dfe",
-    markerOpacity: "Kugel-Deckkraft",
+    markerScale: "Pin-Gr\u00f6\u00dfe",
+    markerOpacity: "Pin-Deckkraft",
     markerLabelScale: "Beschriftungsgr\u00f6\u00dfe",
   },
   about: {
