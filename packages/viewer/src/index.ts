@@ -38,6 +38,7 @@ export { SectionTools } from "./components/toolbar/section-tools";
 export { DisplayControls } from "./components/toolbar/display-controls";
 export { ExportTools } from "./components/toolbar/export-tools";
 export { ToolRail } from "./components/toolbar/tool-rail";
+export { ClipToolbar } from "./components/toolbar/clip-toolbar";
 
 // ─── Overlays ─────────────────────────────────────────────────────────────────
 export { PanoViewer } from "./components/overlays/pano-viewer";

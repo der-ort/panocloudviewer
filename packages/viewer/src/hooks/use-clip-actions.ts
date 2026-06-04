@@ -9,7 +9,9 @@ export function useClipActions() {
 
   const boxes = clipBoxEntries;
   const hasClipBox = boxes.length > 0;
-  const clipMode: ClipMode = boxes[0]?.mode ?? "outside";
+  // Match ClipManager.applyAll() which derives the effective clip mode from the
+  // first *visible* box — not necessarily boxes[0].
+  const clipMode: ClipMode = (boxes.find(b => b.visible)?.mode) ?? "outside";
 
   const addBox = useCallback(() => {
     if (!clipManager || !loader) return;
@@ -47,6 +49,20 @@ export function useClipActions() {
     }
   }, [clipManager, boxes]);
 
+  const removeBox = useCallback((id: string) => {
+    clipManager?.removeBox(id);
+  }, [clipManager]);
+
+  const setBoxVisible = useCallback((id: string, visible: boolean) => {
+    clipManager?.setBoxVisible(id, visible);
+  }, [clipManager]);
+
+  const setModeAll = useCallback((mode: "outside" | "inside") => {
+    for (const b of boxes) {
+      clipManager?.setBoxMode(b.id, mode);
+    }
+  }, [clipManager, boxes]);
+
   return {
     boxes,
     selectedBoxId: selectedClipBoxId,
@@ -57,5 +73,8 @@ export function useClipActions() {
     toggleMode,
     selectBox,
     setTransformMode,
+    removeBox,
+    setBoxVisible,
+    setModeAll,
   };
 }

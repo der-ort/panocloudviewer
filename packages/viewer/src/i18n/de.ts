@@ -216,4 +216,17 @@ export const de = createLocale(en, {
     lite: "Lite",
     modeLabel: "Modus",
   },
+  clipToolbar: {
+    title: "Schnitte",
+    addBox: "Box hinzufügen",
+    clearAll: "Alle entfernen",
+    keepInside: "Innen behalten (alle)",
+    keepOutside: "Außen behalten (alle)",
+    show: "Anzeigen",
+    hide: "Ausblenden",
+    delete: "Löschen",
+    move: "Verschieben",
+    scale: "Skalieren",
+    rotateZ: "Drehen (Z)",
+  },
 });
