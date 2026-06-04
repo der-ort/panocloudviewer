@@ -214,7 +214,8 @@ var init_dist = __esm({
         this.scene.background = new THREE5__namespace.Color(657930);
         const { clientWidth: w, clientHeight: h } = canvas;
         this.camera = new THREE5__namespace.PerspectiveCamera(60, w / h, 0.01, 1e5);
-        this.camera.position.set(0, 0, 50);
+        this.camera.up.set(0, 0, 1);
+        this.camera.position.set(0, -50, 30);
         this.renderer = new THREE5__namespace.WebGLRenderer({
           antialias: true,
           logarithmicDepthBuffer: true
@@ -224,11 +225,15 @@ var init_dist = __esm({
         this.renderer.outputColorSpace = THREE5__namespace.LinearSRGBColorSpace;
         this.renderer.autoClear = false;
         canvas.appendChild(this.renderer.domElement);
+        this.renderer.domElement.style.touchAction = "none";
+        this.renderer.domElement.style.userSelect = "none";
+        this.renderer.domElement.addEventListener("dragstart", (e) => e.preventDefault());
         this.controls = new OrbitControls_js.OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.06;
         this.controls.screenSpacePanning = true;
-        this.controls.maxPolarAngle = Math.PI;
+        this.controls.minPolarAngle = 0.01;
+        this.controls.maxPolarAngle = Math.PI - 0.01;
         this.controls.zoomSpeed = 1.5;
         this.controls.rotateSpeed = 0.8;
         this.controls.zoomToCursor = true;
@@ -354,10 +359,11 @@ var init_dist = __esm({
         if (mode === this._navMode) return;
         this._navMode = mode;
         const c = this.controls;
+        c.enabled = true;
         c.enableRotate = true;
         c.screenSpacePanning = true;
-        c.minPolarAngle = 0;
         if (mode === "pan") {
+          c.minPolarAngle = 0.01;
           c.maxPolarAngle = Math.PI / 2.05;
           c.mouseButtons = {
             LEFT: THREE5__namespace.MOUSE.PAN,
@@ -365,14 +371,16 @@ var init_dist = __esm({
             RIGHT: THREE5__namespace.MOUSE.ROTATE
           };
         } else if (mode === "free") {
-          c.maxPolarAngle = Math.PI;
+          c.minPolarAngle = 0.01;
+          c.maxPolarAngle = Math.PI - 0.01;
           c.mouseButtons = {
             LEFT: THREE5__namespace.MOUSE.ROTATE,
             MIDDLE: THREE5__namespace.MOUSE.ROTATE,
             RIGHT: THREE5__namespace.MOUSE.PAN
           };
         } else {
-          c.maxPolarAngle = Math.PI;
+          c.minPolarAngle = 0.01;
+          c.maxPolarAngle = Math.PI - 0.01;
           c.mouseButtons = {
             LEFT: THREE5__namespace.MOUSE.ROTATE,
             MIDDLE: THREE5__namespace.MOUSE.DOLLY,
@@ -404,7 +412,8 @@ var init_dist = __esm({
         const maxDim = Math.max(size.x, size.y, size.z);
         const fov = this.camera.fov * (Math.PI / 180);
         const dist = maxDim / (2 * Math.tan(fov / 2)) * 1.5;
-        this.camera.position.copy(center).add(new THREE5__namespace.Vector3(0, 0, dist));
+        const dir = new THREE5__namespace.Vector3(0, -0.82, 0.57).multiplyScalar(dist);
+        this.camera.position.copy(center).add(dir);
         this.controls.target.copy(center);
         this.controls.update();
       }
@@ -3183,13 +3192,14 @@ function Viewport({ className }) {
       "div",
       {
         ref: containerRef,
-        className: "w-full h-full",
+        className: "w-full h-full select-none",
         onClick: handleClick,
         onDoubleClick: handleDblClick,
         onMouseDown: handleMouseDown,
         onMouseMove: handleMouseMove,
         onMouseUp: handleMouseUp,
         onContextMenu: handleContextMenu,
+        onDragStart: (e) => e.preventDefault(),
         style: { cursor: activeTool === "section-box" ? "crosshair" : activeTool !== "none" ? "crosshair" : "default" }
       }
     ),

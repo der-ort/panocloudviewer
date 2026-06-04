@@ -529,13 +529,14 @@ export function Viewport({ className }: ViewportProps) {
       {/* Main 3D canvas container */}
       <div
         ref={containerRef}
-        className="w-full h-full"
+        className="w-full h-full select-none"
         onClick={handleClick}
         onDoubleClick={handleDblClick}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onContextMenu={handleContextMenu}
+        onDragStart={(e) => e.preventDefault()}
         style={{ cursor: activeTool === "section-box" ? "crosshair" : activeTool !== "none" ? "crosshair" : "default" }}
       />
 

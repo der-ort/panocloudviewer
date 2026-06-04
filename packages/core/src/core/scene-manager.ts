@@ -43,7 +43,11 @@ export class SceneManager {
     // Camera
     const { clientWidth: w, clientHeight: h } = canvas;
     this.camera = new THREE.PerspectiveCamera(60, w / h, 0.01, 100000);
-    this.camera.position.set(0, 0, 50);
+    // Point clouds are Z-up — make Z the camera's up axis so OrbitControls
+    // orbits around Z and the horizon stays level (no roll). Start at an
+    // oblique angle so "up" is never parallel to the view direction.
+    this.camera.up.set(0, 0, 1);
+    this.camera.position.set(0, -50, 30);
 
     // Renderer
     this.renderer = new THREE.WebGLRenderer({
@@ -61,13 +65,20 @@ export class SceneManager {
     // render overlays without wiping the main scene.
     this.renderer.autoClear = false;
     canvas.appendChild(this.renderer.domElement);
+    // Prevent the browser's native drag/selection so pointer drags reach
+    // OrbitControls instead of starting a text selection or ghost-image drag.
+    this.renderer.domElement.style.touchAction = "none";
+    this.renderer.domElement.style.userSelect = "none";
+    this.renderer.domElement.addEventListener("dragstart", (e) => e.preventDefault());
 
     // Controls — orbit mode is the default (CAD/Blender-style turntable)
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
     this.controls.screenSpacePanning = true;
-    this.controls.maxPolarAngle = Math.PI;
+    // Clamp just shy of the Z-up poles to avoid the orbit singularity flip.
+    this.controls.minPolarAngle = 0.01;
+    this.controls.maxPolarAngle = Math.PI - 0.01;
     this.controls.zoomSpeed = 1.5;
     this.controls.rotateSpeed = 0.8;
     this.controls.zoomToCursor = true;
@@ -231,12 +242,15 @@ export class SceneManager {
     this._navMode = mode;
 
     const c = this.controls;
+    c.enabled = true;
     c.enableRotate = true;
     c.screenSpacePanning = true;
-    c.minPolarAngle = 0;
 
+    // Clamp just shy of the poles so orbiting never crosses the Z-up
+    // singularity (which would flip the view and read as a sudden roll).
     if (mode === "pan") {
       // Map-style: camera stays above the horizon, left-drag pans the scene.
+      c.minPolarAngle = 0.01;
       c.maxPolarAngle = Math.PI / 2.05;
       c.mouseButtons = {
         LEFT: THREE.MOUSE.PAN,
@@ -244,8 +258,9 @@ export class SceneManager {
         RIGHT: THREE.MOUSE.ROTATE,
       };
     } else if (mode === "free") {
-      // Blender-ish: full-sphere rotation on both left and middle drag.
-      c.maxPolarAngle = Math.PI;
+      // Blender-ish: near-full-sphere rotation on both left and middle drag.
+      c.minPolarAngle = 0.01;
+      c.maxPolarAngle = Math.PI - 0.01;
       c.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
         MIDDLE: THREE.MOUSE.ROTATE,
@@ -253,7 +268,8 @@ export class SceneManager {
       };
     } else {
       // Orbit (default) CAD turntable.
-      c.maxPolarAngle = Math.PI;
+      c.minPolarAngle = 0.01;
+      c.maxPolarAngle = Math.PI - 0.01;
       c.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
         MIDDLE: THREE.MOUSE.DOLLY,
@@ -288,7 +304,10 @@ export class SceneManager {
     const maxDim = Math.max(size.x, size.y, size.z);
     const fov = this.camera.fov * (Math.PI / 180);
     const dist = maxDim / (2 * Math.tan(fov / 2)) * 1.5;
-    this.camera.position.copy(center).add(new THREE.Vector3(0, 0, dist));
+    // Oblique 3/4 view for Z-up content (from the front, slightly above) so the
+    // horizon is level and "up" is not parallel to the view direction.
+    const dir = new THREE.Vector3(0, -0.82, 0.57).multiplyScalar(dist);
+    this.camera.position.copy(center).add(dir);
     this.controls.target.copy(center);
     this.controls.update();
   }
