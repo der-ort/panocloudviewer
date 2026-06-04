@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X, Minus, Circle, Plus } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
 import { usePcvRoot } from "../pano-cloud-viewer";
 import { useComponents } from "../../providers/components-provider";
+import { useDraggable } from "../../hooks/use-draggable";
 import { DISPLAY_PRESETS } from "@der-ort/pano-cloud-viewer-core";
 import type { DisplayPreset, DisplaySettings } from "@der-ort/pano-cloud-viewer-core";
 
@@ -149,6 +150,10 @@ export function DisplaySettingsDialog({
 
   const t = useLocale().displaySettings;
   const pcvRoot = usePcvRoot();
+  const { position, onDragStart, reset } = useDraggable();
+
+  // Recenter the dialog each time it is reopened.
+  useEffect(() => { if (!open) reset(); }, [open, reset]);
 
   const applyPreset = (preset: DisplayPreset) => {
     setSettings({ ...DISPLAY_PRESETS[preset] });
@@ -163,11 +168,18 @@ export function DisplaySettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[420px]" container={pcvRoot?.current ?? undefined}>
-        {/* Header */}
-        <DialogHeader>
+      <DialogContent
+        className="w-[420px]"
+        container={pcvRoot?.current ?? undefined}
+        dragOffset={position}
+      >
+        {/* Header — drag handle */}
+        <DialogHeader
+          className="cursor-move select-none"
+          onMouseDown={onDragStart}
+        >
           <DialogTitle>{t.title}</DialogTitle>
-          <DialogClose>
+          <DialogClose onMouseDown={(e) => e.stopPropagation()}>
             <X size={14} />
           </DialogClose>
         </DialogHeader>

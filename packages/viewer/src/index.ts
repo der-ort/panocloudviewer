@@ -56,6 +56,8 @@ export {
   useVisibilityActions,
   useDisplaySettings,
 } from "./hooks";
+export { useDraggable } from "./hooks/use-draggable";
+export type { DraggableState, UseDraggableOptions } from "./hooks/use-draggable";
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
 // Formatting helpers come from the core wildcard above; cn() is UI-only.
