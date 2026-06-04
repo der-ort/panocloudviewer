@@ -66,3 +66,17 @@ export { en } from "./i18n/en";
 export { de } from "./i18n/de";
 export { createLocale } from "./i18n/types";
 export type { ViewerLocale } from "./i18n/types";
+
+// ─── UI Primitives (shadcn-style) ─────────────────────────────────────────────
+export * from "./ui";
+
+// ─── Component slot system ───────────────────────────────────────────────────
+export {
+  ComponentsProvider,
+  useComponents,
+  defaultComponents,
+} from "./providers/components-provider";
+export type {
+  ViewerComponents,
+  ComponentsProviderProps,
+} from "./providers/components-provider";

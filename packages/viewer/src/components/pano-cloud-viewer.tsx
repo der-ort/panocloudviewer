@@ -7,10 +7,12 @@ import { DataProvider } from "../providers/data-provider";
 import { LocaleProvider } from "../i18n/locale-context";
 import { WorkspaceLayout } from "./workspace-layout";
 import { PanoViewer } from "./overlays/pano-viewer";
+import { ComponentsProvider } from "../providers/components-provider";
 import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
 import type { PointCloudSource, UiMode } from "@der-ort/pano-cloud-viewer-core";
 import type { ViewerLocale } from "../i18n/types";
 import { cn } from "../lib/utils";
+import type { ViewerComponents } from "../providers/components-provider";
 
 const Viewport = lazy(() => import("./viewport").then(m => ({ default: m.Viewport })));
 
@@ -77,6 +79,16 @@ export interface PanoCloudViewerProps {
    * </PanoCloudViewer>
    */
   children?: (viewport: React.ReactNode) => React.ReactNode;
+  /**
+   * Override any of the default shadcn-style UI primitives.
+   * Shallow-merged over the built-in defaults. Useful for consumers who
+   * already have a component library and want to swap out e.g. Dialog or Button.
+   *
+   * @example
+   * import { Button } from '@/components/ui/button'; // your own shadcn button
+   * <PanoCloudViewer components={{ Button }} ... />
+   */
+  components?: Partial<ViewerComponents>;
 }
 
 function ViewportFallback() {
@@ -139,7 +151,7 @@ function PcvRoot({ className, children }: PcvRootProps) {
  * />
  * ```
  */
-export function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, children }: PanoCloudViewerProps) {
+export function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, children, components }: PanoCloudViewerProps) {
   const adapter = createAdapter(source);
   const config = { source, uiMode };
 
@@ -148,20 +160,22 @@ export function PanoCloudViewer({ source, theme = "dark", className, locale, uiM
       <ThemeProvider defaultTheme={theme}>
         <DataProvider adapter={adapter}>
           <ViewerProvider config={config}>
-            <PcvRoot className={className}>
-              {children ? (
-                <>
-                  {children(
-                    <Suspense fallback={<ViewportFallback />}>
-                      <Viewport />
-                    </Suspense>
-                  )}
-                  <PanoOverlayBridge />
-                </>
-              ) : (
-                <WorkspaceLayout />
-              )}
-            </PcvRoot>
+            <ComponentsProvider components={components}>
+              <PcvRoot className={className}>
+                {children ? (
+                  <>
+                    {children(
+                      <Suspense fallback={<ViewportFallback />}>
+                        <Viewport />
+                      </Suspense>
+                    )}
+                    <PanoOverlayBridge />
+                  </>
+                ) : (
+                  <WorkspaceLayout />
+                )}
+              </PcvRoot>
+            </ComponentsProvider>
           </ViewerProvider>
         </DataProvider>
       </ThemeProvider>
