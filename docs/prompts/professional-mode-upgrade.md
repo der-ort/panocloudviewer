@@ -14,7 +14,7 @@ The viewer is consumed as a **git dependency**, not a registry package:
 
 The prebuilt `packages/viewer/dist` is self-contained (the headless core is bundled into it at build time), so you never resolve a separate core package.
 
-Work through the steps below in order. Stay **framework-agnostic** (the host app may be Next.js, Vite, or CRA) and **package-manager-agnostic** (npm, pnpm, or yarn).
+The host app is a **Next.js** app. The commands below stay **package-manager-agnostic** (npm, pnpm, or yarn) — use whichever your repo uses. Next.js-specific steps (clearing the build cache, App Router client boundaries, theme CSS, and the transpile escape hatch) are called out in **§1.5** and **§2**.
 
 ---
 
@@ -81,6 +81,26 @@ npm run build      # or: pnpm build   |   yarn build
 
 ---
 
+## 1.5 Next.js specifics
+
+- **Clear the `.next` build cache after updating the dependency.** Next caches compiled modules, so a freshly-resolved git dep can still serve stale viewer code until the cache is cleared:
+
+  ```bash
+  rm -rf .next
+  npm run dev      # or your build command
+  ```
+
+- **`transpilePackages` (only if you hit a parse/syntax error from the dep).** The shipped `dist` is prebuilt and self-contained (ES2022), so this is usually **not** needed. If the build throws an "unexpected token" or "cannot use import statement" error pointing at `@der-ort/pano-cloud-viewer`, add it to `next.config.js`:
+
+  ```js
+  // next.config.js
+  module.exports = {
+    transpilePackages: ["@der-ort/pano-cloud-viewer"],
+  };
+  ```
+
+---
+
 ## 2. Enable & verify professional mode
 
 Render the viewer with `uiMode="professional"`. This is the default, but set it explicitly so the intent is clear and you don't accidentally inherit `"minimal"`.
@@ -100,6 +120,12 @@ export function Viewer() {
 ```
 
 `uiMode` accepts `"professional" | "minimal"` (default `"professional"`). Keep the rest of your existing `<PanoCloudViewer source={...} />` props as they were — only the dependency version and (optionally) `uiMode` need to change.
+
+**App Router notes (Next.js):**
+
+- The viewer is **browser-only** (WebGL/Three.js) and its components are already marked `"use client"` internally, and the 3D viewport is lazy-loaded client-side. So importing `<PanoCloudViewer>` into a Server Component creates a client boundary automatically and is generally safe.
+- If your existing integration already wraps the viewer with `dynamic(() => import(...), { ssr: false })`, **keep that wrapper** — it remains the most robust pattern and avoids any hydration/`window`-undefined edge cases.
+- **Theme CSS** is imported once, app-wide — typically in `app/layout.tsx` (a global import) or in the client component that renders the viewer. Don't remove that import during the upgrade (see Troubleshooting if chrome looks unstyled).
 
 ---
 
@@ -142,5 +168,5 @@ Load the app and visually confirm each item:
 ## 5. Troubleshooting
 
 - **Styles look off / unstyled controls.** Make sure the app still imports the viewer's **theme CSS** the same way it did before the upgrade (the theme stylesheet must be imported once in the app). Missing CSS shows up as unstyled or mispositioned chrome, not as missing functionality.
-- **The old version still loads after upgrading.** The git dependency was **not actually re-resolved**. Clear the lockfile entry for `@der-ort/pano-cloud-viewer` **and** delete `node_modules/@der-ort/pano-cloud-viewer`, then reinstall (Step 1b). Git dependencies cache the resolved commit; a plain `install` will keep using the pinned SHA until it is cleared.
+- **The old version still loads after upgrading.** Two layers can cache it: (1) the git dependency was **not actually re-resolved** — clear the lockfile entry for `@der-ort/pano-cloud-viewer` **and** delete `node_modules/@der-ort/pano-cloud-viewer`, then reinstall (Step 1b); git deps cache the resolved commit, so a plain `install` keeps using the pinned SHA until cleared. (2) Next.js cached the compiled module — **delete `.next`** and restart (§1.5).
 - **Confirm the resolved commit changed.** After reinstalling, re-check the lockfile's `resolved` / `commit` field for this dependency — it should reference a newer commit than before. If it's unchanged, the resolution is still stale.
