@@ -100,7 +100,7 @@ interface ViewerConfig {
 
 ### `<WorkspaceLayout>`
 
-Default shell layout: top toolbar (`MainToolbar`) → left tool rail (`ToolRail`) → central `<Viewport>` (lazy) → right collapsible `<Sidebar>`. Must be inside `ViewerProvider`, `DataProvider`, `ThemeProvider`, and `LocaleProvider`.
+Default shell layout: top toolbar (`MainToolbar`) → left tool rail (`ToolRail`) → central `<Viewport>` (lazy) → right collapsible `<Sidebar>`. Must be inside `ViewerProvider`, `DataProvider`, `ThemeProvider`, and `LocaleProvider`. The sidebar starts **below the toolbar** (no overlap) and toggles via a **chevron on its inner edge**. The toolbar's **gear button** opens a **simple quick-settings popover** (panoramas/minimap toggles, color mode, point size — mirroring the minimal layout) in addition to the advanced "Rendering Settings" modal.
 
 ```tsx
 import { WorkspaceLayout } from '@der-ort/pano-cloud-viewer';
@@ -595,17 +595,21 @@ Smooth camera fly-to animations using quartic ease-out.
 
 ### `ClipManager`
 
-Manages named axis-aligned clip boxes with TransformControls. Default post-create transform mode is `scale` (axis-colored resize handles via `FaceHandleController`); `translate` shows move arrows; `rotate` shows a single world-Z ring.
+Manages named axis-aligned clip boxes with TransformControls. Default post-create transform mode is `scale` (axis-colored resize handles via `FaceHandleController`); `translate` shows move arrows; `rotate` shows a single world-Z ring. New section boxes default to a **flat slab centered at mid-height** (around the cursor / cloud center) rather than the full cloud height, so they stay in view.
 
 > **three r170 note:** `TransformControls` extends `Controls`/`EventDispatcher`, not `Object3D`. Its gizmo is added to the scene via `tc.getHelper()` (the internal `_root` Object3D), never `scene.add(tc)`. Raising the gizmo over the point cloud (`depthTest=false`/`renderOrder`) traverses `tc.getHelper()`, not the controls object.
+
+> **Single global clip mode:** potree-core exposes only one global `clipMode`, so all clip boxes share one mode (`"outside"` or `"inside"`). `setBoxMode` therefore applies the chosen mode to every box; per-box modes are not supported.
 
 | Method | Signature | Description |
 |---|---|---|
 | `addBox` | `(box: THREE.Box3, name?: string) => ClipBoxEntry` | Add a clip box; creates scene helper; applies clipping |
+| `setEnabled` | `(enabled: boolean) => void` | Globally enable/disable all clipping without deleting boxes (helpers stay visible) |
+| `isEnabled` | `() => boolean` | Whether clipping is currently enabled |
 | `selectBox` | `(id: string \| null) => Promise<void>` | Select a box for transform (lazy-init TransformControls) |
 | `setTransformMode` | `(mode: "translate" \| "scale" \| "rotate") => void` | Switch TransformControls mode (default `scale`) |
 | `removeBox` | `(id: string) => void` | Remove a clip box |
-| `setBoxMode` | `(id: string, mode: ClipMode) => void` | Set clip mode: `"outside"` (keep inside) or `"inside"` (remove inside) |
+| `setBoxMode` | `(id: string, mode: ClipMode) => void` | Set the single global clip mode: `"outside"` (keep inside) or `"inside"` (remove inside) — applies to all boxes |
 | `setBoxVisible` | `(id: string, visible: boolean) => void` | Show/hide a clip box helper |
 | `renameBox` | `(id: string, name: string) => void` | Rename a clip box |
 | `setDraft` | `(box: THREE.Box3 \| null) => void` | Show a draft preview box (no clipping applied) |
@@ -665,7 +669,7 @@ Interactive 3D measurement tool.
 
 ### `MinimapRenderer`
 
-Top-down orthographic minimap with camera frustum overlay.
+Top-down orthographic minimap with camera frustum overlay, rendered in the **bottom-right** corner of the viewport.
 
 | Method | Signature | Description |
 |---|---|---|
