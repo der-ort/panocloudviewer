@@ -1,10 +1,10 @@
 import * as THREE5 from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import React24, { createContext, lazy, useContext, useState, useCallback, useEffect, useRef, useReducer, useMemo, Suspense } from 'react';
+import React25, { createContext, lazy, useContext, useState, useCallback, useEffect, useRef, useReducer, useMemo, Suspense } from 'react';
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { X, ChevronDown, ChevronUp, Check, Download, Sliders, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, BoxSelect, Plus, Trash2, Scissors, Eye, EyeOff, Move, Maximize2, RotateCw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Camera, Tag, ChevronLeft, ChevronRight, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, Settings, RotateCcw, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Check, Download, Settings, Sliders, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, BoxSelect, Plus, Trash2, Scissors, ScissorsLineDashed, Power, Eye, EyeOff, Move, Maximize2, RotateCw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Camera, Tag, ChevronRight, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, RotateCcw, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cva } from 'class-variance-authority';
 import * as SliderPrimitive from '@radix-ui/react-slider';
@@ -1834,6 +1834,8 @@ var init_dist = __esm({
       pivot = null;
       _faceHandles = null;
       _transformMode = "translate";
+      /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
+      _enabled = true;
       onChange;
       onSelectChange;
       constructor(sm) {
@@ -2036,6 +2038,30 @@ var init_dist = __esm({
         this.applyAll();
         this.onChange?.(this.getBoxes());
       }
+      /**
+       * Set the clip mode for ALL boxes at once. potree-core only supports a single
+       * global clip mode, so boxes must never diverge — use this instead of
+       * per-box setBoxMode when changing the effective mode.
+       */
+      setModeAll(mode) {
+        for (const entry of this.entries) {
+          entry.mode = mode;
+        }
+        this.applyAll();
+        this.onChange?.(this.getBoxes());
+      }
+      /**
+       * Globally enable/disable clipping without removing any boxes. When disabled,
+       * boxes remain visible as wireframes/fills but no actual clipping is applied.
+       */
+      setEnabled(enabled) {
+        this._enabled = enabled;
+        this.applyAll();
+        this.onChange?.(this.getBoxes());
+      }
+      isEnabled() {
+        return this._enabled;
+      }
       setBoxVisible(id, visible) {
         const entry = this.entries.find((e) => e.id === id);
         if (!entry) return;
@@ -2193,6 +2219,15 @@ var init_dist = __esm({
         }
       }
       applyAll() {
+        if (!this._enabled) {
+          for (const pc of this.sm.pointClouds) {
+            const mat = pc.material;
+            if (!mat) continue;
+            mat.setClipBoxes([]);
+            mat.clipMode = 0;
+          }
+          return;
+        }
         const visible = this.entries.filter((e) => e.visible);
         for (const pc of this.sm.pointClouds) {
           const mat = pc.material;
@@ -2270,11 +2305,6 @@ var init_dist = __esm({
           sprite.scale.set(0.28, 0.28, 1);
           this._scene.add(sprite);
         }
-        const sGeo = new THREE5.SphereGeometry(0.06, 8, 8);
-        const sMat = new THREE5.MeshBasicMaterial({ color: 10066329 });
-        this._scene.add(new THREE5.Mesh(sGeo, sMat));
-        this._disposables.push(sGeo);
-        this._materials.push(sMat);
       }
       /** Create a canvas-based sprite with the axis letter */
       _makeLabel(letter, color) {
@@ -2302,7 +2332,7 @@ var init_dist = __esm({
         return new THREE5.Sprite(mat);
       }
       /**
-       * Render the widget into a scissor region in the top-right corner.
+       * Render the widget into a scissor region in the bottom-left corner.
        * Must be called from a post-render callback after the main scene renders.
        */
       render() {
@@ -2326,8 +2356,8 @@ var init_dist = __esm({
         this._camera.position.copy(offset);
         this._camera.up.copy(this.sm.camera.up);
         this._camera.lookAt(0, 0, 0);
-        const x = W - size - margin;
-        const y = H - size - margin;
+        const x = margin;
+        const y = margin;
         renderer.autoClear = false;
         renderer.setScissorTest(true);
         renderer.setScissor(x, y, size, size);
@@ -2912,7 +2942,7 @@ function Viewport({ className }) {
   const containerRef = useRef(null);
   const minimapContainerRef = useRef(null);
   const initialized = useRef(false);
-  const [minimapSize, setMinimapSize] = React24.useState(176);
+  const [minimapSize, setMinimapSize] = React25.useState(176);
   const t = useLocale().viewport;
   const {
     config,
@@ -3128,7 +3158,7 @@ function Viewport({ className }) {
     const half = new THREE5.Vector3(
       Math.max(0.1, Math.min(bounds.x, bounds.x / 4)) / 2,
       Math.max(0.1, Math.min(bounds.y, bounds.y / 4)) / 2,
-      Math.max(0.2, Math.min(bounds.z, bounds.z / 8)) / 2
+      Math.max(0.2, Math.min(bounds.z, bounds.z / 12, 8)) / 2
     );
     return new THREE5.Box3(
       center.clone().sub(half),
@@ -3357,7 +3387,7 @@ function Viewport({ className }) {
     showMinimap && /* @__PURE__ */ jsxs(
       "div",
       {
-        className: "absolute bottom-10 left-3 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer",
+        className: "absolute bottom-10 right-3 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer",
         style: { width: minimapSize, height: minimapSize },
         onClick: handleMinimapClick,
         children: [
@@ -3390,7 +3420,7 @@ function Viewport({ className }) {
       activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? "Move mouse up/down to set height, click to confirm" : "Drag to draw volume footprint"),
       activeTool === "section-box" && t.hintSectionBox
     ] }),
-    metadata && /* @__PURE__ */ jsxs("div", { className: "absolute bottom-10 right-3 text-[10px] font-mono text-white/30 text-right pointer-events-none", children: [
+    metadata && /* @__PURE__ */ jsxs("div", { className: "absolute top-3 left-3 text-[10px] font-mono text-white/30 pointer-events-none", children: [
       (metadata.points / 1e6).toFixed(1),
       "M pts"
     ] })
@@ -3877,7 +3907,7 @@ function ToolbarSection({ label, children, className }) {
     label && /* @__PURE__ */ jsx("span", { className: "text-[9px] text-muted-foreground/50 ml-1 hidden xl:block font-mono uppercase tracking-wider", children: label })
   ] });
 }
-function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, sidebarOpen, renderSettingsOpen }) {
+function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, onToggleQuickSettings, sidebarOpen, renderSettingsOpen, quickSettingsOpen }) {
   const { showMinimap, setShowMinimap, uiMode } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().toolbar;
@@ -3889,6 +3919,15 @@ function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onTogg
     ] }),
     /* @__PURE__ */ jsxs(ToolbarSection, { label: "Display", children: [
       /* @__PURE__ */ jsx(DisplayControls, {}),
+      isPro && /* @__PURE__ */ jsx(
+        ToolbarIconBtn,
+        {
+          icon: /* @__PURE__ */ jsx(Settings, { size: 14 }),
+          active: quickSettingsOpen,
+          onClick: onToggleQuickSettings,
+          title: "Quick settings"
+        }
+      ),
       isPro && /* @__PURE__ */ jsx(
         ToolbarIconBtn,
         {
@@ -4102,7 +4141,19 @@ function useClipActions() {
     if (!clipManager || !loader) return;
     const wb = loader.worldBox;
     if (wb.isEmpty()) return;
-    const entry = clipManager.addBox(wb.clone());
+    const center = new THREE5.Vector3();
+    const size = new THREE5.Vector3();
+    wb.getCenter(center);
+    wb.getSize(size);
+    const halfX = size.x * 0.5;
+    const halfY = size.y * 0.5;
+    const halfZ = Math.max(0.2, Math.min(size.z / 6, 8)) * 0.5;
+    const half = new THREE5.Vector3(halfX, halfY, halfZ);
+    const box = new THREE5.Box3(
+      center.clone().sub(half),
+      center.clone().add(half)
+    );
+    const entry = clipManager.addBox(box);
     clipManager.selectBox(entry.id);
     clipManager.setTransformMode("scale");
   }, [clipManager, loader]);
@@ -4112,10 +4163,12 @@ function useClipActions() {
   }, [clipManager, activeTool, setActiveTool]);
   const toggleMode = useCallback(() => {
     const next = clipMode === "outside" ? "inside" : "outside";
-    for (const b of boxes) {
-      clipManager?.setBoxMode(b.id, next);
-    }
-  }, [clipManager, boxes, clipMode]);
+    clipManager?.setModeAll(next);
+  }, [clipManager, clipMode]);
+  const setEnabled = useCallback((enabled) => {
+    clipManager?.setEnabled(enabled);
+  }, [clipManager]);
+  const isEnabled = clipManager?.isEnabled() ?? true;
   const selectBox = useCallback((id) => {
     clipManager?.selectBox(id);
   }, [clipManager]);
@@ -4136,18 +4189,18 @@ function useClipActions() {
     clipManager?.setBoxVisible(id, visible);
   }, [clipManager]);
   const setModeAll = useCallback((mode) => {
-    for (const b of boxes) {
-      clipManager?.setBoxMode(b.id, mode);
-    }
-  }, [clipManager, boxes]);
+    clipManager?.setModeAll(mode);
+  }, [clipManager]);
   return {
     boxes,
     selectedBoxId: selectedClipBoxId,
     hasClipBox,
     clipMode,
+    isEnabled,
     addBox,
     clearAll,
     toggleMode,
+    setEnabled,
     selectBox,
     setTransformMode,
     removeBox,
@@ -4159,8 +4212,12 @@ function useClipActions() {
 // src/components/toolbar/clip-toolbar.tsx
 init_locale_context();
 function ClipToolbar() {
-  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, setTransformMode } = useClipActions();
+  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, setTransformMode, isEnabled, setEnabled } = useClipActions();
   const t = useLocale().clipToolbar;
+  const [enabled, setEnabledLocal] = React25.useState(isEnabled);
+  React25.useEffect(() => {
+    setEnabledLocal(isEnabled);
+  }, [isEnabled, boxes]);
   if (boxes.length === 0) return null;
   const firstVisible = boxes.find((b) => b.visible);
   const isInside = (firstVisible?.mode ?? "outside") === "inside";
@@ -4195,6 +4252,26 @@ function ClipToolbar() {
       ] })
     ] }),
     /* @__PURE__ */ jsx("div", { className: "h-px bg-white/10 mx-1 mb-1.5" }),
+    /* @__PURE__ */ jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: () => {
+          const next = !enabled;
+          setEnabledLocal(next);
+          setEnabled(next);
+        },
+        title: enabled ? "Clipping on" : "Clipping off",
+        className: cn(
+          "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
+          enabled ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+        ),
+        children: [
+          enabled ? /* @__PURE__ */ jsx(Scissors, { size: 12 }) : /* @__PURE__ */ jsx(ScissorsLineDashed, { size: 12 }),
+          /* @__PURE__ */ jsx("span", { className: "flex-1 text-left", children: enabled ? "Clipping on" : "Clipping off" }),
+          /* @__PURE__ */ jsx(Power, { size: 12, className: enabled ? "text-[hsl(var(--brand))]" : "text-muted-foreground" })
+        ]
+      }
+    ) }),
     /* @__PURE__ */ jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxs(
       "button",
       {
@@ -4492,8 +4569,8 @@ function ScenePanel() {
             /* @__PURE__ */ jsx(
               "button",
               {
-                onClick: () => clipManager?.setBoxMode(box.id, box.mode === "outside" ? "inside" : "outside"),
-                title: box.mode === "outside" ? "Keep inside" : "Keep outside",
+                onClick: () => clipManager?.setModeAll(box.mode === "outside" ? "inside" : "outside"),
+                title: box.mode === "outside" ? "Keep inside (all)" : "Keep outside (all)",
                 className: "text-muted-foreground hover:text-foreground transition-colors shrink-0",
                 children: /* @__PURE__ */ jsx(Scissors, { size: 10 })
               }
@@ -4684,9 +4761,9 @@ function ClassificationPanel() {
       if (cloud?.material) {
         const mat = cloud.material;
         if (mat.classification) {
-          const THREE3 = window.THREE;
+          const THREE4 = window.THREE;
           const hexColor = CLASS_DEFS.find((c) => c.code === code)?.color ?? "#ffffff";
-          mat.classification[code] = { visible: next[code], color: THREE3 ? new THREE3.Color(hexColor) : hexColor };
+          mat.classification[code] = { visible: next[code], color: THREE4 ? new THREE4.Color(hexColor) : hexColor };
         }
       }
       return next;
@@ -5382,6 +5459,136 @@ function Slider({ label, value, min, max, step, onChange, display }) {
     /* @__PURE__ */ jsx("span", { className: "w-12 text-right font-mono text-[10px] tabular-nums", children: display ? display(value) : value.toFixed(2) })
   ] });
 }
+
+// src/components/overlays/quick-settings-popover.tsx
+init_utils();
+init_viewer_provider();
+var COLOR_MODES2 = [
+  { value: "rgb", label: "RGB" },
+  { value: "height", label: "Elevation" },
+  { value: "intensity", label: "Intensity" },
+  { value: "classification", label: "Classification" }
+];
+function ToggleRow({
+  icon,
+  label,
+  active,
+  onClick
+}) {
+  return /* @__PURE__ */ jsxs(
+    "button",
+    {
+      onClick,
+      className: "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors",
+      children: [
+        /* @__PURE__ */ jsx("span", { className: cn("text-white/50", active && "text-[hsl(var(--brand))]"), children: icon }),
+        /* @__PURE__ */ jsx("span", { className: "text-xs text-white/80 flex-1 text-left", children: label }),
+        /* @__PURE__ */ jsx(
+          "div",
+          {
+            className: cn(
+              "w-7 h-4 rounded-full transition-colors flex items-center px-0.5",
+              active ? "bg-[hsl(var(--brand)/0.6)]" : "bg-white/15"
+            ),
+            children: /* @__PURE__ */ jsx(
+              "div",
+              {
+                className: cn(
+                  "w-3 h-3 rounded-full bg-white transition-transform",
+                  active && "translate-x-3"
+                )
+              }
+            )
+          }
+        )
+      ]
+    }
+  );
+}
+function QuickSettingsPopover({ onClose: _onClose }) {
+  const {
+    showMarkers,
+    setShowMarkers,
+    showMinimap,
+    setShowMinimap,
+    colorMode,
+    setColorMode,
+    pointSize,
+    setPointSize,
+    loader
+  } = useViewer();
+  return /* @__PURE__ */ jsx("div", { className: "absolute top-16 right-3 z-40", children: /* @__PURE__ */ jsxs(
+    "div",
+    {
+      className: cn(
+        "w-56 p-3 space-y-3",
+        "backdrop-blur-xl bg-black/30 dark:bg-black/40",
+        "border border-white/15 dark:border-white/10",
+        "rounded-xl shadow-2xl shadow-black/20"
+      ),
+      children: [
+        /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "View Settings" }),
+        /* @__PURE__ */ jsxs("div", { className: "space-y-0.5", children: [
+          /* @__PURE__ */ jsx(
+            ToggleRow,
+            {
+              icon: /* @__PURE__ */ jsx(Camera, { size: 14 }),
+              label: "Panoramas",
+              active: showMarkers,
+              onClick: () => setShowMarkers(!showMarkers)
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            ToggleRow,
+            {
+              icon: /* @__PURE__ */ jsx(Map$1, { size: 14 }),
+              label: "Minimap",
+              active: showMinimap,
+              onClick: () => setShowMinimap(!showMinimap)
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "space-y-1.5", children: [
+          /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Color" }),
+          /* @__PURE__ */ jsx("div", { className: "grid grid-cols-2 gap-1", children: COLOR_MODES2.map((cm) => /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: () => {
+                setColorMode(cm.value);
+                loader?.setColorMode(cm.value);
+              },
+              className: cn(
+                "text-[10px] py-1 px-2 rounded-lg transition-colors",
+                colorMode === cm.value ? "bg-[hsl(var(--brand)/0.25)] text-[hsl(var(--brand))]" : "text-white/60 hover:text-white hover:bg-white/10"
+              ),
+              children: cm.label
+            },
+            cm.value
+          )) })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "space-y-1.5", children: [
+          /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Point Size" }),
+          /* @__PURE__ */ jsx("div", { className: "px-1", children: /* @__PURE__ */ jsx(
+            "input",
+            {
+              type: "range",
+              min: 0.5,
+              max: 5,
+              step: 0.1,
+              value: pointSize,
+              onChange: (e) => {
+                const v = parseFloat(e.target.value);
+                setPointSize(v);
+                loader?.setPointSize(v);
+              },
+              className: "pcv-slider w-full"
+            }
+          ) })
+        ] })
+      ]
+    }
+  ) });
+}
 var chromeScale = { zoom: "var(--pcv-scale, 1)" };
 var Viewport2 = lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
 function ViewportFallback() {
@@ -5408,6 +5615,7 @@ function GlassCard({ children, className }) {
 function WorkspaceLayout({ className }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
+  const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
   const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
   const { metadata } = useData();
   const t = useLocale().viewport;
@@ -5416,13 +5624,16 @@ function WorkspaceLayout({ className }) {
     /* @__PURE__ */ jsx("div", { className: "absolute inset-0", children: /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsx(Viewport2, {}) }) }),
     selectedCamera && /* @__PURE__ */ jsx(PanoViewer, {}),
     /* @__PURE__ */ jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) }),
+    isPro && quickSettingsOpen && /* @__PURE__ */ jsx(QuickSettingsPopover, { onClose: () => setQuickSettingsOpen(false) }),
     /* @__PURE__ */ jsx("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(
       MainToolbar,
       {
         onToggleSidebar: () => setSidebarOpen((o) => !o),
         sidebarOpen,
         onToggleRenderSettings: isPro ? () => setRenderSettingsOpen((o) => !o) : void 0,
-        renderSettingsOpen
+        renderSettingsOpen,
+        onToggleQuickSettings: isPro ? () => setQuickSettingsOpen((o) => !o) : void 0,
+        quickSettingsOpen
       }
     ) }) }),
     /* @__PURE__ */ jsx("div", { className: "absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsx(ToolRail, {}) }) }),
@@ -5430,12 +5641,36 @@ function WorkspaceLayout({ className }) {
       "div",
       {
         className: cn(
-          "absolute top-3 bottom-10 right-3 z-30",
+          "absolute top-16 bottom-10 right-3 z-30",
           "transition-all duration-200",
           sidebarOpen ? "w-72 xl:w-80" : "w-0 overflow-hidden"
         ),
         style: chromeScale,
         children: sidebarOpen && /* @__PURE__ */ jsx(GlassCard, { className: "h-full overflow-hidden", children: /* @__PURE__ */ jsx(Sidebar, {}) })
+      }
+    ),
+    /* @__PURE__ */ jsx(
+      "div",
+      {
+        className: "absolute top-1/2 right-0 -translate-y-1/2 z-40 pointer-events-none",
+        style: chromeScale,
+        children: /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => setSidebarOpen((o) => !o),
+            title: sidebarOpen ? "Collapse sidebar" : "Expand sidebar",
+            "aria-label": sidebarOpen ? "Collapse sidebar" : "Expand sidebar",
+            className: cn(
+              "pointer-events-auto flex items-center justify-center",
+              "w-5 h-12 rounded-l-lg",
+              "backdrop-blur-xl bg-black/30 dark:bg-black/40",
+              "border border-r-0 border-white/15 dark:border-white/10",
+              "shadow-2xl shadow-black/20",
+              "text-white/60 hover:text-[hsl(var(--brand))] transition-colors"
+            ),
+            children: sidebarOpen ? /* @__PURE__ */ jsx(ChevronRight, { size: 14 }) : /* @__PURE__ */ jsx(ChevronLeft, { size: 14 })
+          }
+        )
       }
     ),
     isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsx("div", { className: "absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(ClipToolbar, {}) }) }),
@@ -5473,7 +5708,7 @@ var buttonVariants = cva(
     }
   }
 );
-var Button = React24.forwardRef(
+var Button = React25.forwardRef(
   ({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
     "button",
     {
@@ -5487,7 +5722,7 @@ Button.displayName = "Button";
 
 // src/ui/slider.tsx
 init_utils();
-var Slider2 = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxs(
+var Slider2 = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxs(
   SliderPrimitive.Root,
   {
     ref,
@@ -5509,7 +5744,7 @@ init_utils();
 var Dialog = DialogPrimitive.Root;
 var DialogTrigger = DialogPrimitive.Trigger;
 var DialogPortal = DialogPrimitive.Portal;
-var DialogOverlay = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogOverlay = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Overlay,
   {
     ref,
@@ -5518,7 +5753,7 @@ var DialogOverlay = React24.forwardRef(({ className, ...props }, ref) => /* @__P
   }
 ));
 DialogOverlay.displayName = "DialogOverlay";
-var DialogContent = React24.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
+var DialogContent = React25.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
   const dx = dragOffset?.x ?? 0;
   const dy = dragOffset?.y ?? 0;
   return /* @__PURE__ */ jsxs(DialogPortal, { container: container ?? void 0, children: [
@@ -5556,7 +5791,7 @@ var DialogHeader = ({
   }
 );
 DialogHeader.displayName = "DialogHeader";
-var DialogTitle = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogTitle = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Title,
   {
     ref,
@@ -5565,7 +5800,7 @@ var DialogTitle = React24.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 DialogTitle.displayName = "DialogTitle";
-var DialogClose = React24.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogClose = React25.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Close,
   {
     ref,
@@ -5582,7 +5817,7 @@ DialogClose.displayName = "DialogClose";
 // src/ui/tabs.tsx
 init_utils();
 var Tabs = TabsPrimitive.Root;
-var TabsList = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsList = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.List,
   {
     ref,
@@ -5594,7 +5829,7 @@ var TabsList = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__
   }
 ));
 TabsList.displayName = "TabsList";
-var TabsTrigger = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsTrigger = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.Trigger,
   {
     ref,
@@ -5609,7 +5844,7 @@ var TabsTrigger = React24.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 TabsTrigger.displayName = "TabsTrigger";
-var TabsContent = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsContent = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.Content,
   {
     ref,
@@ -5627,7 +5862,7 @@ init_utils();
 var Popover = PopoverPrimitive.Root;
 var PopoverTrigger = PopoverPrimitive.Trigger;
 var PopoverAnchor = PopoverPrimitive.Anchor;
-var PopoverContent = React24.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(PopoverPrimitive.Portal, { children: /* @__PURE__ */ jsx(
+var PopoverContent = React25.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(PopoverPrimitive.Portal, { children: /* @__PURE__ */ jsx(
   PopoverPrimitive.Content,
   {
     ref,
@@ -5652,7 +5887,7 @@ init_utils();
 var TooltipProvider = TooltipPrimitive.Provider;
 var Tooltip = TooltipPrimitive.Root;
 var TooltipTrigger = TooltipPrimitive.Trigger;
-var TooltipContent = React24.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(TooltipPrimitive.Portal, { children: /* @__PURE__ */ jsx(
+var TooltipContent = React25.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(TooltipPrimitive.Portal, { children: /* @__PURE__ */ jsx(
   TooltipPrimitive.Content,
   {
     ref,
@@ -5692,7 +5927,7 @@ var toggleVariants = cva(
     }
   }
 );
-var Toggle = React24.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
+var Toggle = React25.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
   TogglePrimitive.Root,
   {
     ref,
@@ -5707,7 +5942,7 @@ init_utils();
 var Select = SelectPrimitive.Root;
 var SelectGroup = SelectPrimitive.Group;
 var SelectValue = SelectPrimitive.Value;
-var SelectTrigger = React24.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+var SelectTrigger = React25.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
   SelectPrimitive.Trigger,
   {
     ref,
@@ -5727,7 +5962,7 @@ var SelectTrigger = React24.forwardRef(({ className, children, ...props }, ref) 
   }
 ));
 SelectTrigger.displayName = "SelectTrigger";
-var SelectScrollUpButton = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectScrollUpButton = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.ScrollUpButton,
   {
     ref,
@@ -5740,7 +5975,7 @@ var SelectScrollUpButton = React24.forwardRef(({ className, ...props }, ref) => 
   }
 ));
 SelectScrollUpButton.displayName = "SelectScrollUpButton";
-var SelectScrollDownButton = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectScrollDownButton = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.ScrollDownButton,
   {
     ref,
@@ -5753,7 +5988,7 @@ var SelectScrollDownButton = React24.forwardRef(({ className, ...props }, ref) =
   }
 ));
 SelectScrollDownButton.displayName = "SelectScrollDownButton";
-var SelectContent = React24.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Portal, { children: /* @__PURE__ */ jsxs(
+var SelectContent = React25.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Portal, { children: /* @__PURE__ */ jsxs(
   SelectPrimitive.Content,
   {
     ref,
@@ -5786,7 +6021,7 @@ var SelectContent = React24.forwardRef(({ className, children, position = "poppe
   }
 ) }));
 SelectContent.displayName = "SelectContent";
-var SelectLabel = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectLabel = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.Label,
   {
     ref,
@@ -5798,7 +6033,7 @@ var SelectLabel = React24.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 SelectLabel.displayName = "SelectLabel";
-var SelectItem = React24.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+var SelectItem = React25.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
   SelectPrimitive.Item,
   {
     ref,
@@ -5816,7 +6051,7 @@ var SelectItem = React24.forwardRef(({ className, children, ...props }, ref) => 
   }
 ));
 SelectItem.displayName = "SelectItem";
-var SelectSeparator = React24.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectSeparator = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.Separator,
   {
     ref,
@@ -5927,13 +6162,13 @@ init_viewer_provider();
 // src/layouts/minimal/minimal-settings-popover.tsx
 init_utils();
 init_viewer_provider();
-var COLOR_MODES2 = [
+var COLOR_MODES3 = [
   { value: "rgb", label: "RGB" },
   { value: "height", label: "Elevation" },
   { value: "intensity", label: "Intensity" },
   { value: "classification", label: "Classification" }
 ];
-function ToggleRow({
+function ToggleRow2({
   icon,
   label,
   active,
@@ -5994,7 +6229,7 @@ function MinimalSettingsPopover({ onClose }) {
         /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "View Settings" }),
         /* @__PURE__ */ jsxs("div", { className: "space-y-0.5", children: [
           /* @__PURE__ */ jsx(
-            ToggleRow,
+            ToggleRow2,
             {
               icon: /* @__PURE__ */ jsx(Camera, { size: 14 }),
               label: "Panoramas",
@@ -6003,7 +6238,7 @@ function MinimalSettingsPopover({ onClose }) {
             }
           ),
           /* @__PURE__ */ jsx(
-            ToggleRow,
+            ToggleRow2,
             {
               icon: /* @__PURE__ */ jsx(Map$1, { size: 14 }),
               label: "Minimap",
@@ -6014,7 +6249,7 @@ function MinimalSettingsPopover({ onClose }) {
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "space-y-1.5", children: [
           /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Color" }),
-          /* @__PURE__ */ jsx("div", { className: "grid grid-cols-2 gap-1", children: COLOR_MODES2.map((cm) => /* @__PURE__ */ jsx(
+          /* @__PURE__ */ jsx("div", { className: "grid grid-cols-2 gap-1", children: COLOR_MODES3.map((cm) => /* @__PURE__ */ jsx(
             "button",
             {
               onClick: () => {
@@ -6366,7 +6601,7 @@ function ToolsPalette() {
 // src/layouts/workstation/display-palette.tsx
 init_utils();
 init_viewer_provider();
-var COLOR_MODES3 = [
+var COLOR_MODES4 = [
   { value: "rgb", label: "RGB" },
   { value: "height", label: "Elevation" },
   { value: "intensity", label: "Intensity" },
@@ -6384,7 +6619,7 @@ function DisplayPalette() {
   const { loader, colorMode, setColorMode, pointBudget, setPointBudget, pointSize, setPointSize } = useViewer();
   return /* @__PURE__ */ jsxs(FloatingPalette, { title: "Display", icon: /* @__PURE__ */ jsx(Palette, { size: 12 }), children: [
     /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mb-1", children: "Color" }),
-    /* @__PURE__ */ jsx("div", { className: "flex flex-wrap gap-1", children: COLOR_MODES3.map((cm) => /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx("div", { className: "flex flex-wrap gap-1", children: COLOR_MODES4.map((cm) => /* @__PURE__ */ jsx(
       "button",
       {
         onClick: () => {
@@ -6467,7 +6702,7 @@ function DisplayPalette() {
 // src/layouts/workstation/view-settings-palette.tsx
 init_utils();
 init_viewer_provider();
-function ToggleRow2({ icon, label, active, onClick }) {
+function ToggleRow3({ icon, label, active, onClick }) {
   return /* @__PURE__ */ jsxs("button", { onClick, className: "flex items-center gap-2 w-full px-1 py-1 rounded text-xs hover:bg-muted/40 transition-colors", children: [
     /* @__PURE__ */ jsx("span", { className: cn("text-muted-foreground", active && "text-[hsl(var(--brand))]"), children: icon }),
     /* @__PURE__ */ jsx("span", { className: "flex-1 text-left text-muted-foreground", children: label }),
@@ -6486,8 +6721,8 @@ function ModeBtn({ icon, label, active, onClick }) {
 function ViewSettingsPalette() {
   const { showMarkers, setShowMarkers, showMinimap, setShowMinimap, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
   return /* @__PURE__ */ jsxs(FloatingPalette, { title: "View", icon: /* @__PURE__ */ jsx(Eye, { size: 12 }), defaultCollapsed: true, children: [
-    /* @__PURE__ */ jsx(ToggleRow2, { icon: /* @__PURE__ */ jsx(Camera, { size: 13 }), label: "Panoramas", active: showMarkers, onClick: () => setShowMarkers(!showMarkers) }),
-    /* @__PURE__ */ jsx(ToggleRow2, { icon: /* @__PURE__ */ jsx(Map$1, { size: 13 }), label: "Minimap", active: showMinimap, onClick: () => setShowMinimap(!showMinimap) }),
+    /* @__PURE__ */ jsx(ToggleRow3, { icon: /* @__PURE__ */ jsx(Camera, { size: 13 }), label: "Panoramas", active: showMarkers, onClick: () => setShowMarkers(!showMarkers) }),
+    /* @__PURE__ */ jsx(ToggleRow3, { icon: /* @__PURE__ */ jsx(Map$1, { size: 13 }), label: "Minimap", active: showMinimap, onClick: () => setShowMinimap(!showMinimap) }),
     /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1", children: "Navigation" }),
     /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
       /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Orbit, { size: 14 }), label: "Orbit", active: navigationMode === "orbit", onClick: () => setNavigationMode("orbit") }),

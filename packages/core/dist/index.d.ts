@@ -525,6 +525,8 @@ declare class ClipManager {
     private pivot;
     private _faceHandles;
     private _transformMode;
+    /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
+    private _enabled;
     onChange?: (boxes: ClipBoxEntry[]) => void;
     onSelectChange?: (id: string | null) => void;
     constructor(sm: SceneManager);
@@ -545,6 +547,18 @@ declare class ClipManager {
     private _applyTransformMode;
     removeBox(id: string): void;
     setBoxMode(id: string, mode: ClipMode): void;
+    /**
+     * Set the clip mode for ALL boxes at once. potree-core only supports a single
+     * global clip mode, so boxes must never diverge — use this instead of
+     * per-box setBoxMode when changing the effective mode.
+     */
+    setModeAll(mode: ClipMode): void;
+    /**
+     * Globally enable/disable clipping without removing any boxes. When disabled,
+     * boxes remain visible as wireframes/fills but no actual clipping is applied.
+     */
+    setEnabled(enabled: boolean): void;
+    isEnabled(): boolean;
     setBoxVisible(id: string, visible: boolean): void;
     renameBox(id: string, name: string): void;
     getBoxes(): ClipBoxEntry[];
@@ -562,7 +576,7 @@ declare class ClipManager {
 }
 
 /**
- * Renders a small XYZ orientation widget in the top-right corner of the
+ * Renders a small XYZ orientation widget in the bottom-left corner of the
  * viewport using a second render pass with scissor clipping.
  *
  * Flat, technical-drawing style — no lighting, MeshBasicMaterial only.
@@ -581,7 +595,7 @@ declare class AxisWidget {
     /** Create a canvas-based sprite with the axis letter */
     private _makeLabel;
     /**
-     * Render the widget into a scissor region in the top-right corner.
+     * Render the widget into a scissor region in the bottom-left corner.
      * Must be called from a post-render callback after the main scene renders.
      */
     render(): void;

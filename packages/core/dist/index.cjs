@@ -1809,6 +1809,8 @@ var ClipManager = class {
   pivot = null;
   _faceHandles = null;
   _transformMode = "translate";
+  /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
+  _enabled = true;
   onChange;
   onSelectChange;
   constructor(sm) {
@@ -2011,6 +2013,30 @@ var ClipManager = class {
     this.applyAll();
     this.onChange?.(this.getBoxes());
   }
+  /**
+   * Set the clip mode for ALL boxes at once. potree-core only supports a single
+   * global clip mode, so boxes must never diverge — use this instead of
+   * per-box setBoxMode when changing the effective mode.
+   */
+  setModeAll(mode) {
+    for (const entry of this.entries) {
+      entry.mode = mode;
+    }
+    this.applyAll();
+    this.onChange?.(this.getBoxes());
+  }
+  /**
+   * Globally enable/disable clipping without removing any boxes. When disabled,
+   * boxes remain visible as wireframes/fills but no actual clipping is applied.
+   */
+  setEnabled(enabled) {
+    this._enabled = enabled;
+    this.applyAll();
+    this.onChange?.(this.getBoxes());
+  }
+  isEnabled() {
+    return this._enabled;
+  }
   setBoxVisible(id, visible) {
     const entry = this.entries.find((e) => e.id === id);
     if (!entry) return;
@@ -2168,6 +2194,15 @@ var ClipManager = class {
     }
   }
   applyAll() {
+    if (!this._enabled) {
+      for (const pc of this.sm.pointClouds) {
+        const mat = pc.material;
+        if (!mat) continue;
+        mat.setClipBoxes([]);
+        mat.clipMode = 0;
+      }
+      return;
+    }
     const visible = this.entries.filter((e) => e.visible);
     for (const pc of this.sm.pointClouds) {
       const mat = pc.material;
@@ -2245,11 +2280,6 @@ var AxisWidget = class {
       sprite.scale.set(0.28, 0.28, 1);
       this._scene.add(sprite);
     }
-    const sGeo = new THREE5__namespace.SphereGeometry(0.06, 8, 8);
-    const sMat = new THREE5__namespace.MeshBasicMaterial({ color: 10066329 });
-    this._scene.add(new THREE5__namespace.Mesh(sGeo, sMat));
-    this._disposables.push(sGeo);
-    this._materials.push(sMat);
   }
   /** Create a canvas-based sprite with the axis letter */
   _makeLabel(letter, color) {
@@ -2277,7 +2307,7 @@ var AxisWidget = class {
     return new THREE5__namespace.Sprite(mat);
   }
   /**
-   * Render the widget into a scissor region in the top-right corner.
+   * Render the widget into a scissor region in the bottom-left corner.
    * Must be called from a post-render callback after the main scene renders.
    */
   render() {
@@ -2301,8 +2331,8 @@ var AxisWidget = class {
     this._camera.position.copy(offset);
     this._camera.up.copy(this.sm.camera.up);
     this._camera.lookAt(0, 0, 0);
-    const x = W - size - margin;
-    const y = H - size - margin;
+    const x = margin;
+    const y = margin;
     renderer.autoClear = false;
     renderer.setScissorTest(true);
     renderer.setScissor(x, y, size, size);

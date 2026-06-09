@@ -2,7 +2,7 @@
 
 var THREE5 = require('three');
 var OrbitControls_js = require('three/examples/jsm/controls/OrbitControls.js');
-var React24 = require('react');
+var React25 = require('react');
 var jsxRuntime = require('react/jsx-runtime');
 var clsx = require('clsx');
 var tailwindMerge = require('tailwind-merge');
@@ -38,7 +38,7 @@ function _interopNamespace(e) {
 }
 
 var THREE5__namespace = /*#__PURE__*/_interopNamespace(THREE5);
-var React24__default = /*#__PURE__*/_interopDefault(React24);
+var React25__default = /*#__PURE__*/_interopDefault(React25);
 var SliderPrimitive__namespace = /*#__PURE__*/_interopNamespace(SliderPrimitive);
 var DialogPrimitive__namespace = /*#__PURE__*/_interopNamespace(DialogPrimitive);
 var TabsPrimitive__namespace = /*#__PURE__*/_interopNamespace(TabsPrimitive);
@@ -1866,6 +1866,8 @@ var init_dist = __esm({
       pivot = null;
       _faceHandles = null;
       _transformMode = "translate";
+      /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
+      _enabled = true;
       onChange;
       onSelectChange;
       constructor(sm) {
@@ -2068,6 +2070,30 @@ var init_dist = __esm({
         this.applyAll();
         this.onChange?.(this.getBoxes());
       }
+      /**
+       * Set the clip mode for ALL boxes at once. potree-core only supports a single
+       * global clip mode, so boxes must never diverge — use this instead of
+       * per-box setBoxMode when changing the effective mode.
+       */
+      setModeAll(mode) {
+        for (const entry of this.entries) {
+          entry.mode = mode;
+        }
+        this.applyAll();
+        this.onChange?.(this.getBoxes());
+      }
+      /**
+       * Globally enable/disable clipping without removing any boxes. When disabled,
+       * boxes remain visible as wireframes/fills but no actual clipping is applied.
+       */
+      setEnabled(enabled) {
+        this._enabled = enabled;
+        this.applyAll();
+        this.onChange?.(this.getBoxes());
+      }
+      isEnabled() {
+        return this._enabled;
+      }
       setBoxVisible(id, visible) {
         const entry = this.entries.find((e) => e.id === id);
         if (!entry) return;
@@ -2225,6 +2251,15 @@ var init_dist = __esm({
         }
       }
       applyAll() {
+        if (!this._enabled) {
+          for (const pc of this.sm.pointClouds) {
+            const mat = pc.material;
+            if (!mat) continue;
+            mat.setClipBoxes([]);
+            mat.clipMode = 0;
+          }
+          return;
+        }
         const visible = this.entries.filter((e) => e.visible);
         for (const pc of this.sm.pointClouds) {
           const mat = pc.material;
@@ -2302,11 +2337,6 @@ var init_dist = __esm({
           sprite.scale.set(0.28, 0.28, 1);
           this._scene.add(sprite);
         }
-        const sGeo = new THREE5__namespace.SphereGeometry(0.06, 8, 8);
-        const sMat = new THREE5__namespace.MeshBasicMaterial({ color: 10066329 });
-        this._scene.add(new THREE5__namespace.Mesh(sGeo, sMat));
-        this._disposables.push(sGeo);
-        this._materials.push(sMat);
       }
       /** Create a canvas-based sprite with the axis letter */
       _makeLabel(letter, color) {
@@ -2334,7 +2364,7 @@ var init_dist = __esm({
         return new THREE5__namespace.Sprite(mat);
       }
       /**
-       * Render the widget into a scissor region in the top-right corner.
+       * Render the widget into a scissor region in the bottom-left corner.
        * Must be called from a post-render callback after the main scene renders.
        */
       render() {
@@ -2358,8 +2388,8 @@ var init_dist = __esm({
         this._camera.position.copy(offset);
         this._camera.up.copy(this.sm.camera.up);
         this._camera.lookAt(0, 0, 0);
-        const x = W - size - margin;
-        const y = H - size - margin;
+        const x = margin;
+        const y = margin;
         renderer.autoClear = false;
         renderer.setScissorTest(true);
         renderer.setScissor(x, y, size, size);
@@ -2519,51 +2549,51 @@ var init_dist = __esm({
   }
 });
 function useViewer() {
-  const ctx = React24.useContext(ViewerContext);
+  const ctx = React25.useContext(ViewerContext);
   if (!ctx) throw new Error("useViewer must be used inside <ViewerProvider>");
   return ctx;
 }
 function ViewerProvider({ config, children }) {
-  const [sceneManager, _setSceneManager] = React24.useState(null);
-  const [loader, _setLoader] = React24.useState(null);
-  const [measurementManager, _setMeasurementManager] = React24.useState(null);
-  const [markerManager, _setMarkerManager] = React24.useState(null);
-  const [cameraAnimator, _setCameraAnimator] = React24.useState(null);
-  const [exporter, _setExporter] = React24.useState(null);
-  const [minimap, _setMinimap] = React24.useState(null);
-  const [clipManager, _setClipManager] = React24.useState(null);
-  const [activeTool, setActiveTool] = React24.useState("none");
-  const [pointBudget, setPointBudget] = React24.useState(config.pointBudget ?? 2e6);
-  const [pointSize, setPointSize] = React24.useState(1.5);
-  const [fps, setFps] = React24.useState(0);
-  const [pointCount, setPointCount] = React24.useState(0);
-  const [measurementList, setMeasurementList] = React24.useState([]);
-  const [showMarkers, setShowMarkers] = React24.useState(true);
-  const [showMinimap, setShowMinimap] = React24.useState(config.showMinimap ?? true);
-  const [selectedCamera, setSelectedCamera] = React24.useState(null);
-  const [clipBoxEntries, setClipBoxEntries] = React24.useState([]);
-  const [selectedClipBoxId, setSelectedClipBoxId] = React24.useState(null);
-  const [colorMode, setColorMode] = React24.useState("rgb");
-  const [navigationMode, _setNavigationMode] = React24.useState("orbit");
-  const [projection, _setProjection] = React24.useState("perspective");
-  const [displaySettings, setDisplaySettings] = React24.useState(() => ({
+  const [sceneManager, _setSceneManager] = React25.useState(null);
+  const [loader, _setLoader] = React25.useState(null);
+  const [measurementManager, _setMeasurementManager] = React25.useState(null);
+  const [markerManager, _setMarkerManager] = React25.useState(null);
+  const [cameraAnimator, _setCameraAnimator] = React25.useState(null);
+  const [exporter, _setExporter] = React25.useState(null);
+  const [minimap, _setMinimap] = React25.useState(null);
+  const [clipManager, _setClipManager] = React25.useState(null);
+  const [activeTool, setActiveTool] = React25.useState("none");
+  const [pointBudget, setPointBudget] = React25.useState(config.pointBudget ?? 2e6);
+  const [pointSize, setPointSize] = React25.useState(1.5);
+  const [fps, setFps] = React25.useState(0);
+  const [pointCount, setPointCount] = React25.useState(0);
+  const [measurementList, setMeasurementList] = React25.useState([]);
+  const [showMarkers, setShowMarkers] = React25.useState(true);
+  const [showMinimap, setShowMinimap] = React25.useState(config.showMinimap ?? true);
+  const [selectedCamera, setSelectedCamera] = React25.useState(null);
+  const [clipBoxEntries, setClipBoxEntries] = React25.useState([]);
+  const [selectedClipBoxId, setSelectedClipBoxId] = React25.useState(null);
+  const [colorMode, setColorMode] = React25.useState("rgb");
+  const [navigationMode, _setNavigationMode] = React25.useState("orbit");
+  const [projection, _setProjection] = React25.useState("perspective");
+  const [displaySettings, setDisplaySettings] = React25.useState(() => ({
     ...exports.DISPLAY_PRESETS.standard,
     ...config.displaySettings
   }));
-  const setNavigationMode = React24.useCallback((mode) => {
+  const setNavigationMode = React25.useCallback((mode) => {
     _setNavigationMode(mode);
   }, []);
-  const setProjection = React24.useCallback((mode) => {
+  const setProjection = React25.useCallback((mode) => {
     _setProjection(mode);
   }, []);
-  const setSceneManager = React24.useCallback((sm) => _setSceneManager(sm), []);
-  const setLoader = React24.useCallback((l) => _setLoader(l), []);
-  const setMeasurementManager = React24.useCallback((m) => _setMeasurementManager(m), []);
-  const setMarkerManager = React24.useCallback((m) => _setMarkerManager(m), []);
-  const setCameraAnimator = React24.useCallback((a) => _setCameraAnimator(a), []);
-  const setExporter = React24.useCallback((e) => _setExporter(e), []);
-  const setMinimap = React24.useCallback((r) => _setMinimap(r), []);
-  const setClipManager = React24.useCallback((c) => _setClipManager(c), []);
+  const setSceneManager = React25.useCallback((sm) => _setSceneManager(sm), []);
+  const setLoader = React25.useCallback((l) => _setLoader(l), []);
+  const setMeasurementManager = React25.useCallback((m) => _setMeasurementManager(m), []);
+  const setMarkerManager = React25.useCallback((m) => _setMarkerManager(m), []);
+  const setCameraAnimator = React25.useCallback((a) => _setCameraAnimator(a), []);
+  const setExporter = React25.useCallback((e) => _setExporter(e), []);
+  const setMinimap = React25.useCallback((r) => _setMinimap(r), []);
+  const setClipManager = React25.useCallback((c) => _setClipManager(c), []);
   const uiMode = config.uiMode ?? "professional";
   const value = {
     sceneManager,
@@ -2622,21 +2652,21 @@ var init_viewer_provider = __esm({
   "src/providers/viewer-provider.tsx"() {
     "use client";
     init_dist();
-    ViewerContext = React24.createContext(null);
+    ViewerContext = React25.createContext(null);
   }
 });
 function useData() {
-  const ctx = React24.useContext(DataContext);
+  const ctx = React25.useContext(DataContext);
   if (!ctx) throw new Error("useData must be used inside <DataProvider>");
   return ctx;
 }
 function DataProvider({ adapter, children }) {
-  const [cameras, setCameras] = React24.useState([]);
-  const [metadata, setMetadata] = React24.useState(null);
-  const [loading, setLoading] = React24.useState(true);
-  const [error, setError] = React24.useState(null);
-  const [rev, setRev] = React24.useState(0);
-  React24.useEffect(() => {
+  const [cameras, setCameras] = React25.useState([]);
+  const [metadata, setMetadata] = React25.useState(null);
+  const [loading, setLoading] = React25.useState(true);
+  const [error, setError] = React25.useState(null);
+  const [rev, setRev] = React25.useState(0);
+  React25.useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -2674,7 +2704,7 @@ var DataContext;
 var init_data_provider = __esm({
   "src/providers/data-provider.tsx"() {
     "use client";
-    DataContext = React24.createContext(null);
+    DataContext = React25.createContext(null);
   }
 });
 
@@ -2913,7 +2943,7 @@ var init_en = __esm({
   }
 });
 function useLocale() {
-  return React24.useContext(LocaleContext);
+  return React25.useContext(LocaleContext);
 }
 function LocaleProvider({ locale = exports.en, children }) {
   return /* @__PURE__ */ jsxRuntime.jsx(LocaleContext.Provider, { value: locale, children });
@@ -2923,7 +2953,7 @@ var init_locale_context = __esm({
   "src/i18n/locale-context.tsx"() {
     "use client";
     init_en();
-    LocaleContext = React24.createContext(exports.en);
+    LocaleContext = React25.createContext(exports.en);
   }
 });
 function cn(...inputs) {
@@ -2941,10 +2971,10 @@ __export(viewport_exports, {
   Viewport: () => Viewport
 });
 function Viewport({ className }) {
-  const containerRef = React24.useRef(null);
-  const minimapContainerRef = React24.useRef(null);
-  const initialized = React24.useRef(false);
-  const [minimapSize, setMinimapSize] = React24__default.default.useState(176);
+  const containerRef = React25.useRef(null);
+  const minimapContainerRef = React25.useRef(null);
+  const initialized = React25.useRef(false);
+  const [minimapSize, setMinimapSize] = React25__default.default.useState(176);
   const t = useLocale().viewport;
   const {
     config,
@@ -2970,8 +3000,8 @@ function Viewport({ className }) {
     displaySettings
   } = useViewer();
   const { cameras, metadata } = useData();
-  const metaZRef = React24.useRef(null);
-  React24.useEffect(() => {
+  const metaZRef = React25.useRef(null);
+  React25.useEffect(() => {
     if (metadata) {
       metaZRef.current = {
         min: metadata.boundingBox.min[2],
@@ -2979,18 +3009,18 @@ function Viewport({ className }) {
       };
     }
   }, [metadata]);
-  const smRef = React24.useRef(null);
-  const loaderRef = React24.useRef(null);
-  const markerRef = React24.useRef(null);
-  const measureRef = React24.useRef(null);
-  const minimapRef = React24.useRef(null);
-  const clipRef = React24.useRef(null);
-  const animRef = React24.useRef(null);
-  const axisRef = React24.useRef(null);
-  const clipDraftRef = React24.useRef(null);
-  const clipDownRef = React24.useRef(null);
-  const volumeDragRef = React24.useRef(null);
-  React24.useEffect(() => {
+  const smRef = React25.useRef(null);
+  const loaderRef = React25.useRef(null);
+  const markerRef = React25.useRef(null);
+  const measureRef = React25.useRef(null);
+  const minimapRef = React25.useRef(null);
+  const clipRef = React25.useRef(null);
+  const animRef = React25.useRef(null);
+  const axisRef = React25.useRef(null);
+  const clipDraftRef = React25.useRef(null);
+  const clipDownRef = React25.useRef(null);
+  const volumeDragRef = React25.useRef(null);
+  React25.useEffect(() => {
     if (!containerRef.current || initialized.current) return;
     initialized.current = true;
     const adapter = createAdapter(config.source);
@@ -3064,12 +3094,12 @@ function Viewport({ className }) {
       initialized.current = false;
     };
   }, []);
-  React24.useEffect(() => {
+  React25.useEffect(() => {
     if (minimapRef.current && minimapContainerRef.current) {
       minimapRef.current.attach(minimapContainerRef.current);
     }
   }, [showMinimap]);
-  const handleMinimapClick = React24.useCallback((e) => {
+  const handleMinimapClick = React25.useCallback((e) => {
     const sm = smRef.current;
     const minimap = minimapRef.current;
     if (!sm || !minimap) return;
@@ -3083,8 +3113,8 @@ function Viewport({ className }) {
     cam.position.set(world.x + offset.x, world.y + offset.y, cam.position.z);
     sm.controls.update();
   }, []);
-  const minimapResizeRef = React24.useRef(false);
-  const handleMinimapResizeStart = React24.useCallback((e) => {
+  const minimapResizeRef = React25.useRef(false);
+  const handleMinimapResizeStart = React25.useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
     minimapResizeRef.current = true;
@@ -3105,17 +3135,17 @@ function Viewport({ className }) {
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }, [minimapSize]);
-  React24.useEffect(() => {
+  React25.useEffect(() => {
     if (markerRef.current && cameras.length > 0) {
       const wb = loaderRef.current?.worldBox;
       markerRef.current.build(cameras, wb && !wb.isEmpty() ? wb : void 0);
       markerRef.current.setVisible(showMarkers);
     }
   }, [cameras, showMarkers]);
-  React24.useEffect(() => {
+  React25.useEffect(() => {
     markerRef.current?.setVisible(showMarkers);
   }, [showMarkers]);
-  React24.useEffect(() => {
+  React25.useEffect(() => {
     if (!activeTool.startsWith("measure-")) {
       measureRef.current?.clearSnap();
     }
@@ -3129,17 +3159,17 @@ function Viewport({ className }) {
       clipRef.current?.setDraft(null);
     }
   }, [activeTool]);
-  React24.useEffect(() => {
+  React25.useEffect(() => {
     smRef.current?.setNavigationMode(navigationMode);
   }, [navigationMode]);
-  React24.useEffect(() => {
+  React25.useEffect(() => {
     smRef.current?.setProjection(projection);
   }, [projection]);
-  React24.useEffect(() => {
+  React25.useEffect(() => {
     measureRef.current?.applyDisplaySettings(displaySettings);
     markerRef.current?.applyDisplaySettings(displaySettings);
   }, [displaySettings]);
-  const projectToPlaneZ = React24.useCallback((nx, ny, planeZ) => {
+  const projectToPlaneZ = React25.useCallback((nx, ny, planeZ) => {
     const sm = smRef.current;
     if (!sm) return null;
     const raycaster = new THREE5__namespace.Raycaster();
@@ -3148,7 +3178,7 @@ function Viewport({ className }) {
     const hit = new THREE5__namespace.Vector3();
     return raycaster.ray.intersectPlane(plane, hit) ? hit : null;
   }, []);
-  const buildClipDraftAt = React24.useCallback((nx, ny) => {
+  const buildClipDraftAt = React25.useCallback((nx, ny) => {
     const sm = smRef.current;
     if (!sm) return null;
     const zMid = metaZRef.current ? (metaZRef.current.min + metaZRef.current.max) / 2 : sm.controls.target.z;
@@ -3160,7 +3190,7 @@ function Viewport({ className }) {
     const half = new THREE5__namespace.Vector3(
       Math.max(0.1, Math.min(bounds.x, bounds.x / 4)) / 2,
       Math.max(0.1, Math.min(bounds.y, bounds.y / 4)) / 2,
-      Math.max(0.2, Math.min(bounds.z, bounds.z / 8)) / 2
+      Math.max(0.2, Math.min(bounds.z, bounds.z / 12, 8)) / 2
     );
     return new THREE5__namespace.Box3(
       center.clone().sub(half),
@@ -3174,7 +3204,7 @@ function Viewport({ className }) {
       ny: -((e.clientY - rect.top) / rect.height) * 2 + 1
     };
   };
-  const handleDblClick = React24.useCallback((e) => {
+  const handleDblClick = React25.useCallback((e) => {
     const sm = smRef.current;
     const anim = animRef.current;
     if (!sm || !anim) return;
@@ -3183,7 +3213,7 @@ function Viewport({ className }) {
     if (!hit) return;
     anim.flyTo({ position: sm.camera.position.clone(), target: hit, duration: 600 });
   }, [projectToPlaneZ]);
-  const handleMouseDown = React24.useCallback((e) => {
+  const handleMouseDown = React25.useCallback((e) => {
     const sm = smRef.current;
     if (!sm) return;
     const fh = clipRef.current?.faceHandles;
@@ -3217,7 +3247,7 @@ function Viewport({ className }) {
     if (activeTool !== "section-box" || e.button !== 0) return;
     clipDownRef.current = { x: e.clientX, y: e.clientY };
   }, [activeTool]);
-  const handleMouseMove = React24.useCallback((e) => {
+  const handleMouseMove = React25.useCallback((e) => {
     const fh = clipRef.current?.faceHandles;
     if (fh && fh.isDragging()) {
       fh.onPointerMove(e.clientX, e.clientY);
@@ -3270,7 +3300,7 @@ function Viewport({ className }) {
       }
     }
   }, [activeTool, projectToPlaneZ, buildClipDraftAt]);
-  const handleMouseUp = React24.useCallback((e) => {
+  const handleMouseUp = React25.useCallback((e) => {
     const sm = smRef.current;
     const fh = clipRef.current?.faceHandles;
     if (fh && fh.isDragging()) {
@@ -3328,7 +3358,7 @@ function Viewport({ className }) {
       return;
     }
   }, [activeTool, buildClipDraftAt]);
-  const handleClick = React24.useCallback((e) => {
+  const handleClick = React25.useCallback((e) => {
     if (activeTool === "section-box") return;
     const sm = smRef.current;
     if (!sm) return;
@@ -3351,7 +3381,7 @@ function Viewport({ className }) {
       }
     }
   }, [activeTool, cameras, config, projectToPlaneZ, showMarkers]);
-  const handleContextMenu = React24.useCallback((e) => {
+  const handleContextMenu = React25.useCallback((e) => {
     e.preventDefault();
     if (volumeDragRef.current) {
       volumeDragRef.current = null;
@@ -3389,7 +3419,7 @@ function Viewport({ className }) {
     showMinimap && /* @__PURE__ */ jsxRuntime.jsxs(
       "div",
       {
-        className: "absolute bottom-10 left-3 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer",
+        className: "absolute bottom-10 right-3 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer",
         style: { width: minimapSize, height: minimapSize },
         onClick: handleMinimapClick,
         children: [
@@ -3422,7 +3452,7 @@ function Viewport({ className }) {
       activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? "Move mouse up/down to set height, click to confirm" : "Drag to draw volume footprint"),
       activeTool === "section-box" && t.hintSectionBox
     ] }),
-    metadata && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "absolute bottom-10 right-3 text-[10px] font-mono text-white/30 text-right pointer-events-none", children: [
+    metadata && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "absolute top-3 left-3 text-[10px] font-mono text-white/30 pointer-events-none", children: [
       (metadata.points / 1e6).toFixed(1),
       "M pts"
     ] })
@@ -3450,9 +3480,9 @@ var init_viewport = __esm({
 
 // src/index.ts
 init_dist();
-var ThemeContext = React24.createContext(null);
+var ThemeContext = React25.createContext(null);
 function useTheme() {
-  const ctx = React24.useContext(ThemeContext);
+  const ctx = React25.useContext(ThemeContext);
   if (!ctx) throw new Error("useTheme must be used inside <ThemeProvider>");
   return ctx;
 }
@@ -3461,13 +3491,13 @@ function ThemeProvider({
   storageKey = "pcv-theme",
   children
 }) {
-  const [theme, setThemeState] = React24.useState(() => {
+  const [theme, setThemeState] = React25.useState(() => {
     if (typeof window === "undefined") return defaultTheme;
     return localStorage.getItem(storageKey) ?? defaultTheme;
   });
-  const [, forceUpdate] = React24.useReducer((n) => n + 1, 0);
+  const [, forceUpdate] = React25.useReducer((n) => n + 1, 0);
   const resolvedTheme = theme === "system" ? typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light" : theme;
-  React24.useEffect(() => {
+  React25.useEffect(() => {
     if (theme !== "system") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", forceUpdate);
@@ -3683,7 +3713,7 @@ function ViewModeControls() {
 function DisplayControls() {
   const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, uiMode } = useViewer();
   const t = useLocale().toolbar;
-  const [quality, setQuality] = React24.useState("balanced");
+  const [quality, setQuality] = React25.useState("balanced");
   const isPro = uiMode === "professional";
   const handleBudget = (e) => {
     const val = Number(e.target.value);
@@ -3776,27 +3806,27 @@ function ExportTools() {
   const { exporter } = useViewer();
   const t = useLocale().exportPanel;
   const pcvRoot = usePcvRoot();
-  const [open, setOpen] = React24.useState(false);
-  const [view, setView] = React24.useState("top");
-  const [scale, setScale] = React24.useState(2);
-  const [bg, setBg] = React24.useState("white");
-  const [fmt, setFmt] = React24.useState("png");
-  const [exporting, setExporting] = React24.useState(false);
-  const btnRef = React24.useRef(null);
-  const popoverRef = React24.useRef(null);
-  const [pos, setPos] = React24.useState({ top: 0, right: 0 });
-  React24.useEffect(() => {
+  const [open, setOpen] = React25.useState(false);
+  const [view, setView] = React25.useState("top");
+  const [scale, setScale] = React25.useState(2);
+  const [bg, setBg] = React25.useState("white");
+  const [fmt, setFmt] = React25.useState("png");
+  const [exporting, setExporting] = React25.useState(false);
+  const btnRef = React25.useRef(null);
+  const popoverRef = React25.useRef(null);
+  const [pos, setPos] = React25.useState({ top: 0, right: 0 });
+  React25.useEffect(() => {
     if (open && btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
       setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
     }
   }, [open]);
-  const handleClickOutside = React24.useCallback((e) => {
+  const handleClickOutside = React25.useCallback((e) => {
     if (popoverRef.current && !popoverRef.current.contains(e.target) && btnRef.current && !btnRef.current.contains(e.target)) {
       setOpen(false);
     }
   }, []);
-  React24.useEffect(() => {
+  React25.useEffect(() => {
     if (open) {
       document.addEventListener("mousedown", handleClickOutside);
       return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -3909,7 +3939,7 @@ function ToolbarSection({ label, children, className }) {
     label && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-[9px] text-muted-foreground/50 ml-1 hidden xl:block font-mono uppercase tracking-wider", children: label })
   ] });
 }
-function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, sidebarOpen, renderSettingsOpen }) {
+function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, onToggleQuickSettings, sidebarOpen, renderSettingsOpen, quickSettingsOpen }) {
   const { showMinimap, setShowMinimap, uiMode } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().toolbar;
@@ -3921,6 +3951,15 @@ function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onTogg
     ] }),
     /* @__PURE__ */ jsxRuntime.jsxs(ToolbarSection, { label: "Display", children: [
       /* @__PURE__ */ jsxRuntime.jsx(DisplayControls, {}),
+      isPro && /* @__PURE__ */ jsxRuntime.jsx(
+        ToolbarIconBtn,
+        {
+          icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Settings, { size: 14 }),
+          active: quickSettingsOpen,
+          onClick: onToggleQuickSettings,
+          title: "Quick settings"
+        }
+      ),
       isPro && /* @__PURE__ */ jsxRuntime.jsx(
         ToolbarIconBtn,
         {
@@ -4130,28 +4169,42 @@ function useClipActions() {
   const boxes = clipBoxEntries;
   const hasClipBox = boxes.length > 0;
   const clipMode = boxes.find((b) => b.visible)?.mode ?? "outside";
-  const addBox = React24.useCallback(() => {
+  const addBox = React25.useCallback(() => {
     if (!clipManager || !loader) return;
     const wb = loader.worldBox;
     if (wb.isEmpty()) return;
-    const entry = clipManager.addBox(wb.clone());
+    const center = new THREE5__namespace.Vector3();
+    const size = new THREE5__namespace.Vector3();
+    wb.getCenter(center);
+    wb.getSize(size);
+    const halfX = size.x * 0.5;
+    const halfY = size.y * 0.5;
+    const halfZ = Math.max(0.2, Math.min(size.z / 6, 8)) * 0.5;
+    const half = new THREE5__namespace.Vector3(halfX, halfY, halfZ);
+    const box = new THREE5__namespace.Box3(
+      center.clone().sub(half),
+      center.clone().add(half)
+    );
+    const entry = clipManager.addBox(box);
     clipManager.selectBox(entry.id);
     clipManager.setTransformMode("scale");
   }, [clipManager, loader]);
-  const clearAll = React24.useCallback(() => {
+  const clearAll = React25.useCallback(() => {
     clipManager?.clear();
     if (activeTool === "section-box") setActiveTool("none");
   }, [clipManager, activeTool, setActiveTool]);
-  const toggleMode = React24.useCallback(() => {
+  const toggleMode = React25.useCallback(() => {
     const next = clipMode === "outside" ? "inside" : "outside";
-    for (const b of boxes) {
-      clipManager?.setBoxMode(b.id, next);
-    }
-  }, [clipManager, boxes, clipMode]);
-  const selectBox = React24.useCallback((id) => {
+    clipManager?.setModeAll(next);
+  }, [clipManager, clipMode]);
+  const setEnabled = React25.useCallback((enabled) => {
+    clipManager?.setEnabled(enabled);
+  }, [clipManager]);
+  const isEnabled = clipManager?.isEnabled() ?? true;
+  const selectBox = React25.useCallback((id) => {
     clipManager?.selectBox(id);
   }, [clipManager]);
-  const setTransformMode = React24.useCallback((mode) => {
+  const setTransformMode = React25.useCallback((mode) => {
     if (!clipManager) return;
     const id = clipManager.getSelectedId();
     if (id) {
@@ -4161,25 +4214,25 @@ function useClipActions() {
       clipManager.setTransformMode(mode);
     }
   }, [clipManager, boxes]);
-  const removeBox = React24.useCallback((id) => {
+  const removeBox = React25.useCallback((id) => {
     clipManager?.removeBox(id);
   }, [clipManager]);
-  const setBoxVisible = React24.useCallback((id, visible) => {
+  const setBoxVisible = React25.useCallback((id, visible) => {
     clipManager?.setBoxVisible(id, visible);
   }, [clipManager]);
-  const setModeAll = React24.useCallback((mode) => {
-    for (const b of boxes) {
-      clipManager?.setBoxMode(b.id, mode);
-    }
-  }, [clipManager, boxes]);
+  const setModeAll = React25.useCallback((mode) => {
+    clipManager?.setModeAll(mode);
+  }, [clipManager]);
   return {
     boxes,
     selectedBoxId: selectedClipBoxId,
     hasClipBox,
     clipMode,
+    isEnabled,
     addBox,
     clearAll,
     toggleMode,
+    setEnabled,
     selectBox,
     setTransformMode,
     removeBox,
@@ -4191,8 +4244,12 @@ function useClipActions() {
 // src/components/toolbar/clip-toolbar.tsx
 init_locale_context();
 function ClipToolbar() {
-  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, setTransformMode } = useClipActions();
+  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, setTransformMode, isEnabled, setEnabled } = useClipActions();
   const t = useLocale().clipToolbar;
+  const [enabled, setEnabledLocal] = React25__default.default.useState(isEnabled);
+  React25__default.default.useEffect(() => {
+    setEnabledLocal(isEnabled);
+  }, [isEnabled, boxes]);
   if (boxes.length === 0) return null;
   const firstVisible = boxes.find((b) => b.visible);
   const isInside = (firstVisible?.mode ?? "outside") === "inside";
@@ -4227,6 +4284,26 @@ function ClipToolbar() {
       ] })
     ] }),
     /* @__PURE__ */ jsxRuntime.jsx("div", { className: "h-px bg-white/10 mx-1 mb-1.5" }),
+    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxRuntime.jsxs(
+      "button",
+      {
+        onClick: () => {
+          const next = !enabled;
+          setEnabledLocal(next);
+          setEnabled(next);
+        },
+        title: enabled ? "Clipping on" : "Clipping off",
+        className: cn(
+          "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
+          enabled ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+        ),
+        children: [
+          enabled ? /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Scissors, { size: 12 }) : /* @__PURE__ */ jsxRuntime.jsx(lucideReact.ScissorsLineDashed, { size: 12 }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "flex-1 text-left", children: enabled ? "Clipping on" : "Clipping off" }),
+          /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Power, { size: 12, className: enabled ? "text-[hsl(var(--brand))]" : "text-muted-foreground" })
+        ]
+      }
+    ) }),
     /* @__PURE__ */ jsxRuntime.jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxRuntime.jsxs(
       "button",
       {
@@ -4345,9 +4422,9 @@ function PanoPanel() {
   const { cameras } = useData();
   const t = useLocale().panoPanel;
   const tToolbar = useLocale().toolbar;
-  const [query, setQuery] = React24.useState("");
-  const [selected, setSelected] = React24.useState(null);
-  const filtered = React24.useMemo(() => {
+  const [query, setQuery] = React25.useState("");
+  const [selected, setSelected] = React25.useState(null);
+  const filtered = React25.useMemo(() => {
     const q = query.toLowerCase();
     return cameras.filter((c) => !q || c.name.toLowerCase().includes(q) || String(c.index).includes(q));
   }, [cameras, query]);
@@ -4524,8 +4601,8 @@ function ScenePanel() {
             /* @__PURE__ */ jsxRuntime.jsx(
               "button",
               {
-                onClick: () => clipManager?.setBoxMode(box.id, box.mode === "outside" ? "inside" : "outside"),
-                title: box.mode === "outside" ? "Keep inside" : "Keep outside",
+                onClick: () => clipManager?.setModeAll(box.mode === "outside" ? "inside" : "outside"),
+                title: box.mode === "outside" ? "Keep inside (all)" : "Keep outside (all)",
                 className: "text-muted-foreground hover:text-foreground transition-colors shrink-0",
                 children: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Scissors, { size: 10 })
               }
@@ -4572,10 +4649,10 @@ function formatValue(m) {
   }
 }
 function InlineEditName({ value, onSave }) {
-  const [editing, setEditing] = React24.useState(false);
-  const [draft, setDraft] = React24.useState(value);
-  const inputRef = React24.useRef(null);
-  React24.useEffect(() => {
+  const [editing, setEditing] = React25.useState(false);
+  const [draft, setDraft] = React25.useState(value);
+  const inputRef = React25.useRef(null);
+  React25.useEffect(() => {
     if (editing) inputRef.current?.select();
   }, [editing]);
   if (!editing) {
@@ -4706,7 +4783,7 @@ var CLASS_DEFS = [
 function ClassificationPanel() {
   const { loader } = useViewer();
   const t = useLocale().classificationPanel;
-  const [visible, setVisible] = React24.useState(
+  const [visible, setVisible] = React25.useState(
     Object.fromEntries(CLASS_DEFS.map((c) => [c.code, true]))
   );
   const toggle = (code) => {
@@ -4716,9 +4793,9 @@ function ClassificationPanel() {
       if (cloud?.material) {
         const mat = cloud.material;
         if (mat.classification) {
-          const THREE3 = window.THREE;
+          const THREE4 = window.THREE;
           const hexColor = CLASS_DEFS.find((c) => c.code === code)?.color ?? "#ffffff";
-          mat.classification[code] = { visible: next[code], color: THREE3 ? new THREE3.Color(hexColor) : hexColor };
+          mat.classification[code] = { visible: next[code], color: THREE4 ? new THREE4.Color(hexColor) : hexColor };
         }
       }
       return next;
@@ -4759,10 +4836,10 @@ init_viewer_provider();
 init_locale_context();
 init_dist();
 function InlineEditSceneName({ value, onSave }) {
-  const [editing, setEditing] = React24.useState(false);
-  const [draft, setDraft] = React24.useState(value);
-  const inputRef = React24.useRef(null);
-  React24.useEffect(() => {
+  const [editing, setEditing] = React25.useState(false);
+  const [draft, setDraft] = React25.useState(value);
+  const inputRef = React25.useRef(null);
+  React25.useEffect(() => {
     if (editing) inputRef.current?.select();
   }, [editing]);
   if (!editing) {
@@ -4816,11 +4893,11 @@ function ScenesPanel() {
     config
   } = useViewer();
   const t = useLocale().scenesPanel;
-  const [scenes, setScenes] = React24.useState([]);
-  const [newName, setNewName] = React24.useState("");
-  const pmRef = React24.useRef(null);
-  const fileInputRef = React24.useRef(null);
-  React24.useEffect(() => {
+  const [scenes, setScenes] = React25.useState([]);
+  const [newName, setNewName] = React25.useState("");
+  const pmRef = React25.useRef(null);
+  const fileInputRef = React25.useRef(null);
+  React25.useEffect(() => {
     const key = config.source.type === "s3" ? config.source.baseUrl : config.source.type === "electron" ? config.source.basePath : "local";
     const pm = new exports.PresentationManager(key);
     pm.onChange = (s) => setScenes(s);
@@ -4967,7 +5044,7 @@ function ScenesPanel() {
   ] });
 }
 function Sidebar() {
-  const [tab, setTab] = React24.useState("panoramas");
+  const [tab, setTab] = React25.useState("panoramas");
   const t = useLocale().sidebar;
   const { uiMode } = useViewer();
   const isPro = uiMode === "professional";
@@ -5011,9 +5088,9 @@ init_locale_context();
 function PanoViewer() {
   const { selectedCamera, setSelectedCamera } = useViewer();
   const tPano = useLocale().panoViewer;
-  const containerRef = React24.useRef(null);
-  const viewerRef = React24.useRef(null);
-  React24.useEffect(() => {
+  const containerRef = React25.useRef(null);
+  const viewerRef = React25.useRef(null);
+  React25.useEffect(() => {
     if (!selectedCamera?.image || !containerRef.current) return;
     const initPannellum = async () => {
       if (!window.pannellum) {
@@ -5091,24 +5168,24 @@ function PanoViewer() {
 init_viewer_provider();
 init_locale_context();
 function useDraggable(options) {
-  const [position, setPosition] = React24.useState({ x: 0, y: 0 });
-  const positionRef = React24.useRef({ x: 0, y: 0 });
-  const boundsRef = React24.useRef(options?.bounds);
+  const [position, setPosition] = React25.useState({ x: 0, y: 0 });
+  const positionRef = React25.useRef({ x: 0, y: 0 });
+  const boundsRef = React25.useRef(options?.bounds);
   boundsRef.current = options?.bounds;
-  const moveRef = React24.useRef(null);
-  const upRef = React24.useRef(null);
-  const endDrag = React24.useCallback(() => {
+  const moveRef = React25.useRef(null);
+  const upRef = React25.useRef(null);
+  const endDrag = React25.useCallback(() => {
     if (moveRef.current) window.removeEventListener("mousemove", moveRef.current);
     if (upRef.current) window.removeEventListener("mouseup", upRef.current);
     moveRef.current = null;
     upRef.current = null;
   }, []);
-  React24.useEffect(() => endDrag, [endDrag]);
-  const reset = React24.useCallback(() => {
+  React25.useEffect(() => endDrag, [endDrag]);
+  const reset = React25.useCallback(() => {
     positionRef.current = { x: 0, y: 0 };
     setPosition({ x: 0, y: 0 });
   }, []);
-  const onDragStart = React24.useCallback(
+  const onDragStart = React25.useCallback(
     (e) => {
       e.preventDefault();
       const startX = e.clientX;
@@ -5143,20 +5220,20 @@ function RenderingSettings({ open, onClose }) {
   const t = useLocale().renderingSettings;
   const pcvRoot = usePcvRoot();
   const { position, onDragStart, reset } = useDraggable({ bounds: pcvRoot ?? void 0 });
-  React24.useEffect(() => {
+  React25.useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
-  const [rgbGamma, setRgbGamma] = React24.useState(1);
-  const [rgbBrightness, setRgbBrightness] = React24.useState(0);
-  const [rgbContrast, setRgbContrast] = React24.useState(0);
-  const [intensityGamma, setIntensityGamma] = React24.useState(1);
-  const [intensityBrightness, setIntensityBrightness] = React24.useState(0);
-  const [intensityContrast, setIntensityContrast] = React24.useState(0);
-  const [intensityRange, setIntensityRange] = React24.useState([0, 65535]);
-  const [heightMin, setHeightMin] = React24.useState(0);
-  const [heightMax, setHeightMax] = React24.useState(100);
-  const [opacity, setOpacity] = React24.useState(1);
-  React24.useEffect(() => {
+  const [rgbGamma, setRgbGamma] = React25.useState(1);
+  const [rgbBrightness, setRgbBrightness] = React25.useState(0);
+  const [rgbContrast, setRgbContrast] = React25.useState(0);
+  const [intensityGamma, setIntensityGamma] = React25.useState(1);
+  const [intensityBrightness, setIntensityBrightness] = React25.useState(0);
+  const [intensityContrast, setIntensityContrast] = React25.useState(0);
+  const [intensityRange, setIntensityRange] = React25.useState([0, 65535]);
+  const [heightMin, setHeightMin] = React25.useState(0);
+  const [heightMax, setHeightMax] = React25.useState(100);
+  const [opacity, setOpacity] = React25.useState(1);
+  React25.useEffect(() => {
     if (!open || !loader) return;
     const pc = loader.getPointCloud();
     if (!pc) return;
@@ -5414,549 +5491,8 @@ function Slider({ label, value, min, max, step, onChange, display }) {
     /* @__PURE__ */ jsxRuntime.jsx("span", { className: "w-12 text-right font-mono text-[10px] tabular-nums", children: display ? display(value) : value.toFixed(2) })
   ] });
 }
-var chromeScale = { zoom: "var(--pcv-scale, 1)" };
-var Viewport2 = React24.lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
-function ViewportFallback() {
-  const t = useLocale().viewport;
-  return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-full h-full flex items-center justify-center bg-[hsl(var(--background))]", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex flex-col items-center gap-3", children: [
-    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-8 h-8 border-2 border-[hsl(var(--brand))] border-t-transparent rounded-full animate-spin" }),
-    /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-xs text-muted-foreground font-mono", children: t.initialisingRenderer })
-  ] }) });
-}
-function GlassCard({ children, className }) {
-  return /* @__PURE__ */ jsxRuntime.jsx(
-    "div",
-    {
-      className: cn(
-        "backdrop-blur-xl bg-black/30 dark:bg-black/40",
-        "border border-white/15 dark:border-white/10",
-        "rounded-2xl shadow-2xl shadow-black/20",
-        className
-      ),
-      children
-    }
-  );
-}
-function WorkspaceLayout({ className }) {
-  const [sidebarOpen, setSidebarOpen] = React24.useState(true);
-  const [renderSettingsOpen, setRenderSettingsOpen] = React24.useState(false);
-  const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
-  const { metadata } = useData();
-  const t = useLocale().viewport;
-  const isPro = uiMode === "professional";
-  return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: cn("relative h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden", className), children: [
-    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute inset-0", children: /* @__PURE__ */ jsxRuntime.jsx(React24.Suspense, { fallback: /* @__PURE__ */ jsxRuntime.jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsxRuntime.jsx(Viewport2, {}) }) }),
-    selectedCamera && /* @__PURE__ */ jsxRuntime.jsx(PanoViewer, {}),
-    /* @__PURE__ */ jsxRuntime.jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) }),
-    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntime.jsx(
-      MainToolbar,
-      {
-        onToggleSidebar: () => setSidebarOpen((o) => !o),
-        sidebarOpen,
-        onToggleRenderSettings: isPro ? () => setRenderSettingsOpen((o) => !o) : void 0,
-        renderSettingsOpen
-      }
-    ) }) }),
-    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsxRuntime.jsx(ToolRail, {}) }) }),
-    /* @__PURE__ */ jsxRuntime.jsx(
-      "div",
-      {
-        className: cn(
-          "absolute top-3 bottom-10 right-3 z-30",
-          "transition-all duration-200",
-          sidebarOpen ? "w-72 xl:w-80" : "w-0 overflow-hidden"
-        ),
-        style: chromeScale,
-        children: sidebarOpen && /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "h-full overflow-hidden", children: /* @__PURE__ */ jsxRuntime.jsx(Sidebar, {}) })
-      }
-    ),
-    isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntime.jsx(ClipToolbar, {}) }) }),
-    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-white/50 select-none", children: [
-      metadata && /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
-      /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
-      /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusFps(fps) }),
-      activeTool !== "none" && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-[hsl(var(--brand))]", children: activeTool })
-    ] }) }) })
-  ] });
-}
 
-// src/ui/button.tsx
-init_utils();
-var buttonVariants = classVarianceAuthority.cva(
-  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50",
-  {
-    variants: {
-      variant: {
-        default: "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:bg-[hsl(var(--primary)/.85)]",
-        secondary: "bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] hover:bg-[hsl(var(--secondary)/.8)]",
-        ghost: "hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]",
-        outline: "border border-[hsl(var(--border))] bg-transparent hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]",
-        destructive: "bg-[hsl(var(--destructive))] text-[hsl(var(--destructive-foreground))] hover:bg-[hsl(var(--destructive)/.85)]"
-      },
-      size: {
-        sm: "h-7 px-2.5 text-xs",
-        md: "h-9 px-4",
-        icon: "h-8 w-8 p-0"
-      }
-    },
-    defaultVariants: {
-      variant: "default",
-      size: "md"
-    }
-  }
-);
-var Button = React24__default.default.forwardRef(
-  ({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-    "button",
-    {
-      ref,
-      className: cn(buttonVariants({ variant, size }), className),
-      ...props
-    }
-  )
-);
-Button.displayName = "Button";
-
-// src/ui/slider.tsx
-init_utils();
-var Slider2 = React24__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsxs(
-  SliderPrimitive__namespace.Root,
-  {
-    ref,
-    className: cn(
-      "relative flex w-full touch-none select-none items-center",
-      className
-    ),
-    ...props,
-    children: [
-      /* @__PURE__ */ jsxRuntime.jsx(SliderPrimitive__namespace.Track, { className: "relative h-1.5 w-full grow overflow-hidden rounded-full bg-[hsl(var(--muted))]", children: /* @__PURE__ */ jsxRuntime.jsx(SliderPrimitive__namespace.Range, { className: "absolute h-full bg-[hsl(var(--primary))]" }) }),
-      /* @__PURE__ */ jsxRuntime.jsx(SliderPrimitive__namespace.Thumb, { className: "block h-4 w-4 rounded-full border border-[hsl(var(--primary))] bg-[hsl(var(--background))] shadow transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50" })
-    ]
-  }
-));
-Slider2.displayName = "Slider";
-
-// src/ui/dialog.tsx
-init_utils();
-var Dialog = DialogPrimitive__namespace.Root;
-var DialogTrigger = DialogPrimitive__namespace.Trigger;
-var DialogPortal = DialogPrimitive__namespace.Portal;
-var DialogOverlay = React24__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-  DialogPrimitive__namespace.Overlay,
-  {
-    ref,
-    className: cn("fixed inset-0 z-50 bg-black/50", className),
-    ...props
-  }
-));
-DialogOverlay.displayName = "DialogOverlay";
-var DialogContent = React24__default.default.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
-  const dx = dragOffset?.x ?? 0;
-  const dy = dragOffset?.y ?? 0;
-  return /* @__PURE__ */ jsxRuntime.jsxs(DialogPortal, { container: container ?? void 0, children: [
-    /* @__PURE__ */ jsxRuntime.jsx(DialogOverlay, {}),
-    /* @__PURE__ */ jsxRuntime.jsx(
-      DialogPrimitive__namespace.Content,
-      {
-        ref,
-        className: cn(
-          "fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] shadow-xl",
-          className
-        ),
-        style: {
-          ...style,
-          transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px)`
-        },
-        ...props,
-        children
-      }
-    )
-  ] });
-});
-DialogContent.displayName = "DialogContent";
-var DialogHeader = ({
-  className,
-  ...props
-}) => /* @__PURE__ */ jsxRuntime.jsx(
-  "div",
-  {
-    className: cn(
-      "flex items-center justify-between border-b border-[hsl(var(--border))] px-4 py-3",
-      className
-    ),
-    ...props
-  }
-);
-DialogHeader.displayName = "DialogHeader";
-var DialogTitle = React24__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-  DialogPrimitive__namespace.Title,
-  {
-    ref,
-    className: cn("text-sm font-semibold", className),
-    ...props
-  }
-));
-DialogTitle.displayName = "DialogTitle";
-var DialogClose = React24__default.default.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-  DialogPrimitive__namespace.Close,
-  {
-    ref,
-    className: cn(
-      "rounded p-1 text-muted-foreground hover:bg-[hsl(var(--muted)/.6)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
-      className
-    ),
-    ...props,
-    children: children ?? /* @__PURE__ */ jsxRuntime.jsx(lucideReact.X, { size: 14 })
-  }
-));
-DialogClose.displayName = "DialogClose";
-
-// src/ui/tabs.tsx
-init_utils();
-var Tabs = TabsPrimitive__namespace.Root;
-var TabsList = React24__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-  TabsPrimitive__namespace.List,
-  {
-    ref,
-    className: cn(
-      "flex gap-1 border-b border-[hsl(var(--border))]",
-      className
-    ),
-    ...props
-  }
-));
-TabsList.displayName = "TabsList";
-var TabsTrigger = React24__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-  TabsPrimitive__namespace.Trigger,
-  {
-    ref,
-    className: cn(
-      "px-3 py-1.5 text-xs font-medium text-muted-foreground -mb-px transition-colors",
-      "data-[state=active]:text-[hsl(var(--foreground))] data-[state=active]:border-b-2 data-[state=active]:border-[hsl(var(--brand))]",
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
-      "disabled:pointer-events-none disabled:opacity-50",
-      className
-    ),
-    ...props
-  }
-));
-TabsTrigger.displayName = "TabsTrigger";
-var TabsContent = React24__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-  TabsPrimitive__namespace.Content,
-  {
-    ref,
-    className: cn(
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
-      className
-    ),
-    ...props
-  }
-));
-TabsContent.displayName = "TabsContent";
-
-// src/ui/popover.tsx
-init_utils();
-var Popover = PopoverPrimitive__namespace.Root;
-var PopoverTrigger = PopoverPrimitive__namespace.Trigger;
-var PopoverAnchor = PopoverPrimitive__namespace.Anchor;
-var PopoverContent = React24__default.default.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(PopoverPrimitive__namespace.Portal, { children: /* @__PURE__ */ jsxRuntime.jsx(
-  PopoverPrimitive__namespace.Content,
-  {
-    ref,
-    align,
-    sideOffset,
-    className: cn(
-      "z-50 w-72 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--popover))] p-4 text-[hsl(var(--popover-foreground))] shadow-md outline-none",
-      "data-[state=open]:animate-in data-[state=closed]:animate-out",
-      "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-      "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-      "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
-      "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
-      className
-    ),
-    ...props
-  }
-) }));
-PopoverContent.displayName = "PopoverContent";
-
-// src/ui/tooltip.tsx
-init_utils();
-var TooltipProvider = TooltipPrimitive__namespace.Provider;
-var Tooltip = TooltipPrimitive__namespace.Root;
-var TooltipTrigger = TooltipPrimitive__namespace.Trigger;
-var TooltipContent = React24__default.default.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(TooltipPrimitive__namespace.Portal, { children: /* @__PURE__ */ jsxRuntime.jsx(
-  TooltipPrimitive__namespace.Content,
-  {
-    ref,
-    sideOffset,
-    className: cn(
-      "z-50 overflow-hidden rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--popover))] px-3 py-1.5 text-xs text-[hsl(var(--popover-foreground))] shadow-md",
-      "animate-in fade-in-0 zoom-in-95",
-      "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
-      "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
-      "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
-      className
-    ),
-    ...props
-  }
-) }));
-TooltipContent.displayName = "TooltipContent";
-
-// src/ui/toggle.tsx
-init_utils();
-var toggleVariants = classVarianceAuthority.cva(
-  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50",
-  {
-    variants: {
-      variant: {
-        default: "bg-transparent hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--muted-foreground))] data-[state=on]:bg-[hsl(var(--accent))] data-[state=on]:text-[hsl(var(--accent-foreground))]",
-        outline: "border border-[hsl(var(--border))] bg-transparent hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))] data-[state=on]:bg-[hsl(var(--accent))] data-[state=on]:text-[hsl(var(--accent-foreground))]"
-      },
-      size: {
-        sm: "h-7 px-2 text-xs",
-        md: "h-9 px-3",
-        icon: "h-8 w-8 p-0"
-      }
-    },
-    defaultVariants: {
-      variant: "default",
-      size: "md"
-    }
-  }
-);
-var Toggle = React24__default.default.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-  TogglePrimitive__namespace.Root,
-  {
-    ref,
-    className: cn(toggleVariants({ variant, size }), className),
-    ...props
-  }
-));
-Toggle.displayName = "Toggle";
-
-// src/ui/select.tsx
-init_utils();
-var Select = SelectPrimitive__namespace.Root;
-var SelectGroup = SelectPrimitive__namespace.Group;
-var SelectValue = SelectPrimitive__namespace.Value;
-var SelectTrigger = React24__default.default.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsxs(
-  SelectPrimitive__namespace.Trigger,
-  {
-    ref,
-    className: cn(
-      "flex h-9 w-full items-center justify-between rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm text-[hsl(var(--foreground))] shadow-sm",
-      "placeholder:text-muted-foreground",
-      "focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]",
-      "disabled:cursor-not-allowed disabled:opacity-50",
-      "[&>span]:line-clamp-1",
-      className
-    ),
-    ...props,
-    children: [
-      children,
-      /* @__PURE__ */ jsxRuntime.jsx(SelectPrimitive__namespace.Icon, { asChild: true, children: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.ChevronDown, { className: "h-4 w-4 opacity-50 shrink-0" }) })
-    ]
-  }
-));
-SelectTrigger.displayName = "SelectTrigger";
-var SelectScrollUpButton = React24__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-  SelectPrimitive__namespace.ScrollUpButton,
-  {
-    ref,
-    className: cn(
-      "flex cursor-default items-center justify-center py-1",
-      className
-    ),
-    ...props,
-    children: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.ChevronUp, { className: "h-4 w-4" })
-  }
-));
-SelectScrollUpButton.displayName = "SelectScrollUpButton";
-var SelectScrollDownButton = React24__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-  SelectPrimitive__namespace.ScrollDownButton,
-  {
-    ref,
-    className: cn(
-      "flex cursor-default items-center justify-center py-1",
-      className
-    ),
-    ...props,
-    children: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.ChevronDown, { className: "h-4 w-4" })
-  }
-));
-SelectScrollDownButton.displayName = "SelectScrollDownButton";
-var SelectContent = React24__default.default.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(SelectPrimitive__namespace.Portal, { children: /* @__PURE__ */ jsxRuntime.jsxs(
-  SelectPrimitive__namespace.Content,
-  {
-    ref,
-    className: cn(
-      "relative z-50 max-h-96 min-w-32 overflow-hidden rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--popover))] text-[hsl(var(--popover-foreground))] shadow-md",
-      "data-[state=open]:animate-in data-[state=closed]:animate-out",
-      "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-      "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-      "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
-      "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
-      position === "popper" && "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
-      className
-    ),
-    position,
-    ...props,
-    children: [
-      /* @__PURE__ */ jsxRuntime.jsx(SelectScrollUpButton, {}),
-      /* @__PURE__ */ jsxRuntime.jsx(
-        SelectPrimitive__namespace.Viewport,
-        {
-          className: cn(
-            "p-1",
-            position === "popper" && "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
-          ),
-          children
-        }
-      ),
-      /* @__PURE__ */ jsxRuntime.jsx(SelectScrollDownButton, {})
-    ]
-  }
-) }));
-SelectContent.displayName = "SelectContent";
-var SelectLabel = React24__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-  SelectPrimitive__namespace.Label,
-  {
-    ref,
-    className: cn(
-      "px-2 py-1.5 text-xs font-semibold text-muted-foreground",
-      className
-    ),
-    ...props
-  }
-));
-SelectLabel.displayName = "SelectLabel";
-var SelectItem = React24__default.default.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsxs(
-  SelectPrimitive__namespace.Item,
-  {
-    ref,
-    className: cn(
-      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none",
-      "focus:bg-[hsl(var(--accent))] focus:text-[hsl(var(--accent-foreground))]",
-      "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-      className
-    ),
-    ...props,
-    children: [
-      /* @__PURE__ */ jsxRuntime.jsx("span", { className: "absolute left-2 flex h-3.5 w-3.5 items-center justify-center", children: /* @__PURE__ */ jsxRuntime.jsx(SelectPrimitive__namespace.ItemIndicator, { children: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Check, { className: "h-4 w-4" }) }) }),
-      /* @__PURE__ */ jsxRuntime.jsx(SelectPrimitive__namespace.ItemText, { children })
-    ]
-  }
-));
-SelectItem.displayName = "SelectItem";
-var SelectSeparator = React24__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-  SelectPrimitive__namespace.Separator,
-  {
-    ref,
-    className: cn("-mx-1 my-1 h-px bg-[hsl(var(--border))]", className),
-    ...props
-  }
-));
-SelectSeparator.displayName = "SelectSeparator";
-var defaultComponents = {
-  Button,
-  Slider: Slider2,
-  Toggle,
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-  TooltipProvider,
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-  Select,
-  SelectGroup,
-  SelectValue,
-  SelectTrigger,
-  SelectContent,
-  SelectLabel,
-  SelectItem,
-  SelectSeparator
-};
-var ComponentsContext = React24.createContext(defaultComponents);
-function ComponentsProvider({
-  components,
-  children
-}) {
-  const merged = React24.useMemo(
-    () => components ? { ...defaultComponents, ...components } : defaultComponents,
-    [components]
-  );
-  return /* @__PURE__ */ jsxRuntime.jsx(ComponentsContext.Provider, { value: merged, children });
-}
-function useComponents() {
-  return React24.useContext(ComponentsContext);
-}
-
-// src/components/pano-cloud-viewer.tsx
-init_dist();
-init_utils();
-var Viewport4 = React24.lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
-var PcvRootContext = React24.createContext(null);
-function usePcvRoot() {
-  return React24.useContext(PcvRootContext);
-}
-var UiScaleContext = React24.createContext(1);
-function ViewportFallback2() {
-  return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-full h-full flex items-center justify-center bg-[hsl(var(--background))]", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex flex-col items-center gap-3", children: [
-    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-8 h-8 border-2 border-[hsl(var(--brand))] border-t-transparent rounded-full animate-spin" }),
-    /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-xs text-muted-foreground font-mono", children: "Initialising renderer\u2026" })
-  ] }) });
-}
-function PanoOverlayBridge() {
-  const { selectedCamera } = useViewer();
-  if (!selectedCamera) return null;
-  return /* @__PURE__ */ jsxRuntime.jsx(PanoViewer, {});
-}
-function PcvRoot({ className, uiScale = 1, children }) {
-  const { resolvedTheme } = useTheme();
-  const rootRef = React24.useRef(null);
-  const rootStyle = { "--pcv-scale": uiScale };
-  return /* @__PURE__ */ jsxRuntime.jsx(PcvRootContext.Provider, { value: rootRef, children: /* @__PURE__ */ jsxRuntime.jsx(UiScaleContext.Provider, { value: uiScale, children: /* @__PURE__ */ jsxRuntime.jsx(
-    "div",
-    {
-      ref: rootRef,
-      className: cn("pcv", resolvedTheme, "w-full h-full", className),
-      "data-theme": resolvedTheme,
-      style: rootStyle,
-      children
-    }
-  ) }) });
-}
-function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, uiScale = 1, children, components }) {
-  const adapter = createAdapter(source);
-  const config = { source, uiMode };
-  return /* @__PURE__ */ jsxRuntime.jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsxRuntime.jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsxRuntime.jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsxRuntime.jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsxRuntime.jsx(ComponentsProvider, { components, children: /* @__PURE__ */ jsxRuntime.jsx(PcvRoot, { className, uiScale, children: children ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
-    children(
-      /* @__PURE__ */ jsxRuntime.jsx(React24.Suspense, { fallback: /* @__PURE__ */ jsxRuntime.jsx(ViewportFallback2, {}), children: /* @__PURE__ */ jsxRuntime.jsx(Viewport4, {}) })
-    ),
-    /* @__PURE__ */ jsxRuntime.jsx(PanoOverlayBridge, {})
-  ] }) : /* @__PURE__ */ jsxRuntime.jsx(WorkspaceLayout, {}) }) }) }) }) }) });
-}
-
-// src/index.ts
-init_viewer_provider();
-init_data_provider();
-
-// src/layouts/minimal/minimal-toolbar.tsx
-init_utils();
-init_viewer_provider();
-
-// src/layouts/minimal/minimal-settings-popover.tsx
+// src/components/overlays/quick-settings-popover.tsx
 init_utils();
 init_viewer_provider();
 var COLOR_MODES2 = [
@@ -6001,7 +5537,7 @@ function ToggleRow({
     }
   );
 }
-function MinimalSettingsPopover({ onClose }) {
+function QuickSettingsPopover({ onClose: _onClose }) {
   const {
     showMarkers,
     setShowMarkers,
@@ -6013,7 +5549,7 @@ function MinimalSettingsPopover({ onClose }) {
     setPointSize,
     loader
   } = useViewer();
-  return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-20 right-8 z-30", children: /* @__PURE__ */ jsxRuntime.jsxs(
+  return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute top-16 right-3 z-40", children: /* @__PURE__ */ jsxRuntime.jsxs(
     "div",
     {
       className: cn(
@@ -6085,6 +5621,705 @@ function MinimalSettingsPopover({ onClose }) {
     }
   ) });
 }
+var chromeScale = { zoom: "var(--pcv-scale, 1)" };
+var Viewport2 = React25.lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
+function ViewportFallback() {
+  const t = useLocale().viewport;
+  return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-full h-full flex items-center justify-center bg-[hsl(var(--background))]", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex flex-col items-center gap-3", children: [
+    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-8 h-8 border-2 border-[hsl(var(--brand))] border-t-transparent rounded-full animate-spin" }),
+    /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-xs text-muted-foreground font-mono", children: t.initialisingRenderer })
+  ] }) });
+}
+function GlassCard({ children, className }) {
+  return /* @__PURE__ */ jsxRuntime.jsx(
+    "div",
+    {
+      className: cn(
+        "backdrop-blur-xl bg-black/30 dark:bg-black/40",
+        "border border-white/15 dark:border-white/10",
+        "rounded-2xl shadow-2xl shadow-black/20",
+        className
+      ),
+      children
+    }
+  );
+}
+function WorkspaceLayout({ className }) {
+  const [sidebarOpen, setSidebarOpen] = React25.useState(true);
+  const [renderSettingsOpen, setRenderSettingsOpen] = React25.useState(false);
+  const [quickSettingsOpen, setQuickSettingsOpen] = React25.useState(false);
+  const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
+  const { metadata } = useData();
+  const t = useLocale().viewport;
+  const isPro = uiMode === "professional";
+  return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: cn("relative h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden", className), children: [
+    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute inset-0", children: /* @__PURE__ */ jsxRuntime.jsx(React25.Suspense, { fallback: /* @__PURE__ */ jsxRuntime.jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsxRuntime.jsx(Viewport2, {}) }) }),
+    selectedCamera && /* @__PURE__ */ jsxRuntime.jsx(PanoViewer, {}),
+    /* @__PURE__ */ jsxRuntime.jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) }),
+    isPro && quickSettingsOpen && /* @__PURE__ */ jsxRuntime.jsx(QuickSettingsPopover, { onClose: () => setQuickSettingsOpen(false) }),
+    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntime.jsx(
+      MainToolbar,
+      {
+        onToggleSidebar: () => setSidebarOpen((o) => !o),
+        sidebarOpen,
+        onToggleRenderSettings: isPro ? () => setRenderSettingsOpen((o) => !o) : void 0,
+        renderSettingsOpen,
+        onToggleQuickSettings: isPro ? () => setQuickSettingsOpen((o) => !o) : void 0,
+        quickSettingsOpen
+      }
+    ) }) }),
+    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsxRuntime.jsx(ToolRail, {}) }) }),
+    /* @__PURE__ */ jsxRuntime.jsx(
+      "div",
+      {
+        className: cn(
+          "absolute top-16 bottom-10 right-3 z-30",
+          "transition-all duration-200",
+          sidebarOpen ? "w-72 xl:w-80" : "w-0 overflow-hidden"
+        ),
+        style: chromeScale,
+        children: sidebarOpen && /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "h-full overflow-hidden", children: /* @__PURE__ */ jsxRuntime.jsx(Sidebar, {}) })
+      }
+    ),
+    /* @__PURE__ */ jsxRuntime.jsx(
+      "div",
+      {
+        className: "absolute top-1/2 right-0 -translate-y-1/2 z-40 pointer-events-none",
+        style: chromeScale,
+        children: /* @__PURE__ */ jsxRuntime.jsx(
+          "button",
+          {
+            onClick: () => setSidebarOpen((o) => !o),
+            title: sidebarOpen ? "Collapse sidebar" : "Expand sidebar",
+            "aria-label": sidebarOpen ? "Collapse sidebar" : "Expand sidebar",
+            className: cn(
+              "pointer-events-auto flex items-center justify-center",
+              "w-5 h-12 rounded-l-lg",
+              "backdrop-blur-xl bg-black/30 dark:bg-black/40",
+              "border border-r-0 border-white/15 dark:border-white/10",
+              "shadow-2xl shadow-black/20",
+              "text-white/60 hover:text-[hsl(var(--brand))] transition-colors"
+            ),
+            children: sidebarOpen ? /* @__PURE__ */ jsxRuntime.jsx(lucideReact.ChevronRight, { size: 14 }) : /* @__PURE__ */ jsxRuntime.jsx(lucideReact.ChevronLeft, { size: 14 })
+          }
+        )
+      }
+    ),
+    isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntime.jsx(ClipToolbar, {}) }) }),
+    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-white/50 select-none", children: [
+      metadata && /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
+      /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
+      /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusFps(fps) }),
+      activeTool !== "none" && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-[hsl(var(--brand))]", children: activeTool })
+    ] }) }) })
+  ] });
+}
+
+// src/ui/button.tsx
+init_utils();
+var buttonVariants = classVarianceAuthority.cva(
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50",
+  {
+    variants: {
+      variant: {
+        default: "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:bg-[hsl(var(--primary)/.85)]",
+        secondary: "bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] hover:bg-[hsl(var(--secondary)/.8)]",
+        ghost: "hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]",
+        outline: "border border-[hsl(var(--border))] bg-transparent hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]",
+        destructive: "bg-[hsl(var(--destructive))] text-[hsl(var(--destructive-foreground))] hover:bg-[hsl(var(--destructive)/.85)]"
+      },
+      size: {
+        sm: "h-7 px-2.5 text-xs",
+        md: "h-9 px-4",
+        icon: "h-8 w-8 p-0"
+      }
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "md"
+    }
+  }
+);
+var Button = React25__default.default.forwardRef(
+  ({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+    "button",
+    {
+      ref,
+      className: cn(buttonVariants({ variant, size }), className),
+      ...props
+    }
+  )
+);
+Button.displayName = "Button";
+
+// src/ui/slider.tsx
+init_utils();
+var Slider2 = React25__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsxs(
+  SliderPrimitive__namespace.Root,
+  {
+    ref,
+    className: cn(
+      "relative flex w-full touch-none select-none items-center",
+      className
+    ),
+    ...props,
+    children: [
+      /* @__PURE__ */ jsxRuntime.jsx(SliderPrimitive__namespace.Track, { className: "relative h-1.5 w-full grow overflow-hidden rounded-full bg-[hsl(var(--muted))]", children: /* @__PURE__ */ jsxRuntime.jsx(SliderPrimitive__namespace.Range, { className: "absolute h-full bg-[hsl(var(--primary))]" }) }),
+      /* @__PURE__ */ jsxRuntime.jsx(SliderPrimitive__namespace.Thumb, { className: "block h-4 w-4 rounded-full border border-[hsl(var(--primary))] bg-[hsl(var(--background))] shadow transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50" })
+    ]
+  }
+));
+Slider2.displayName = "Slider";
+
+// src/ui/dialog.tsx
+init_utils();
+var Dialog = DialogPrimitive__namespace.Root;
+var DialogTrigger = DialogPrimitive__namespace.Trigger;
+var DialogPortal = DialogPrimitive__namespace.Portal;
+var DialogOverlay = React25__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+  DialogPrimitive__namespace.Overlay,
+  {
+    ref,
+    className: cn("fixed inset-0 z-50 bg-black/50", className),
+    ...props
+  }
+));
+DialogOverlay.displayName = "DialogOverlay";
+var DialogContent = React25__default.default.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
+  const dx = dragOffset?.x ?? 0;
+  const dy = dragOffset?.y ?? 0;
+  return /* @__PURE__ */ jsxRuntime.jsxs(DialogPortal, { container: container ?? void 0, children: [
+    /* @__PURE__ */ jsxRuntime.jsx(DialogOverlay, {}),
+    /* @__PURE__ */ jsxRuntime.jsx(
+      DialogPrimitive__namespace.Content,
+      {
+        ref,
+        className: cn(
+          "fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] shadow-xl",
+          className
+        ),
+        style: {
+          ...style,
+          transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px)`
+        },
+        ...props,
+        children
+      }
+    )
+  ] });
+});
+DialogContent.displayName = "DialogContent";
+var DialogHeader = ({
+  className,
+  ...props
+}) => /* @__PURE__ */ jsxRuntime.jsx(
+  "div",
+  {
+    className: cn(
+      "flex items-center justify-between border-b border-[hsl(var(--border))] px-4 py-3",
+      className
+    ),
+    ...props
+  }
+);
+DialogHeader.displayName = "DialogHeader";
+var DialogTitle = React25__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+  DialogPrimitive__namespace.Title,
+  {
+    ref,
+    className: cn("text-sm font-semibold", className),
+    ...props
+  }
+));
+DialogTitle.displayName = "DialogTitle";
+var DialogClose = React25__default.default.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+  DialogPrimitive__namespace.Close,
+  {
+    ref,
+    className: cn(
+      "rounded p-1 text-muted-foreground hover:bg-[hsl(var(--muted)/.6)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
+      className
+    ),
+    ...props,
+    children: children ?? /* @__PURE__ */ jsxRuntime.jsx(lucideReact.X, { size: 14 })
+  }
+));
+DialogClose.displayName = "DialogClose";
+
+// src/ui/tabs.tsx
+init_utils();
+var Tabs = TabsPrimitive__namespace.Root;
+var TabsList = React25__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+  TabsPrimitive__namespace.List,
+  {
+    ref,
+    className: cn(
+      "flex gap-1 border-b border-[hsl(var(--border))]",
+      className
+    ),
+    ...props
+  }
+));
+TabsList.displayName = "TabsList";
+var TabsTrigger = React25__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+  TabsPrimitive__namespace.Trigger,
+  {
+    ref,
+    className: cn(
+      "px-3 py-1.5 text-xs font-medium text-muted-foreground -mb-px transition-colors",
+      "data-[state=active]:text-[hsl(var(--foreground))] data-[state=active]:border-b-2 data-[state=active]:border-[hsl(var(--brand))]",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
+      "disabled:pointer-events-none disabled:opacity-50",
+      className
+    ),
+    ...props
+  }
+));
+TabsTrigger.displayName = "TabsTrigger";
+var TabsContent = React25__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+  TabsPrimitive__namespace.Content,
+  {
+    ref,
+    className: cn(
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
+      className
+    ),
+    ...props
+  }
+));
+TabsContent.displayName = "TabsContent";
+
+// src/ui/popover.tsx
+init_utils();
+var Popover = PopoverPrimitive__namespace.Root;
+var PopoverTrigger = PopoverPrimitive__namespace.Trigger;
+var PopoverAnchor = PopoverPrimitive__namespace.Anchor;
+var PopoverContent = React25__default.default.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(PopoverPrimitive__namespace.Portal, { children: /* @__PURE__ */ jsxRuntime.jsx(
+  PopoverPrimitive__namespace.Content,
+  {
+    ref,
+    align,
+    sideOffset,
+    className: cn(
+      "z-50 w-72 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--popover))] p-4 text-[hsl(var(--popover-foreground))] shadow-md outline-none",
+      "data-[state=open]:animate-in data-[state=closed]:animate-out",
+      "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+      "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
+      "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+      className
+    ),
+    ...props
+  }
+) }));
+PopoverContent.displayName = "PopoverContent";
+
+// src/ui/tooltip.tsx
+init_utils();
+var TooltipProvider = TooltipPrimitive__namespace.Provider;
+var Tooltip = TooltipPrimitive__namespace.Root;
+var TooltipTrigger = TooltipPrimitive__namespace.Trigger;
+var TooltipContent = React25__default.default.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(TooltipPrimitive__namespace.Portal, { children: /* @__PURE__ */ jsxRuntime.jsx(
+  TooltipPrimitive__namespace.Content,
+  {
+    ref,
+    sideOffset,
+    className: cn(
+      "z-50 overflow-hidden rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--popover))] px-3 py-1.5 text-xs text-[hsl(var(--popover-foreground))] shadow-md",
+      "animate-in fade-in-0 zoom-in-95",
+      "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+      "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
+      "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+      className
+    ),
+    ...props
+  }
+) }));
+TooltipContent.displayName = "TooltipContent";
+
+// src/ui/toggle.tsx
+init_utils();
+var toggleVariants = classVarianceAuthority.cva(
+  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50",
+  {
+    variants: {
+      variant: {
+        default: "bg-transparent hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--muted-foreground))] data-[state=on]:bg-[hsl(var(--accent))] data-[state=on]:text-[hsl(var(--accent-foreground))]",
+        outline: "border border-[hsl(var(--border))] bg-transparent hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))] data-[state=on]:bg-[hsl(var(--accent))] data-[state=on]:text-[hsl(var(--accent-foreground))]"
+      },
+      size: {
+        sm: "h-7 px-2 text-xs",
+        md: "h-9 px-3",
+        icon: "h-8 w-8 p-0"
+      }
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "md"
+    }
+  }
+);
+var Toggle = React25__default.default.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+  TogglePrimitive__namespace.Root,
+  {
+    ref,
+    className: cn(toggleVariants({ variant, size }), className),
+    ...props
+  }
+));
+Toggle.displayName = "Toggle";
+
+// src/ui/select.tsx
+init_utils();
+var Select = SelectPrimitive__namespace.Root;
+var SelectGroup = SelectPrimitive__namespace.Group;
+var SelectValue = SelectPrimitive__namespace.Value;
+var SelectTrigger = React25__default.default.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsxs(
+  SelectPrimitive__namespace.Trigger,
+  {
+    ref,
+    className: cn(
+      "flex h-9 w-full items-center justify-between rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm text-[hsl(var(--foreground))] shadow-sm",
+      "placeholder:text-muted-foreground",
+      "focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]",
+      "disabled:cursor-not-allowed disabled:opacity-50",
+      "[&>span]:line-clamp-1",
+      className
+    ),
+    ...props,
+    children: [
+      children,
+      /* @__PURE__ */ jsxRuntime.jsx(SelectPrimitive__namespace.Icon, { asChild: true, children: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.ChevronDown, { className: "h-4 w-4 opacity-50 shrink-0" }) })
+    ]
+  }
+));
+SelectTrigger.displayName = "SelectTrigger";
+var SelectScrollUpButton = React25__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+  SelectPrimitive__namespace.ScrollUpButton,
+  {
+    ref,
+    className: cn(
+      "flex cursor-default items-center justify-center py-1",
+      className
+    ),
+    ...props,
+    children: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.ChevronUp, { className: "h-4 w-4" })
+  }
+));
+SelectScrollUpButton.displayName = "SelectScrollUpButton";
+var SelectScrollDownButton = React25__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+  SelectPrimitive__namespace.ScrollDownButton,
+  {
+    ref,
+    className: cn(
+      "flex cursor-default items-center justify-center py-1",
+      className
+    ),
+    ...props,
+    children: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.ChevronDown, { className: "h-4 w-4" })
+  }
+));
+SelectScrollDownButton.displayName = "SelectScrollDownButton";
+var SelectContent = React25__default.default.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(SelectPrimitive__namespace.Portal, { children: /* @__PURE__ */ jsxRuntime.jsxs(
+  SelectPrimitive__namespace.Content,
+  {
+    ref,
+    className: cn(
+      "relative z-50 max-h-96 min-w-32 overflow-hidden rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--popover))] text-[hsl(var(--popover-foreground))] shadow-md",
+      "data-[state=open]:animate-in data-[state=closed]:animate-out",
+      "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+      "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
+      "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+      position === "popper" && "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
+      className
+    ),
+    position,
+    ...props,
+    children: [
+      /* @__PURE__ */ jsxRuntime.jsx(SelectScrollUpButton, {}),
+      /* @__PURE__ */ jsxRuntime.jsx(
+        SelectPrimitive__namespace.Viewport,
+        {
+          className: cn(
+            "p-1",
+            position === "popper" && "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
+          ),
+          children
+        }
+      ),
+      /* @__PURE__ */ jsxRuntime.jsx(SelectScrollDownButton, {})
+    ]
+  }
+) }));
+SelectContent.displayName = "SelectContent";
+var SelectLabel = React25__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+  SelectPrimitive__namespace.Label,
+  {
+    ref,
+    className: cn(
+      "px-2 py-1.5 text-xs font-semibold text-muted-foreground",
+      className
+    ),
+    ...props
+  }
+));
+SelectLabel.displayName = "SelectLabel";
+var SelectItem = React25__default.default.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsxs(
+  SelectPrimitive__namespace.Item,
+  {
+    ref,
+    className: cn(
+      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none",
+      "focus:bg-[hsl(var(--accent))] focus:text-[hsl(var(--accent-foreground))]",
+      "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      className
+    ),
+    ...props,
+    children: [
+      /* @__PURE__ */ jsxRuntime.jsx("span", { className: "absolute left-2 flex h-3.5 w-3.5 items-center justify-center", children: /* @__PURE__ */ jsxRuntime.jsx(SelectPrimitive__namespace.ItemIndicator, { children: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Check, { className: "h-4 w-4" }) }) }),
+      /* @__PURE__ */ jsxRuntime.jsx(SelectPrimitive__namespace.ItemText, { children })
+    ]
+  }
+));
+SelectItem.displayName = "SelectItem";
+var SelectSeparator = React25__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+  SelectPrimitive__namespace.Separator,
+  {
+    ref,
+    className: cn("-mx-1 my-1 h-px bg-[hsl(var(--border))]", className),
+    ...props
+  }
+));
+SelectSeparator.displayName = "SelectSeparator";
+var defaultComponents = {
+  Button,
+  Slider: Slider2,
+  Toggle,
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  TooltipProvider,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  Select,
+  SelectGroup,
+  SelectValue,
+  SelectTrigger,
+  SelectContent,
+  SelectLabel,
+  SelectItem,
+  SelectSeparator
+};
+var ComponentsContext = React25.createContext(defaultComponents);
+function ComponentsProvider({
+  components,
+  children
+}) {
+  const merged = React25.useMemo(
+    () => components ? { ...defaultComponents, ...components } : defaultComponents,
+    [components]
+  );
+  return /* @__PURE__ */ jsxRuntime.jsx(ComponentsContext.Provider, { value: merged, children });
+}
+function useComponents() {
+  return React25.useContext(ComponentsContext);
+}
+
+// src/components/pano-cloud-viewer.tsx
+init_dist();
+init_utils();
+var Viewport4 = React25.lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
+var PcvRootContext = React25.createContext(null);
+function usePcvRoot() {
+  return React25.useContext(PcvRootContext);
+}
+var UiScaleContext = React25.createContext(1);
+function ViewportFallback2() {
+  return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-full h-full flex items-center justify-center bg-[hsl(var(--background))]", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex flex-col items-center gap-3", children: [
+    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-8 h-8 border-2 border-[hsl(var(--brand))] border-t-transparent rounded-full animate-spin" }),
+    /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-xs text-muted-foreground font-mono", children: "Initialising renderer\u2026" })
+  ] }) });
+}
+function PanoOverlayBridge() {
+  const { selectedCamera } = useViewer();
+  if (!selectedCamera) return null;
+  return /* @__PURE__ */ jsxRuntime.jsx(PanoViewer, {});
+}
+function PcvRoot({ className, uiScale = 1, children }) {
+  const { resolvedTheme } = useTheme();
+  const rootRef = React25.useRef(null);
+  const rootStyle = { "--pcv-scale": uiScale };
+  return /* @__PURE__ */ jsxRuntime.jsx(PcvRootContext.Provider, { value: rootRef, children: /* @__PURE__ */ jsxRuntime.jsx(UiScaleContext.Provider, { value: uiScale, children: /* @__PURE__ */ jsxRuntime.jsx(
+    "div",
+    {
+      ref: rootRef,
+      className: cn("pcv", resolvedTheme, "w-full h-full", className),
+      "data-theme": resolvedTheme,
+      style: rootStyle,
+      children
+    }
+  ) }) });
+}
+function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, uiScale = 1, children, components }) {
+  const adapter = createAdapter(source);
+  const config = { source, uiMode };
+  return /* @__PURE__ */ jsxRuntime.jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsxRuntime.jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsxRuntime.jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsxRuntime.jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsxRuntime.jsx(ComponentsProvider, { components, children: /* @__PURE__ */ jsxRuntime.jsx(PcvRoot, { className, uiScale, children: children ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+    children(
+      /* @__PURE__ */ jsxRuntime.jsx(React25.Suspense, { fallback: /* @__PURE__ */ jsxRuntime.jsx(ViewportFallback2, {}), children: /* @__PURE__ */ jsxRuntime.jsx(Viewport4, {}) })
+    ),
+    /* @__PURE__ */ jsxRuntime.jsx(PanoOverlayBridge, {})
+  ] }) : /* @__PURE__ */ jsxRuntime.jsx(WorkspaceLayout, {}) }) }) }) }) }) });
+}
+
+// src/index.ts
+init_viewer_provider();
+init_data_provider();
+
+// src/layouts/minimal/minimal-toolbar.tsx
+init_utils();
+init_viewer_provider();
+
+// src/layouts/minimal/minimal-settings-popover.tsx
+init_utils();
+init_viewer_provider();
+var COLOR_MODES3 = [
+  { value: "rgb", label: "RGB" },
+  { value: "height", label: "Elevation" },
+  { value: "intensity", label: "Intensity" },
+  { value: "classification", label: "Classification" }
+];
+function ToggleRow2({
+  icon,
+  label,
+  active,
+  onClick
+}) {
+  return /* @__PURE__ */ jsxRuntime.jsxs(
+    "button",
+    {
+      onClick,
+      className: "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors",
+      children: [
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: cn("text-white/50", active && "text-[hsl(var(--brand))]"), children: icon }),
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-xs text-white/80 flex-1 text-left", children: label }),
+        /* @__PURE__ */ jsxRuntime.jsx(
+          "div",
+          {
+            className: cn(
+              "w-7 h-4 rounded-full transition-colors flex items-center px-0.5",
+              active ? "bg-[hsl(var(--brand)/0.6)]" : "bg-white/15"
+            ),
+            children: /* @__PURE__ */ jsxRuntime.jsx(
+              "div",
+              {
+                className: cn(
+                  "w-3 h-3 rounded-full bg-white transition-transform",
+                  active && "translate-x-3"
+                )
+              }
+            )
+          }
+        )
+      ]
+    }
+  );
+}
+function MinimalSettingsPopover({ onClose }) {
+  const {
+    showMarkers,
+    setShowMarkers,
+    showMinimap,
+    setShowMinimap,
+    colorMode,
+    setColorMode,
+    pointSize,
+    setPointSize,
+    loader
+  } = useViewer();
+  return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-20 right-8 z-30", children: /* @__PURE__ */ jsxRuntime.jsxs(
+    "div",
+    {
+      className: cn(
+        "w-56 p-3 space-y-3",
+        "backdrop-blur-xl bg-black/30 dark:bg-black/40",
+        "border border-white/15 dark:border-white/10",
+        "rounded-xl shadow-2xl shadow-black/20"
+      ),
+      children: [
+        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "View Settings" }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "space-y-0.5", children: [
+          /* @__PURE__ */ jsxRuntime.jsx(
+            ToggleRow2,
+            {
+              icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Camera, { size: 14 }),
+              label: "Panoramas",
+              active: showMarkers,
+              onClick: () => setShowMarkers(!showMarkers)
+            }
+          ),
+          /* @__PURE__ */ jsxRuntime.jsx(
+            ToggleRow2,
+            {
+              icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Map, { size: 14 }),
+              label: "Minimap",
+              active: showMinimap,
+              onClick: () => setShowMinimap(!showMinimap)
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "space-y-1.5", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Color" }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "grid grid-cols-2 gap-1", children: COLOR_MODES3.map((cm) => /* @__PURE__ */ jsxRuntime.jsx(
+            "button",
+            {
+              onClick: () => {
+                setColorMode(cm.value);
+                loader?.setColorMode(cm.value);
+              },
+              className: cn(
+                "text-[10px] py-1 px-2 rounded-lg transition-colors",
+                colorMode === cm.value ? "bg-[hsl(var(--brand)/0.25)] text-[hsl(var(--brand))]" : "text-white/60 hover:text-white hover:bg-white/10"
+              ),
+              children: cm.label
+            },
+            cm.value
+          )) })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "space-y-1.5", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Point Size" }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "px-1", children: /* @__PURE__ */ jsxRuntime.jsx(
+            "input",
+            {
+              type: "range",
+              min: 0.5,
+              max: 5,
+              step: 0.1,
+              value: pointSize,
+              onChange: (e) => {
+                const v = parseFloat(e.target.value);
+                setPointSize(v);
+                loader?.setPointSize(v);
+              },
+              className: "pcv-slider w-full"
+            }
+          ) })
+        ] })
+      ]
+    }
+  ) });
+}
 function GlassButton({
   icon,
   active,
@@ -6118,14 +6353,14 @@ function MinimalToolbar() {
     sceneManager,
     loader
   } = useViewer();
-  const [settingsOpen, setSettingsOpen] = React24.useState(false);
-  const toggleMeasure = React24.useCallback(
+  const [settingsOpen, setSettingsOpen] = React25.useState(false);
+  const toggleMeasure = React25.useCallback(
     (tool) => {
       setActiveTool(activeTool === tool ? "none" : tool);
     },
     [activeTool, setActiveTool]
   );
-  const fitToView = React24.useCallback(() => {
+  const fitToView = React25.useCallback(() => {
     if (!sceneManager || !loader) return;
     const wb = loader.worldBox;
     if (!wb.isEmpty()) sceneManager.fitToBox(wb);
@@ -6249,7 +6484,7 @@ init_data_provider();
 // src/layouts/workstation/collapsible-sidebar.tsx
 init_utils();
 function CollapsibleSidebar({ side, children, defaultOpen = true, width = "w-60" }) {
-  const [open, setOpen] = React24.useState(defaultOpen);
+  const [open, setOpen] = React25.useState(defaultOpen);
   const isLeft = side === "left";
   const ChevronIcon = open ? isLeft ? lucideReact.ChevronLeft : lucideReact.ChevronRight : isLeft ? lucideReact.ChevronRight : lucideReact.ChevronLeft;
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: cn(
@@ -6287,7 +6522,7 @@ init_viewer_provider();
 // src/layouts/workstation/floating-palette.tsx
 init_utils();
 function FloatingPalette({ title, icon, children, defaultCollapsed = false, className }) {
-  const [collapsed, setCollapsed] = React24.useState(defaultCollapsed);
+  const [collapsed, setCollapsed] = React25.useState(defaultCollapsed);
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: cn(
     "rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg overflow-hidden",
     "min-w-[220px]",
@@ -6338,12 +6573,12 @@ var MEASURE_TOOLS = [
 ];
 function ToolsPalette() {
   const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, clipBoxEntries } = useViewer();
-  const toggle = React24.useCallback((tool) => {
+  const toggle = React25.useCallback((tool) => {
     setActiveTool(activeTool === tool ? "none" : tool);
   }, [activeTool, setActiveTool]);
   const hasClipBox = clipBoxEntries.length > 0;
   const clipMode = clipBoxEntries[0]?.mode ?? "outside";
-  const addClipBox = React24.useCallback(() => {
+  const addClipBox = React25.useCallback(() => {
     if (!clipManager || !loader) return;
     const wb = loader.worldBox;
     if (wb.isEmpty()) return;
@@ -6351,11 +6586,11 @@ function ToolsPalette() {
     clipManager.selectBox(entry.id);
     clipManager.setTransformMode("scale");
   }, [clipManager, loader]);
-  const clearClipBox = React24.useCallback(() => {
+  const clearClipBox = React25.useCallback(() => {
     clipManager?.clear();
     if (activeTool === "section-box") setActiveTool("none");
   }, [clipManager, activeTool, setActiveTool]);
-  const toggleClipMode = React24.useCallback(() => {
+  const toggleClipMode = React25.useCallback(() => {
     const next = clipMode === "outside" ? "inside" : "outside";
     for (const b of clipBoxEntries) clipManager?.setBoxMode(b.id, next);
   }, [clipManager, clipBoxEntries, clipMode]);
@@ -6398,7 +6633,7 @@ function ToolsPalette() {
 // src/layouts/workstation/display-palette.tsx
 init_utils();
 init_viewer_provider();
-var COLOR_MODES3 = [
+var COLOR_MODES4 = [
   { value: "rgb", label: "RGB" },
   { value: "height", label: "Elevation" },
   { value: "intensity", label: "Intensity" },
@@ -6416,7 +6651,7 @@ function DisplayPalette() {
   const { loader, colorMode, setColorMode, pointBudget, setPointBudget, pointSize, setPointSize } = useViewer();
   return /* @__PURE__ */ jsxRuntime.jsxs(FloatingPalette, { title: "Display", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Palette, { size: 12 }), children: [
     /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mb-1", children: "Color" }),
-    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "flex flex-wrap gap-1", children: COLOR_MODES3.map((cm) => /* @__PURE__ */ jsxRuntime.jsx(
+    /* @__PURE__ */ jsxRuntime.jsx("div", { className: "flex flex-wrap gap-1", children: COLOR_MODES4.map((cm) => /* @__PURE__ */ jsxRuntime.jsx(
       "button",
       {
         onClick: () => {
@@ -6499,7 +6734,7 @@ function DisplayPalette() {
 // src/layouts/workstation/view-settings-palette.tsx
 init_utils();
 init_viewer_provider();
-function ToggleRow2({ icon, label, active, onClick }) {
+function ToggleRow3({ icon, label, active, onClick }) {
   return /* @__PURE__ */ jsxRuntime.jsxs("button", { onClick, className: "flex items-center gap-2 w-full px-1 py-1 rounded text-xs hover:bg-muted/40 transition-colors", children: [
     /* @__PURE__ */ jsxRuntime.jsx("span", { className: cn("text-muted-foreground", active && "text-[hsl(var(--brand))]"), children: icon }),
     /* @__PURE__ */ jsxRuntime.jsx("span", { className: "flex-1 text-left text-muted-foreground", children: label }),
@@ -6518,8 +6753,8 @@ function ModeBtn({ icon, label, active, onClick }) {
 function ViewSettingsPalette() {
   const { showMarkers, setShowMarkers, showMinimap, setShowMinimap, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
   return /* @__PURE__ */ jsxRuntime.jsxs(FloatingPalette, { title: "View", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Eye, { size: 12 }), defaultCollapsed: true, children: [
-    /* @__PURE__ */ jsxRuntime.jsx(ToggleRow2, { icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Camera, { size: 13 }), label: "Panoramas", active: showMarkers, onClick: () => setShowMarkers(!showMarkers) }),
-    /* @__PURE__ */ jsxRuntime.jsx(ToggleRow2, { icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Map, { size: 13 }), label: "Minimap", active: showMinimap, onClick: () => setShowMinimap(!showMinimap) }),
+    /* @__PURE__ */ jsxRuntime.jsx(ToggleRow3, { icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Camera, { size: 13 }), label: "Panoramas", active: showMarkers, onClick: () => setShowMarkers(!showMarkers) }),
+    /* @__PURE__ */ jsxRuntime.jsx(ToggleRow3, { icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Map, { size: 13 }), label: "Minimap", active: showMinimap, onClick: () => setShowMinimap(!showMinimap) }),
     /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1", children: "Navigation" }),
     /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex gap-1", children: [
       /* @__PURE__ */ jsxRuntime.jsx(ModeBtn, { icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Orbit, { size: 14 }), label: "Orbit", active: navigationMode === "orbit", onClick: () => setNavigationMode("orbit") }),
@@ -6546,12 +6781,12 @@ var VIEWS = [
 ];
 function ExportPalette() {
   const { exporter } = useViewer();
-  const [view, setView] = React24.useState("top");
-  const [scale, setScale] = React24.useState(2);
-  const [format, setFormat] = React24.useState("png");
-  const [bg, setBg] = React24.useState("white");
-  const [exporting, setExporting] = React24.useState(false);
-  const doExport = React24.useCallback(async () => {
+  const [view, setView] = React25.useState("top");
+  const [scale, setScale] = React25.useState(2);
+  const [format, setFormat] = React25.useState("png");
+  const [bg, setBg] = React25.useState("white");
+  const [exporting, setExporting] = React25.useState(false);
+  const doExport = React25.useCallback(async () => {
     if (!exporter) return;
     setExporting(true);
     try {
@@ -6857,7 +7092,7 @@ function DisplaySettingsDialog({
     TabsTrigger: TabsTrigger2,
     TabsContent: TabsContent2
   } = useComponents();
-  const [localSettings, setLocalSettings] = React24.useState(
+  const [localSettings, setLocalSettings] = React25.useState(
     exports.DISPLAY_PRESETS.standard
   );
   const settings = viewer.displaySettings ?? localSettings;
@@ -6873,7 +7108,7 @@ function DisplaySettingsDialog({
   };
   const pcvRoot = usePcvRoot();
   const { position, onDragStart, reset } = useDraggable();
-  React24.useEffect(() => {
+  React25.useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
   const applyPreset = (preset) => {
@@ -7013,12 +7248,12 @@ function DisplaySettingsDialog({
 init_viewer_provider();
 function useNavigationActions() {
   const { sceneManager, loader, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
-  const fitToView = React24.useCallback(() => {
+  const fitToView = React25.useCallback(() => {
     if (!sceneManager || !loader) return;
     const wb = loader.worldBox;
     if (!wb.isEmpty()) sceneManager.fitToBox(wb);
   }, [sceneManager, loader]);
-  const flyToView = React24.useCallback((preset) => {
+  const flyToView = React25.useCallback((preset) => {
     if (!sceneManager || !loader) return;
     const wb = loader.worldBox;
     if (wb.isEmpty()) return;
@@ -7059,24 +7294,24 @@ init_viewer_provider();
 init_utils();
 function useMeasurementActions() {
   const { activeTool, setActiveTool, measurementManager, measurementList, setMeasurementList } = useViewer();
-  const startTool = React24.useCallback((type) => {
+  const startTool = React25.useCallback((type) => {
     const tool = `measure-${type}`;
     setActiveTool(activeTool === tool ? "none" : tool);
   }, [activeTool, setActiveTool]);
-  const cancelTool = React24.useCallback(() => {
+  const cancelTool = React25.useCallback(() => {
     setActiveTool("none");
   }, [setActiveTool]);
-  const clearAll = React24.useCallback(() => {
+  const clearAll = React25.useCallback(() => {
     measurementManager?.clearAll();
     setMeasurementList([]);
   }, [measurementManager, setMeasurementList]);
-  const remove = React24.useCallback((id) => {
+  const remove = React25.useCallback((id) => {
     measurementManager?.remove(id);
   }, [measurementManager]);
-  const rename = React24.useCallback((id, name) => {
+  const rename = React25.useCallback((id, name) => {
     measurementManager?.rename(id, name);
   }, [measurementManager]);
-  const exportCSV = React24.useCallback(() => {
+  const exportCSV = React25.useCallback(() => {
     exportMeasurementsCSV(measurementList);
   }, [measurementList]);
   return {
@@ -7095,7 +7330,7 @@ function useMeasurementActions() {
 init_viewer_provider();
 function useDisplayActions() {
   const { loader, colorMode, setColorMode, pointBudget, setPointBudget, pointSize, setPointSize } = useViewer();
-  const setQualityPreset = React24.useCallback((preset) => {
+  const setQualityPreset = React25.useCallback((preset) => {
     if (!loader) return;
     switch (preset) {
       case "performance":
@@ -7128,11 +7363,11 @@ init_viewer_provider();
 init_dist();
 function useExportActions() {
   const { exporter } = useViewer();
-  const capture = React24.useCallback(async (options) => {
+  const capture = React25.useCallback(async (options) => {
     if (!exporter) return null;
     return exporter.capture(options);
   }, [exporter]);
-  const download = React24.useCallback((dataUrl, filename) => {
+  const download = React25.useCallback((dataUrl, filename) => {
     exports.ExportManager.download(dataUrl, filename);
   }, []);
   return { capture, download };
@@ -7142,10 +7377,10 @@ function useExportActions() {
 init_viewer_provider();
 function useVisibilityActions() {
   const { showMarkers, setShowMarkers, showMinimap, setShowMinimap } = useViewer();
-  const toggleMarkers = React24.useCallback(() => {
+  const toggleMarkers = React25.useCallback(() => {
     setShowMarkers(!showMarkers);
   }, [showMarkers, setShowMarkers]);
-  const toggleMinimap = React24.useCallback(() => {
+  const toggleMinimap = React25.useCallback(() => {
     setShowMinimap(!showMinimap);
   }, [showMinimap, setShowMinimap]);
   return {
@@ -7161,13 +7396,13 @@ init_viewer_provider();
 init_dist();
 function useDisplaySettings() {
   const viewer = useViewer();
-  const [localSettings, setLocalSettings] = React24.useState(exports.DISPLAY_PRESETS.standard);
+  const [localSettings, setLocalSettings] = React25.useState(exports.DISPLAY_PRESETS.standard);
   const settings = viewer.displaySettings ?? localSettings;
   const setSettings = viewer.setDisplaySettings ?? setLocalSettings;
-  const applyPreset = React24.useCallback((preset) => {
+  const applyPreset = React25.useCallback((preset) => {
     setSettings({ ...exports.DISPLAY_PRESETS[preset] });
   }, [setSettings]);
-  const updateSetting = React24.useCallback((key, value) => {
+  const updateSetting = React25.useCallback((key, value) => {
     setSettings({ ...settings, preset: "standard", [key]: value });
   }, [settings, setSettings]);
   return {
