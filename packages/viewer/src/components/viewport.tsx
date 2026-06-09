@@ -285,15 +285,16 @@ export function Viewport({ className }: ViewportProps) {
     if (!center) return null;
 
     // Compact box so all six face handles stay in frame. X/Y capped at ~1/4 of
-    // the project bounds; Z made much flatter (~1/8) so a tall dataset never
-    // produces a tall column that pushes the +Z/-Z handles off-screen.
+    // the project bounds; Z made much flatter (~1/12, with a small absolute cap)
+    // so even a tall/huge dataset never produces a tall column that pushes the
+    // +Z/-Z handles off-screen.
     const wb = loaderRef.current?.worldBox;
     const bounds = new THREE.Vector3(20, 20, 20);
     if (wb && !wb.isEmpty()) wb.getSize(bounds);
     const half = new THREE.Vector3(
       Math.max(0.1, Math.min(bounds.x, bounds.x / 4)) / 2,
       Math.max(0.1, Math.min(bounds.y, bounds.y / 4)) / 2,
-      Math.max(0.2, Math.min(bounds.z, bounds.z / 8)) / 2,
+      Math.max(0.2, Math.min(bounds.z, bounds.z / 12, 8)) / 2,
     );
     return new THREE.Box3(
       center.clone().sub(half),
@@ -570,7 +571,7 @@ export function Viewport({ className }: ViewportProps) {
       {/* Minimap overlay */}
       {showMinimap && (
         <div
-          className="absolute bottom-10 left-3 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer"
+          className="absolute bottom-10 right-3 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer"
           style={{ width: minimapSize, height: minimapSize }}
           onClick={handleMinimapClick}
         >
@@ -609,7 +610,7 @@ export function Viewport({ className }: ViewportProps) {
 
       {/* Loading metadata info */}
       {metadata && (
-        <div className="absolute bottom-10 right-3 text-[10px] font-mono text-white/30 text-right pointer-events-none">
+        <div className="absolute top-3 left-3 text-[10px] font-mono text-white/30 pointer-events-none">
           {(metadata.points / 1e6).toFixed(1)}M pts
         </div>
       )}

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { SceneManager } from "./scene-manager";
 
 /**
- * Renders a small XYZ orientation widget in the top-right corner of the
+ * Renders a small XYZ orientation widget in the bottom-left corner of the
  * viewport using a second render pass with scissor clipping.
  *
  * Flat, technical-drawing style — no lighting, MeshBasicMaterial only.
@@ -68,13 +68,6 @@ export class AxisWidget {
       sprite.scale.set(0.28, 0.28, 1);
       this._scene.add(sprite);
     }
-
-    // Small origin dot
-    const sGeo = new THREE.SphereGeometry(0.06, 8, 8);
-    const sMat = new THREE.MeshBasicMaterial({ color: 0x999999 });
-    this._scene.add(new THREE.Mesh(sGeo, sMat));
-    this._disposables.push(sGeo);
-    this._materials.push(sMat);
   }
 
   /** Create a canvas-based sprite with the axis letter */
@@ -111,7 +104,7 @@ export class AxisWidget {
   }
 
   /**
-   * Render the widget into a scissor region in the top-right corner.
+   * Render the widget into a scissor region in the bottom-left corner.
    * Must be called from a post-render callback after the main scene renders.
    */
   render(): void {
@@ -141,9 +134,9 @@ export class AxisWidget {
     this._camera.up.copy(this.sm.camera.up);
     this._camera.lookAt(0, 0, 0);
 
-    // Scissor region — top-right corner (y=0 is bottom in WebGL)
-    const x = W - size - margin;
-    const y = H - size - margin;
+    // Scissor region — bottom-left corner (y=0 is bottom in WebGL)
+    const x = margin;
+    const y = margin;
 
     renderer.autoClear = false;
     renderer.setScissorTest(true);
