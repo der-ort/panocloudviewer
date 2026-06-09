@@ -110,7 +110,7 @@ Central Three.js scene, camera, renderer, and animation loop.
 - **`start()`**: Starts `requestAnimationFrame` loop. Each frame: explicit clear → updates active controls → calls `potree.updatePointClouds()` → fires pre-render frame callbacks → renders → resets scissor/viewport → fires post-render callbacks → counts FPS.
 - **`setNavigationMode(mode)`**: Switches between `"orbit"`, `"free"`, `"pan"` by reconfiguring the single `OrbitControls` (mouse-button map + `maxPolarAngle`). Orbit = CAD turntable; Free = Blender-ish (rotate on left+middle); Pan = map/top-down (left-drag pans, `maxPolarAngle=π/2.05`). `zoomToCursor=true` and damping throughout.
 - **`setProjection(mode)`**: Switches between `"perspective"` and `"orthographic"`. Orthographic uses a synced ortho camera derived from the perspective camera's FOV each frame.
-- **`addPostRenderCallback(cb)` / `removePostRenderCallback(cb)`**: Register callbacks that run after the main render (used by AxisWidget for scissor-test overlay pass).
+- **`addPostRenderCallback(cb)` / `removePostRenderCallback(cb)`**: Register callbacks that run after the main render (used by AxisWidget for its scissor-test overlay pass, which draws the always-visible world-axis indicator in the **bottom-left** corner of the viewport).
 - **`addFrameCallback(cb)` / `removeFrameCallback(cb)`**: Register arbitrary callbacks run every frame before render. Used by MinimapRenderer.
 - **`fitToBox(box)`**: Positions camera to frame a bounding box.
 - **`raycast(nx, ny, objects)`**: Screen-space raycast returning `THREE.Intersection[]`.
@@ -141,9 +141,10 @@ Smooth camera fly-to animations, no external tween library.
 ### `ClipManager` (`core/clip-manager.ts`)
 Manages multiple named axis-aligned clip boxes with TransformControls support.
 
-- **`addBox(box, name?)`**: Adds a `ClipBoxEntry`, creates a yellow `Box3Helper` in the scene, applies clipping to all point clouds. Returns the entry. Default post-create transform mode is `scale` (the `FaceHandleController` shows the 6 axis-colored resize handles); Move shows translate arrows; Rotate shows a single world-Z ring.
+- **`addBox(box, name?)`**: Adds a `ClipBoxEntry`, creates a yellow `Box3Helper` in the scene, applies clipping to all point clouds. Returns the entry. Default post-create transform mode is `scale` (the `FaceHandleController` shows the 6 axis-colored resize handles); Move shows translate arrows; Rotate shows a single world-Z ring. The **default section box is a flat slab** centered at mid-height (around the cursor / cloud center) rather than spanning the full cloud height, so it stays within the viewport and is easy to grab and resize.
+- **`setEnabled(enabled)` / `isEnabled()`**: Global enable flag that turns ALL clipping on/off at once without deleting any boxes — the `Box3Helper`s stay visible in the scene so you can see and adjust the sections while clipping is disabled. When re-enabled, `applyAll()` re-applies the current boxes.
 - **`selectBox(id)` / `setTransformMode(mode)`**: Lazy-initialises TransformControls, attaches an invisible pivot mesh. Disables OrbitControls while dragging. **three r170**: `TransformControls` extends `Controls`/`EventDispatcher` (not `Object3D`), so its visual gizmo is added to the scene via `tc.getHelper()` (which returns the internal `_root` Object3D), never `scene.add(tc)`. The `_raiseGizmo()` helper (which forces the gizmo to render over the dense cloud via `depthTest=false` + high `renderOrder`) must traverse `tc.getHelper()`, not the controls object — the controls object has no `traverse`.
-- **`removeBox(id)` / `setBoxMode(id, mode)` / `setBoxVisible(id, visible)` / `renameBox(id, name)`**: Mutate entries and call `applyAll()`.
+- **`removeBox(id)` / `setBoxMode(id, mode)` / `setBoxVisible(id, visible)` / `renameBox(id, name)`**: Mutate entries and call `applyAll()`. **Single global clip mode**: potree-core exposes only one global `clipMode`, so all sections share one mode (`"outside"` or `"inside"`) — the UI enforces this consistently, applying the chosen mode to every box rather than allowing per-box modes.
 - **`setDraft(box)`**: Shows a live preview helper during drag (no clip applied).
 - **`clear()`**: Removes all boxes and disables clipping.
 - **`dispose()`**: Disposes TransformControls and scene objects.
@@ -178,7 +179,7 @@ Interactive 3D measurement tool with visual scene objects.
 - **`onChange?: (measurements: Measurement[]) => void`**: Wired to `setMeasurementList` in Viewport.
 
 ### `MinimapRenderer` (`core/minimap-renderer.ts`)
-Top-down orthographic minimap with overlay.
+Top-down orthographic minimap with overlay, rendered in the **bottom-right** corner of the viewport.
 
 - **`attach(container)`**: Creates two `<canvas>` elements inside container — one WebGL (3D scene rendering), one 2D overlay (camera frustum indicator, compass "N").
 - **`setBounds(bounds)`**: Calculates padded square world range, positions `OrthographicCamera` above center.
@@ -220,12 +221,13 @@ When the `children` render prop is **not** provided, `PanoCloudViewer` renders `
 
 ```
 WorkspaceLayout
-  MainToolbar               ← top bar (logo, view controls, toggles)
+  MainToolbar               ← top bar (logo, view controls, toggles, quick-settings gear)
   ToolRail                  ← left icon rail (measure/section tools)
   Viewport [lazy]           ← Three.js init, event handlers, minimap overlay
   PanoViewer                ← 360° panorama overlay (conditionally rendered)
-  RenderingSettings         ← rendering settings panel overlay
-  Sidebar                   ← right collapsible sidebar
+  QuickSettingsPopover      ← simple quick-settings popover (gear button) — panos/minimap toggles, color mode, point size
+  RenderingSettings         ← advanced rendering settings panel overlay
+  Sidebar                   ← right collapsible sidebar (starts below the toolbar; chevron toggle on its side)
     PanoPanel
     ScenePanel
     MeasurementsPanel
@@ -233,8 +235,10 @@ WorkspaceLayout
     ScenesPanel
 ```
 
+The default (professional) `WorkspaceLayout` sidebar **no longer overlaps the top toolbar** — it starts below it — and is collapsed/expanded with a **chevron toggle on its inner edge**. The toolbar's gear button opens a **simple quick-settings popover** (panoramas/minimap toggles, color mode, point size — mirroring the minimal layout's settings) **in addition to** the advanced "Rendering Settings" modal, so quick tweaks no longer require opening the full panel.
+
 Alternative packaged layouts (use via the render prop):
-- `MinimalLayout` — viewport + minimal floating toolbar
+- `MinimalLayout` — viewport + minimal floating toolbar (with the same simple quick-settings)
 - `WorkstationLayout` — viewport + collapsible side-panel with floating palettes + status bar
 
 **`Viewport`** is lazy-imported using `React.lazy()`:
@@ -433,7 +437,8 @@ project/
 - **`renderer.outputColorSpace`** — must stay `THREE.LinearSRGBColorSpace`. Changing to `SRGBColorSpace` whitewashes the cloud.
 - **`SceneManager.flySpeed`** is a legacy field retained for API compatibility — it no longer drives navigation (orbit/free/pan use a single OrbitControls). Don't rely on it.
 - **`PresentationManager`** is not in `ViewerProvider` — it is instantiated directly by `ScenesPanel`. If you need it elsewhere, instantiate it yourself with the source key.
-- **`ClipManager.applyAll()`** uses `visible[0].mode` for the global `clipMode` — all boxes share one clip mode. Multiple boxes with different modes is not currently supported.
+- **`ClipManager` has one global clip mode** — potree-core exposes a single global `clipMode`, so all sections share one mode (`"outside"` / `"inside"`); the UI enforces this consistently and applies the chosen mode to every box. Per-box modes are not supported.
+- **`ClipManager.setEnabled(false)` disables clipping without deleting boxes** — the `Box3Helper`s stay visible so sections remain editable; don't call `clear()`/`removeBox()` just to temporarily turn clipping off. Re-enable with `setEnabled(true)`.
 - **Navigation uses one OrbitControls** — don't add a second controller (Trackball/Map) per mode; `controls.target` is shared by clipping, minimap, camera-animator and ortho sync, so a separate target would desync them.
 - **`TransformControls` (three r170) is not an `Object3D`** — add its gizmo with `scene.add(tc.getHelper())`, never `scene.add(tc)`, and traverse `tc.getHelper()` (not `tc`) when raising the gizmo's `renderOrder`/`depthTest`. `tc` has no `traverse`.
 - **Marker sprites** use `sizeAttenuation:false` (constant on-screen pin size) and `depthTest=false` (always render on top). Don't switch `sizeAttenuation` back on (pins would scale with zoom) or remove `depthTest=false` (pins would hide behind the cloud).

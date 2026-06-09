@@ -74,9 +74,9 @@ Because the committed `dist/` is self-contained (core bundled in), consumers **n
 │  MeasurementManager → interactive 3D measurement tools        │
 │  ClipManager        → clip boxes with TransformControls       │
 │  ExportManager      → orthographic capture to image           │
-│  MinimapRenderer    → secondary WebGL renderer (top-down)     │
+│  MinimapRenderer    → secondary WebGL renderer (bottom-right) │
 │  PresentationManager→ localStorage scene persistence          │
-│  AxisWidget         → world-axis indicator overlay            │
+│  AxisWidget         → world-axis indicator (bottom-left)      │
 └───────────────────────────────────────────────────────────────┘
                 │  drives
                 ▼
@@ -125,7 +125,7 @@ requestAnimationFrame(loop)
   │
   ├─ 7. Post-render callbacks
   │      forEach(postRenderCallbacks, cb => cb())
-  │      → AxisWidget scissor pass renders here
+  │      → AxisWidget scissor pass renders here (bottom-left corner)
   │
   └─ 8. FPS counter
          if elapsed >= 1000ms: onFpsUpdate(frameCount)
@@ -209,6 +209,8 @@ Area calculation uses the 2D shoelace formula on the XY plane. Volume is approxi
 
 Clip boxes are applied to potree-core's material via `mat.setClipBoxes()`. potree-core expects the clip box array in a specific format: each entry needs `{ box, inverse, matrix, position }`. The `inverse` matrix is what the shader uses to transform world-space points into box-local space for the inside/outside test.
 
+A **global enable flag** (`setEnabled(enabled)` / `isEnabled()`) turns all clipping on or off without deleting any boxes — the `Box3Helper`s remain visible so the sections stay editable while clipping is off. potree-core only exposes a **single global `clipMode`**, so all sections necessarily share one mode (`"outside"` or `"inside"`); the UI enforces this consistently rather than offering per-box modes. New section boxes default to a **flat slab centered at mid-height** (around the cursor / cloud center) rather than spanning the full cloud height, so they stay inside the viewport and are easy to grab.
+
 `TransformControls` are lazy-initialised (only imported and created when the user first selects a clip box) because they are a moderately heavy module and most sessions never use them.
 
 **three r170 gotcha:** since r170 `TransformControls` extends `Controls`/`EventDispatcher` and is **not** an `Object3D`. The visual gizmo lives in an internal `_root` Object3D exposed by `tc.getHelper()`, so it is added to the scene with `scene.add(tc.getHelper())` — `scene.add(tc)` adds nothing visible. The `_raiseGizmo()` helper (forcing the handles to render over the dense cloud via `depthTest=false` + high `renderOrder`) must traverse `tc.getHelper()`; the controls object has no `traverse` method. The default post-create transform mode is `scale` (the `FaceHandleController` shows 6 axis-colored resize handles); Move shows translate arrows and Rotate a single world-Z ring.
@@ -219,7 +221,7 @@ The export pipeline temporarily hijacks the renderer — it sets a `WebGLRenderT
 
 ### MinimapRenderer
 
-Uses a *separate* `WebGLRenderer` instance (with `alpha: false` and `antialias: false` for performance) attached to its own `<canvas>` element. This avoids contention with the main renderer's render target state. A `try/catch` around renderer creation handles the browser's WebGL context limit gracefully.
+Uses a *separate* `WebGLRenderer` instance (with `alpha: false` and `antialias: false` for performance) attached to its own `<canvas>` element, rendered in the **bottom-right** corner of the viewport. This avoids contention with the main renderer's render target state. A `try/catch` around renderer creation handles the browser's WebGL context limit gracefully.
 
 ### PresentationManager
 
@@ -336,7 +338,7 @@ All three navigation modes are implemented in `SceneManager.setNavigationMode()`
 
 ### Default `WorkspaceLayout`
 
-When `<PanoCloudViewer>` is used without a `children` render prop, it renders the built-in `WorkspaceLayout`: a full toolbar at the top, a left tool rail (measure/section), a right collapsible sidebar with tabs, and the 3D viewport in the center. This layout suits professional desktop-style workflows.
+When `<PanoCloudViewer>` is used without a `children` render prop, it renders the built-in `WorkspaceLayout`: a full toolbar at the top, a left tool rail (measure/section), a right collapsible sidebar with tabs, and the 3D viewport in the center. This layout suits professional desktop-style workflows. The sidebar **starts below the toolbar** (it no longer overlaps it) and is collapsed/expanded with a **chevron toggle on its inner edge**. The toolbar also exposes a **gear button** that opens a **simple quick-settings popover** (panoramas/minimap toggles, color mode, point size — mirroring the minimal layout's settings) alongside the advanced "Rendering Settings" modal, so common tweaks don't require opening the full panel.
 
 ### Custom UI via render prop
 
