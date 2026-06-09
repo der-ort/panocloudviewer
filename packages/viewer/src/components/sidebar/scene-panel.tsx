@@ -98,8 +98,8 @@ export function ScenePanel() {
                 {box.name}
               </button>
               <button
-                onClick={() => clipManager?.setBoxMode(box.id, box.mode === "outside" ? "inside" : "outside")}
-                title={box.mode === "outside" ? "Keep inside" : "Keep outside"}
+                onClick={() => clipManager?.setModeAll(box.mode === "outside" ? "inside" : "outside")}
+                title={box.mode === "outside" ? "Keep inside (all)" : "Keep outside (all)"}
                 className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
               >
                 <Scissors size={10} />
