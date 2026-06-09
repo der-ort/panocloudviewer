@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, lazy, Suspense } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useViewer } from "../providers/viewer-provider";
 import { useData } from "../providers/data-provider";
@@ -11,6 +12,7 @@ import { ClipToolbar } from "./toolbar/clip-toolbar";
 import { Sidebar } from "./sidebar/sidebar";
 import { PanoViewer } from "./overlays/pano-viewer";
 import { RenderingSettings } from "./overlays/rendering-settings";
+import { QuickSettingsPopover } from "./overlays/quick-settings-popover";
 
 /**
  * Inline style that scales UI chrome via the `--pcv-scale` CSS custom property
@@ -60,6 +62,7 @@ interface WorkspaceLayoutProps {
 export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
+  const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
 
   const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
   const { metadata } = useData();
@@ -83,6 +86,11 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       {/* ── Rendering settings panel overlay ────────────────────────────── */}
       <RenderingSettings open={renderSettingsOpen} onClose={() => setRenderSettingsOpen(false)} />
 
+      {/* ── Quick settings popover (Pro, simple) ────────────────────────── */}
+      {isPro && quickSettingsOpen && (
+        <QuickSettingsPopover onClose={() => setQuickSettingsOpen(false)} />
+      )}
+
       {/* ── Top floating toolbar ────────────────────────────────────────── */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={chromeScale}>
         <GlassCard className="pointer-events-auto">
@@ -91,6 +99,8 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
             sidebarOpen={sidebarOpen}
             onToggleRenderSettings={isPro ? () => setRenderSettingsOpen(o => !o) : undefined}
             renderSettingsOpen={renderSettingsOpen}
+            onToggleQuickSettings={isPro ? () => setQuickSettingsOpen(o => !o) : undefined}
+            quickSettingsOpen={quickSettingsOpen}
           />
         </GlassCard>
       </div>
@@ -104,9 +114,10 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       </div>
 
       {/* ── Right collapsible sidebar ───────────────────────────────────── */}
+      {/* top-16 keeps the sidebar clear of the top toolbar so it stays fully visible */}
       <div
         className={cn(
-          "absolute top-3 bottom-10 right-3 z-30",
+          "absolute top-16 bottom-10 right-3 z-30",
           "transition-all duration-200",
           sidebarOpen ? "w-72 xl:w-80" : "w-0 overflow-hidden",
         )}
@@ -117,6 +128,30 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
             <Sidebar />
           </GlassCard>
         )}
+      </div>
+
+      {/* ── Side chevron tab toggle for the sidebar ─────────────────────── */}
+      {/* Anchored to the viewport's right edge & vertically centered so it stays
+          visible and clickable whether the sidebar is open or closed. */}
+      <div
+        className="absolute top-1/2 right-0 -translate-y-1/2 z-40 pointer-events-none"
+        style={chromeScale}
+      >
+        <button
+          onClick={() => setSidebarOpen(o => !o)}
+          title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+          aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+          className={cn(
+            "pointer-events-auto flex items-center justify-center",
+            "w-5 h-12 rounded-l-lg",
+            "backdrop-blur-xl bg-black/30 dark:bg-black/40",
+            "border border-r-0 border-white/15 dark:border-white/10",
+            "shadow-2xl shadow-black/20",
+            "text-white/60 hover:text-[hsl(var(--brand))] transition-colors",
+          )}
+        >
+          {sidebarOpen ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
       </div>
 
       {/* ── Clip management toolbar (Pro + has boxes) ───────────────────── */}

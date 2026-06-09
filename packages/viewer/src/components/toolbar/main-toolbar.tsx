@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Sun, Moon, Map, Layers, Info, PanelRight, Sliders } from "lucide-react";
+import { Sun, Moon, Map, Layers, Info, PanelRight, Sliders, Settings } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useTheme } from "../../providers/theme-provider";
@@ -36,11 +36,13 @@ interface MainToolbarProps {
   onOpenCloudSelector?: () => void;
   onToggleSidebar?: () => void;
   onToggleRenderSettings?: () => void;
+  onToggleQuickSettings?: () => void;
   sidebarOpen?: boolean;
   renderSettingsOpen?: boolean;
+  quickSettingsOpen?: boolean;
 }
 
-export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, sidebarOpen, renderSettingsOpen }: MainToolbarProps) {
+export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, onToggleQuickSettings, sidebarOpen, renderSettingsOpen, quickSettingsOpen }: MainToolbarProps) {
   const { showMinimap, setShowMinimap, uiMode } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().toolbar;
@@ -58,7 +60,16 @@ export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar,
       {/* Display settings */}
       <ToolbarSection label="Display">
         <DisplayControls />
-        {/* Rendering settings toggle — Professional only */}
+        {/* Quick view-settings popover (simple) — Professional only */}
+        {isPro && (
+          <ToolbarIconBtn
+            icon={<Settings size={14} />}
+            active={quickSettingsOpen}
+            onClick={onToggleQuickSettings}
+            title="Quick settings"
+          />
+        )}
+        {/* Rendering settings toggle (advanced) — Professional only */}
         {isPro && (
           <ToolbarIconBtn
             icon={<Sliders size={14} />}
