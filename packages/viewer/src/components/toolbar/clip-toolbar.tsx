@@ -8,8 +8,10 @@ import {
   Maximize2,
   Move,
   Plus,
+  Power,
   RotateCw,
   Scissors,
+  ScissorsLineDashed,
   Trash2,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
@@ -17,9 +19,16 @@ import { useClipActions } from "../../hooks/use-clip-actions";
 import { useLocale } from "../../i18n/locale-context";
 
 export function ClipToolbar() {
-  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, setTransformMode } =
+  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, setTransformMode, isEnabled, setEnabled } =
     useClipActions();
   const t = useLocale().clipToolbar;
+
+  // Local mirror of the manager's enabled flag so the button re-renders on click.
+  // Seeded from the manager and re-synced whenever the box list / mode changes.
+  const [enabled, setEnabledLocal] = React.useState<boolean>(isEnabled);
+  React.useEffect(() => {
+    setEnabledLocal(isEnabled);
+  }, [isEnabled, boxes]);
 
   if (boxes.length === 0) return null;
 
@@ -57,6 +66,28 @@ export function ClipToolbar() {
 
       {/* Divider */}
       <div className="h-px bg-white/10 mx-1 mb-1.5" />
+
+      {/* Global clipping on/off toggle */}
+      <div className="px-1 mb-1.5">
+        <button
+          onClick={() => {
+            const next = !enabled;
+            setEnabledLocal(next);
+            setEnabled(next);
+          }}
+          title={enabled ? "Clipping on" : "Clipping off"}
+          className={cn(
+            "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
+            enabled
+              ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]"
+              : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          )}
+        >
+          {enabled ? <Scissors size={12} /> : <ScissorsLineDashed size={12} />}
+          <span className="flex-1 text-left">{enabled ? "Clipping on" : "Clipping off"}</span>
+          <Power size={12} className={enabled ? "text-[hsl(var(--brand))]" : "text-muted-foreground"} />
+        </button>
+      </div>
 
       {/* Global clip mode toggle */}
       <div className="px-1 mb-1.5">

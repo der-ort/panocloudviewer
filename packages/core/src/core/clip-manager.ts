@@ -31,6 +31,8 @@ export class ClipManager {
   private pivot: THREE.Mesh | null = null;
   private _faceHandles: FaceHandleController | null = null;
   private _transformMode: "translate" | "scale" | "rotate" = "translate";
+  /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
+  private _enabled = true;
 
   onChange?: (boxes: ClipBoxEntry[]) => void;
   onSelectChange?: (id: string | null) => void;
@@ -279,6 +281,33 @@ export class ClipManager {
     this.onChange?.(this.getBoxes());
   }
 
+  /**
+   * Set the clip mode for ALL boxes at once. potree-core only supports a single
+   * global clip mode, so boxes must never diverge — use this instead of
+   * per-box setBoxMode when changing the effective mode.
+   */
+  setModeAll(mode: ClipMode): void {
+    for (const entry of this.entries) {
+      entry.mode = mode;
+    }
+    this.applyAll();
+    this.onChange?.(this.getBoxes());
+  }
+
+  /**
+   * Globally enable/disable clipping without removing any boxes. When disabled,
+   * boxes remain visible as wireframes/fills but no actual clipping is applied.
+   */
+  setEnabled(enabled: boolean): void {
+    this._enabled = enabled;
+    this.applyAll();
+    this.onChange?.(this.getBoxes());
+  }
+
+  isEnabled(): boolean {
+    return this._enabled;
+  }
+
   setBoxVisible(id: string, visible: boolean): void {
     const entry = this.entries.find(e => e.id === id);
     if (!entry) return;
@@ -471,6 +500,19 @@ export class ClipManager {
   }
 
   private applyAll(): void {
+    // Globally disabled → clear clipping on every material but keep the boxes
+    // (entries/helpers/fills) intact so they still render as wireframes.
+    if (!this._enabled) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const pc of this.sm.pointClouds as any[]) {
+        const mat = pc.material;
+        if (!mat) continue;
+        mat.setClipBoxes([]);
+        mat.clipMode = 0; // DISABLED
+      }
+      return;
+    }
+
     const visible = this.entries.filter(e => e.visible);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
