@@ -4,64 +4,39 @@ import React, { useEffect, useRef } from "react";
 import { X, Navigation } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
+import { getPanoEngine, type PanoEngineInstance } from "./pano-engines";
 
 export function PanoViewer() {
-  const { selectedCamera, setSelectedCamera } = useViewer();
+  const { selectedCamera, setSelectedCamera, panoEngine, setPanoEngine } = useViewer();
   const tPano = useLocale().panoViewer;
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewerRef = useRef<any>(null);
+  const instanceRef = useRef<PanoEngineInstance | null>(null);
 
   useEffect(() => {
-    if (!selectedCamera?.image || !containerRef.current) return;
+    const container = containerRef.current;
+    if (!selectedCamera?.image || !container) return;
 
-    // Dynamically load Pannellum
-    const initPannellum = async () => {
-      if (!(window as any).pannellum) {
-        // Inject CSS
-        if (!document.getElementById("pannellum-css")) {
-          const link = document.createElement("link");
-          link.id = "pannellum-css";
-          link.rel = "stylesheet";
-          link.href = "https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css";
-          document.head.appendChild(link);
-        }
-        // Inject JS
-        await new Promise<void>(resolve => {
-          if (document.getElementById("pannellum-js")) { resolve(); return; }
-          const script = document.createElement("script");
-          script.id = "pannellum-js";
-          script.src = "https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js";
-          script.onload = () => resolve();
-          document.head.appendChild(script);
-        });
-      }
+    let cancelled = false;
+    const init = getPanoEngine(panoEngine);
 
-      if (viewerRef.current) {
-        viewerRef.current.destroy();
-        viewerRef.current = null;
-      }
+    // Tear down any previous engine before mounting the next.
+    instanceRef.current?.destroy();
+    instanceRef.current = null;
 
-      viewerRef.current = (window as any).pannellum.viewer(containerRef.current!, {
-        type: "equirectangular",
-        panorama: selectedCamera.image,
-        autoLoad: true,
-        showZoomCtrl: false,
-        showFullscreenCtrl: false,
-        compass: false,
-        yaw: selectedCamera.yaw_deg ?? 0,
-        hfov: 100,
-        minHfov: 30,
-        maxHfov: 150,
-      });
-    };
-
-    initPannellum().catch(console.error);
+    init(container, selectedCamera)
+      .then(instance => {
+        // The camera/engine may have changed while the CDN module loaded.
+        if (cancelled) { instance.destroy(); return; }
+        instanceRef.current = instance;
+      })
+      .catch(console.error);
 
     return () => {
-      viewerRef.current?.destroy();
-      viewerRef.current = null;
+      cancelled = true;
+      instanceRef.current?.destroy();
+      instanceRef.current = null;
     };
-  }, [selectedCamera]);
+  }, [selectedCamera, panoEngine]);
 
   if (!selectedCamera) return null;
 
@@ -78,17 +53,36 @@ export function PanoViewer() {
             </span>
           )}
         </div>
-        <button
-          onClick={() => setSelectedCamera(null)}
-          className="text-white/70 hover:text-white transition-colors p-1"
-          title={tPano.close}
-        >
-          <X size={18} />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Engine switch — A/B compare Pannellum vs Photo Sphere Viewer */}
+          <div className="flex items-center rounded-md border border-white/15 overflow-hidden text-[11px] font-mono">
+            {(["pannellum", "photo-sphere-viewer"] as const).map((eng) => (
+              <button
+                key={eng}
+                onClick={() => setPanoEngine(eng)}
+                className={
+                  panoEngine === eng
+                    ? "px-2 py-0.5 bg-[hsl(var(--brand))] text-black"
+                    : "px-2 py-0.5 text-white/60 hover:text-white hover:bg-white/10"
+                }
+                title={eng === "pannellum" ? "Pannellum" : "Photo Sphere Viewer"}
+              >
+                {eng === "pannellum" ? "Pannellum" : "PSV"}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setSelectedCamera(null)}
+            className="text-white/70 hover:text-white transition-colors p-1"
+            title={tPano.close}
+          >
+            <X size={18} />
+          </button>
+        </div>
       </div>
 
-      {/* Pannellum container */}
-      <div ref={containerRef} className="flex-1" />
+      {/* Panorama engine mounts here (Pannellum / Photo Sphere Viewer) */}
+      <div ref={containerRef} key={panoEngine} className="flex-1" />
     </div>
   );
 }

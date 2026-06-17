@@ -4,7 +4,7 @@ import React25, { createContext, lazy, useContext, useState, useCallback, useEff
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { X, ChevronDown, ChevronUp, Check, Download, Settings, Sliders, Map as Map$1, Layers, Sun, Moon, Info, PanelRight, BoxSelect, Plus, Trash2, Scissors, ScissorsLineDashed, Power, Eye, EyeOff, Move, Maximize2, RotateCw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Camera, Tag, ChevronRight, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, RotateCcw, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Check, Download, Settings, Sliders, Map as Map$1, Layers, Sun, Moon, BoxSelect, Plus, Trash2, Scissors, ScissorsLineDashed, Power, Eye, EyeOff, Move, Maximize2, RotateCw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Camera, Tag, ChevronRight, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, RotateCcw, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cva } from 'class-variance-authority';
 import * as SliderPrimitive from '@radix-ui/react-slider';
@@ -2563,6 +2563,7 @@ function ViewerProvider({ config, children }) {
   const setMinimap = useCallback((r) => _setMinimap(r), []);
   const setClipManager = useCallback((c) => _setClipManager(c), []);
   const uiMode = config.uiMode ?? "professional";
+  const [panoEngine, setPanoEngine] = useState(config.panoEngine ?? "photo-sphere-viewer");
   const value = {
     sceneManager,
     loader,
@@ -2611,6 +2612,8 @@ function ViewerProvider({ config, children }) {
     displaySettings,
     setDisplaySettings,
     uiMode,
+    panoEngine,
+    setPanoEngine,
     config
   };
   return /* @__PURE__ */ jsx(ViewerContext.Provider, { value, children });
@@ -3907,7 +3910,7 @@ function ToolbarSection({ label, children, className }) {
     label && /* @__PURE__ */ jsx("span", { className: "text-[9px] text-muted-foreground/50 ml-1 hidden xl:block font-mono uppercase tracking-wider", children: label })
   ] });
 }
-function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, onToggleQuickSettings, sidebarOpen, renderSettingsOpen, quickSettingsOpen }) {
+function MainToolbar({ onOpenCloudSelector, onToggleRenderSettings, onToggleQuickSettings, renderSettingsOpen, quickSettingsOpen }) {
   const { showMinimap, setShowMinimap, uiMode } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().toolbar;
@@ -3970,26 +3973,6 @@ function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onTogg
           onClick: toggleTheme,
           title: resolvedTheme === "dark" ? t.switchToLight : t.switchToDark
         }
-      ),
-      /* @__PURE__ */ jsx(
-        ToolbarIconBtn,
-        {
-          icon: /* @__PURE__ */ jsx(Info, { size: 14 }),
-          label: t.about,
-          active: false,
-          onClick: onOpenAbout,
-          title: t.about
-        }
-      ),
-      /* @__PURE__ */ jsx(
-        ToolbarIconBtn,
-        {
-          icon: /* @__PURE__ */ jsx(PanelRight, { size: 14 }),
-          label: t.sidebar,
-          active: sidebarOpen,
-          onClick: onToggleSidebar,
-          title: t.toggleSidebar
-        }
       )
     ] })
   ] });
@@ -4039,9 +4022,6 @@ function Divider() {
 function GroupLabel({ children }) {
   return /* @__PURE__ */ jsx("span", { className: "text-[8px] font-mono uppercase tracking-widest text-muted-foreground/50 text-center leading-none mt-1", children });
 }
-function SubLabel({ children }) {
-  return /* @__PURE__ */ jsx("span", { className: "text-[7px] font-mono uppercase tracking-wider text-muted-foreground/30 text-center leading-none", children });
-}
 var BASIC_MEASURES = [
   { type: "point", tool: "measure-point", icon: /* @__PURE__ */ jsx(MapPin, { size: 15 }), titleKey: "measurePoint" },
   { type: "distance", tool: "measure-distance", icon: /* @__PURE__ */ jsx(Ruler, { size: 15 }), titleKey: "measureDistance" },
@@ -4078,7 +4058,6 @@ function ToolRail() {
   };
   return /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-center gap-0.5 py-2 px-1 w-10 shrink-0", children: [
     /* @__PURE__ */ jsx(GroupLabel, { children: t.measureGroup }),
-    /* @__PURE__ */ jsx(SubLabel, { children: "Basic" }),
     BASIC_MEASURES.map((def) => /* @__PURE__ */ jsx(
       RailBtn,
       {
@@ -4090,7 +4069,7 @@ function ToolRail() {
       def.tool
     )),
     isPro && /* @__PURE__ */ jsxs(Fragment, { children: [
-      /* @__PURE__ */ jsx(SubLabel, { children: "Advanced" }),
+      /* @__PURE__ */ jsx(Divider, {}),
       ADVANCED_MEASURES.map((def) => /* @__PURE__ */ jsx(
         RailBtn,
         {
@@ -5053,57 +5032,150 @@ function Sidebar() {
 // src/components/overlays/pano-viewer.tsx
 init_viewer_provider();
 init_locale_context();
+
+// src/components/overlays/pano-engines/pannellum.ts
+var PANNELLUM_VERSION = "2.5.6";
+var CDN = `https://cdn.jsdelivr.net/npm/pannellum@${PANNELLUM_VERSION}/build`;
+var pannellumPromise = null;
+function loadPannellum() {
+  const w = window;
+  if (w.pannellum) return Promise.resolve(w.pannellum);
+  if (pannellumPromise) return pannellumPromise;
+  pannellumPromise = new Promise((resolve, reject) => {
+    if (!document.getElementById("pannellum-css")) {
+      const link = document.createElement("link");
+      link.id = "pannellum-css";
+      link.rel = "stylesheet";
+      link.href = `${CDN}/pannellum.css`;
+      document.head.appendChild(link);
+    }
+    const onLoad = () => resolve(window.pannellum);
+    const onError = () => {
+      pannellumPromise = null;
+      reject(new Error("Failed to load Pannellum from CDN"));
+    };
+    const existing = document.getElementById("pannellum-js");
+    if (existing) {
+      if (window.pannellum) {
+        onLoad();
+        return;
+      }
+      existing.addEventListener("load", onLoad);
+      existing.addEventListener("error", onError);
+      return;
+    }
+    const script = document.createElement("script");
+    script.id = "pannellum-js";
+    script.src = `${CDN}/pannellum.js`;
+    script.onload = onLoad;
+    script.onerror = onError;
+    document.head.appendChild(script);
+  });
+  return pannellumPromise;
+}
+var initPannellum = async (container, camera) => {
+  if (!camera.image) return { destroy() {
+  } };
+  const pannellum = await loadPannellum();
+  const viewer = pannellum.viewer(container, {
+    type: "equirectangular",
+    panorama: camera.image,
+    autoLoad: true,
+    showZoomCtrl: false,
+    showFullscreenCtrl: false,
+    compass: false,
+    yaw: camera.yaw_deg ?? 0,
+    hfov: 100,
+    minHfov: 30,
+    maxHfov: 150
+  });
+  return {
+    destroy() {
+      try {
+        viewer.destroy();
+      } catch {
+      }
+    }
+  };
+};
+
+// src/components/overlays/pano-engines/photo-sphere.ts
+var PSV_VERSION = "5";
+var PSV_ESM_URL = `https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@${PSV_VERSION}/+esm`;
+var PSV_CSS_URL = `https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@${PSV_VERSION}/index.css`;
+var runtimeImport = new Function("u", "return import(u)");
+var psvModulePromise = null;
+function loadPsv() {
+  if (!psvModulePromise) psvModulePromise = runtimeImport(PSV_ESM_URL);
+  return psvModulePromise;
+}
+var initPhotoSphere = async (container, camera) => {
+  if (!camera.image) return { destroy() {
+  } };
+  if (!document.getElementById("psv-core-css")) {
+    const link = document.createElement("link");
+    link.id = "psv-core-css";
+    link.rel = "stylesheet";
+    link.href = PSV_CSS_URL;
+    document.head.appendChild(link);
+  }
+  const mod = await loadPsv();
+  const Viewer = mod.Viewer;
+  if (!Viewer) throw new Error("Photo Sphere Viewer: `Viewer` export not found on CDN module");
+  const viewer = new Viewer({
+    container,
+    panorama: camera.image,
+    // PSV accepts an angle string; convert the camera's yaw (degrees) directly.
+    defaultYaw: `${camera.yaw_deg ?? 0}deg`,
+    // Built-in controls: zoom in/out, pan/move, and fullscreen. Mouse-wheel zoom
+    // and drag-to-look are on by default; these add the on-screen buttons.
+    navbar: ["zoom", "move", "fullscreen"],
+    mousewheel: true,
+    loadingTxt: ""
+  });
+  return {
+    destroy() {
+      try {
+        viewer.destroy();
+      } catch {
+      }
+    }
+  };
+};
+
+// src/components/overlays/pano-engines/index.ts
+var ENGINES = {
+  pannellum: initPannellum,
+  "photo-sphere-viewer": initPhotoSphere
+};
+function getPanoEngine(engine) {
+  return ENGINES[engine] ?? initPhotoSphere;
+}
 function PanoViewer() {
-  const { selectedCamera, setSelectedCamera } = useViewer();
+  const { selectedCamera, setSelectedCamera, panoEngine, setPanoEngine } = useViewer();
   const tPano = useLocale().panoViewer;
   const containerRef = useRef(null);
-  const viewerRef = useRef(null);
+  const instanceRef = useRef(null);
   useEffect(() => {
-    if (!selectedCamera?.image || !containerRef.current) return;
-    const initPannellum = async () => {
-      if (!window.pannellum) {
-        if (!document.getElementById("pannellum-css")) {
-          const link = document.createElement("link");
-          link.id = "pannellum-css";
-          link.rel = "stylesheet";
-          link.href = "https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css";
-          document.head.appendChild(link);
-        }
-        await new Promise((resolve) => {
-          if (document.getElementById("pannellum-js")) {
-            resolve();
-            return;
-          }
-          const script = document.createElement("script");
-          script.id = "pannellum-js";
-          script.src = "https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js";
-          script.onload = () => resolve();
-          document.head.appendChild(script);
-        });
+    const container = containerRef.current;
+    if (!selectedCamera?.image || !container) return;
+    let cancelled = false;
+    const init = getPanoEngine(panoEngine);
+    instanceRef.current?.destroy();
+    instanceRef.current = null;
+    init(container, selectedCamera).then((instance) => {
+      if (cancelled) {
+        instance.destroy();
+        return;
       }
-      if (viewerRef.current) {
-        viewerRef.current.destroy();
-        viewerRef.current = null;
-      }
-      viewerRef.current = window.pannellum.viewer(containerRef.current, {
-        type: "equirectangular",
-        panorama: selectedCamera.image,
-        autoLoad: true,
-        showZoomCtrl: false,
-        showFullscreenCtrl: false,
-        compass: false,
-        yaw: selectedCamera.yaw_deg ?? 0,
-        hfov: 100,
-        minHfov: 30,
-        maxHfov: 150
-      });
-    };
-    initPannellum().catch(console.error);
+      instanceRef.current = instance;
+    }).catch(console.error);
     return () => {
-      viewerRef.current?.destroy();
-      viewerRef.current = null;
+      cancelled = true;
+      instanceRef.current?.destroy();
+      instanceRef.current = null;
     };
-  }, [selectedCamera]);
+  }, [selectedCamera, panoEngine]);
   if (!selectedCamera) return null;
   return /* @__PURE__ */ jsxs("div", { className: "absolute inset-0 z-40 bg-black flex flex-col", children: [
     /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between px-3 py-2 bg-black/80 backdrop-blur shrink-0", children: [
@@ -5118,17 +5190,29 @@ function PanoViewer() {
           selectedCamera.position.z.toFixed(2)
         ] })
       ] }),
-      /* @__PURE__ */ jsx(
-        "button",
-        {
-          onClick: () => setSelectedCamera(null),
-          className: "text-white/70 hover:text-white transition-colors p-1",
-          title: tPano.close,
-          children: /* @__PURE__ */ jsx(X, { size: 18 })
-        }
-      )
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+        /* @__PURE__ */ jsx("div", { className: "flex items-center rounded-md border border-white/15 overflow-hidden text-[11px] font-mono", children: ["pannellum", "photo-sphere-viewer"].map((eng) => /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => setPanoEngine(eng),
+            className: panoEngine === eng ? "px-2 py-0.5 bg-[hsl(var(--brand))] text-black" : "px-2 py-0.5 text-white/60 hover:text-white hover:bg-white/10",
+            title: eng === "pannellum" ? "Pannellum" : "Photo Sphere Viewer",
+            children: eng === "pannellum" ? "Pannellum" : "PSV"
+          },
+          eng
+        )) }),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => setSelectedCamera(null),
+            className: "text-white/70 hover:text-white transition-colors p-1",
+            title: tPano.close,
+            children: /* @__PURE__ */ jsx(X, { size: 18 })
+          }
+        )
+      ] })
     ] }),
-    /* @__PURE__ */ jsx("div", { ref: containerRef, className: "flex-1" })
+    /* @__PURE__ */ jsx("div", { ref: containerRef, className: "flex-1" }, panoEngine)
   ] });
 }
 
@@ -5628,8 +5712,6 @@ function WorkspaceLayout({ className }) {
     /* @__PURE__ */ jsx("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(
       MainToolbar,
       {
-        onToggleSidebar: () => setSidebarOpen((o) => !o),
-        sidebarOpen,
         onToggleRenderSettings: isPro ? () => setRenderSettingsOpen((o) => !o) : void 0,
         renderSettingsOpen,
         onToggleQuickSettings: isPro ? () => setQuickSettingsOpen((o) => !o) : void 0,
@@ -5637,40 +5719,35 @@ function WorkspaceLayout({ className }) {
       }
     ) }) }),
     /* @__PURE__ */ jsx("div", { className: "absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsx(ToolRail, {}) }) }),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsxs(
       "div",
       {
         className: cn(
-          "absolute top-16 bottom-10 right-3 z-30",
-          "transition-all duration-200",
-          sidebarOpen ? "w-72 xl:w-80" : "w-0 overflow-hidden"
+          "absolute top-16 bottom-10 right-3 z-30 w-72 xl:w-80",
+          "transition-transform duration-200",
+          sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]"
         ),
         style: chromeScale,
-        children: sidebarOpen && /* @__PURE__ */ jsx(GlassCard, { className: "h-full overflow-hidden", children: /* @__PURE__ */ jsx(Sidebar, {}) })
-      }
-    ),
-    /* @__PURE__ */ jsx(
-      "div",
-      {
-        className: "absolute top-1/2 right-0 -translate-y-1/2 z-40 pointer-events-none",
-        style: chromeScale,
-        children: /* @__PURE__ */ jsx(
-          "button",
-          {
-            onClick: () => setSidebarOpen((o) => !o),
-            title: sidebarOpen ? "Collapse sidebar" : "Expand sidebar",
-            "aria-label": sidebarOpen ? "Collapse sidebar" : "Expand sidebar",
-            className: cn(
-              "pointer-events-auto flex items-center justify-center",
-              "w-5 h-12 rounded-l-lg",
-              "backdrop-blur-xl bg-black/30 dark:bg-black/40",
-              "border border-r-0 border-white/15 dark:border-white/10",
-              "shadow-2xl shadow-black/20",
-              "text-white/60 hover:text-[hsl(var(--brand))] transition-colors"
-            ),
-            children: sidebarOpen ? /* @__PURE__ */ jsx(ChevronRight, { size: 14 }) : /* @__PURE__ */ jsx(ChevronLeft, { size: 14 })
-          }
-        )
+        children: [
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: () => setSidebarOpen((o) => !o),
+              title: sidebarOpen ? "Collapse sidebar" : "Expand sidebar",
+              "aria-label": sidebarOpen ? "Collapse sidebar" : "Expand sidebar",
+              className: cn(
+                "absolute top-1/2 -translate-y-1/2 -left-5 z-40",
+                "flex items-center justify-center w-5 h-12 rounded-l-lg",
+                "backdrop-blur-xl bg-black/30 dark:bg-black/40",
+                "border border-r-0 border-white/15 dark:border-white/10",
+                "shadow-2xl shadow-black/20",
+                "text-white/60 hover:text-[hsl(var(--brand))] transition-colors"
+              ),
+              children: sidebarOpen ? /* @__PURE__ */ jsx(ChevronRight, { size: 14 }) : /* @__PURE__ */ jsx(ChevronLeft, { size: 14 })
+            }
+          ),
+          /* @__PURE__ */ jsx(GlassCard, { className: "h-full overflow-hidden", children: /* @__PURE__ */ jsx(Sidebar, {}) })
+        ]
       }
     ),
     isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsx("div", { className: "absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(ClipToolbar, {}) }) }),
@@ -6140,9 +6217,9 @@ function PcvRoot({ className, uiScale = 1, children }) {
     }
   ) }) });
 }
-function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, uiScale = 1, children, components }) {
+function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, uiScale = 1, children, components }) {
   const adapter = createAdapter(source);
-  const config = { source, uiMode };
+  const config = { source, uiMode, panoEngine };
   return /* @__PURE__ */ jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsx(ComponentsProvider, { components, children: /* @__PURE__ */ jsx(PcvRoot, { className, uiScale, children: children ? /* @__PURE__ */ jsxs(Fragment, { children: [
     children(
       /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback2, {}), children: /* @__PURE__ */ jsx(Viewport4, {}) })

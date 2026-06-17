@@ -85,6 +85,15 @@ interface ExportOptions {
 }
 type Theme = "dark" | "light" | "system";
 type UiMode = "professional" | "lite";
+/**
+ * Which 360° panorama viewer engine renders the equirectangular overlay when a
+ * camera marker is opened.
+ * - `"photo-sphere-viewer"` (default): feature-rich (zoom, markers, gallery,
+ *   virtual-tour, …), Three.js based; loaded from CDN with its own isolated
+ *   Three.js instance so it does not clash with the viewer's pinned Three.js.
+ * - `"pannellum"`: lightweight, mature; loaded from CDN. Optional fallback.
+ */
+type PanoEngine = "pannellum" | "photo-sphere-viewer";
 interface ViewerConfig {
     source: PointCloudSource;
     theme?: Theme;
@@ -108,6 +117,11 @@ interface ViewerConfig {
      * - "lite": beginner set — nav modes, basic measurements (point/distance/height), panorama/minimap/theme toggles only.
      */
     uiMode?: UiMode;
+    /**
+     * Which 360° panorama engine renders the equirectangular overlay.
+     * Defaults to `"photo-sphere-viewer"`.
+     */
+    panoEngine?: PanoEngine;
 }
 type ActiveTool = "none" | "measure-point" | "measure-distance" | "measure-height" | "measure-area" | "measure-volume" | "measure-angle" | "measure-profile" | "section-box" | "section-plane" | "annotate";
 type NavigationMode = "orbit" | "free" | "pan";
@@ -1071,6 +1085,20 @@ interface PanoCloudViewerProps {
      */
     uiMode?: UiMode;
     /**
+     * Which 360° panorama engine renders the equirectangular overlay when a camera
+     * marker is opened. Defaults to `"photo-sphere-viewer"`.
+     *
+     * - `"photo-sphere-viewer"` (default): feature-rich ([photo-sphere-viewer.js.org](https://photo-sphere-viewer.js.org)),
+     *   Three.js based, with on-screen zoom/move/fullscreen controls. Loaded from
+     *   CDN with its own isolated Three.js instance, so it does not clash with the
+     *   viewer's pinned Three.js version.
+     * - `"pannellum"`: lightweight, mature; loaded from CDN. Optional fallback.
+     *
+     * @example
+     * <PanoCloudViewer source={source} panoEngine="pannellum" />
+     */
+    panoEngine?: PanoEngine;
+    /**
      * Scale factor for the UI chrome (toolbars, tool-rail, sidebar, floating
      * palettes, dialogs / overlay panels, status bar). Defaults to `1`.
      *
@@ -1124,7 +1152,7 @@ interface PanoCloudViewerProps {
  * />
  * ```
  */
-declare function PanoCloudViewer({ source, theme, className, locale, uiMode, uiScale, children, components }: PanoCloudViewerProps): react_jsx_runtime.JSX.Element;
+declare function PanoCloudViewer({ source, theme, className, locale, uiMode, panoEngine, uiScale, children, components }: PanoCloudViewerProps): react_jsx_runtime.JSX.Element;
 
 interface ViewerContextValue {
     sceneManager: SceneManager | null;
@@ -1175,6 +1203,9 @@ interface ViewerContextValue {
     setDisplaySettings: (settings: DisplaySettings) => void;
     /** Resolved UI mode — defaults to "professional" when not set in config */
     uiMode: UiMode;
+    /** Active panorama engine — seeded from config (default "photo-sphere-viewer"); switchable at runtime */
+    panoEngine: PanoEngine;
+    setPanoEngine: (engine: PanoEngine) => void;
     config: ViewerConfig;
 }
 declare function useViewer(): ViewerContextValue;
@@ -1272,16 +1303,13 @@ interface ToolbarSectionProps {
 declare function ToolbarSection({ label, children, className }: ToolbarSectionProps): react_jsx_runtime.JSX.Element;
 
 interface MainToolbarProps {
-    onOpenAbout?: () => void;
     onOpenCloudSelector?: () => void;
-    onToggleSidebar?: () => void;
     onToggleRenderSettings?: () => void;
     onToggleQuickSettings?: () => void;
-    sidebarOpen?: boolean;
     renderSettingsOpen?: boolean;
     quickSettingsOpen?: boolean;
 }
-declare function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, onToggleQuickSettings, sidebarOpen, renderSettingsOpen, quickSettingsOpen }: MainToolbarProps): react_jsx_runtime.JSX.Element;
+declare function MainToolbar({ onOpenCloudSelector, onToggleRenderSettings, onToggleQuickSettings, renderSettingsOpen, quickSettingsOpen }: MainToolbarProps): react_jsx_runtime.JSX.Element;
 interface ToolbarIconBtnProps {
     icon: React.ReactNode;
     label?: string;
@@ -1426,4 +1454,4 @@ declare const en: ViewerLocale;
 
 declare const de: ViewerLocale;
 
-export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };

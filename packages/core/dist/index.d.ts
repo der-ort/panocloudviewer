@@ -73,6 +73,15 @@ interface ExportOptions {
 }
 type Theme = "dark" | "light" | "system";
 type UiMode = "professional" | "lite";
+/**
+ * Which 360° panorama viewer engine renders the equirectangular overlay when a
+ * camera marker is opened.
+ * - `"photo-sphere-viewer"` (default): feature-rich (zoom, markers, gallery,
+ *   virtual-tour, …), Three.js based; loaded from CDN with its own isolated
+ *   Three.js instance so it does not clash with the viewer's pinned Three.js.
+ * - `"pannellum"`: lightweight, mature; loaded from CDN. Optional fallback.
+ */
+type PanoEngine = "pannellum" | "photo-sphere-viewer";
 interface ViewerConfig {
     source: PointCloudSource;
     theme?: Theme;
@@ -96,6 +105,11 @@ interface ViewerConfig {
      * - "lite": beginner set — nav modes, basic measurements (point/distance/height), panorama/minimap/theme toggles only.
      */
     uiMode?: UiMode;
+    /**
+     * Which 360° panorama engine renders the equirectangular overlay.
+     * Defaults to `"photo-sphere-viewer"`.
+     */
+    panoEngine?: PanoEngine;
 }
 type ActiveTool = "none" | "measure-point" | "measure-distance" | "measure-height" | "measure-area" | "measure-volume" | "measure-angle" | "measure-profile" | "section-box" | "section-plane" | "annotate";
 type NavigationMode = "orbit" | "free" | "pan";
@@ -667,4 +681,4 @@ declare function formatCoord(x: number, y: number, z: number, decimals?: number)
 /** Export measurements as a CSV string */
 declare function exportMeasurementsCSV(measurements: Measurement[]): string;
 
-export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };
+export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };

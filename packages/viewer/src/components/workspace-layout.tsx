@@ -95,8 +95,6 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={chromeScale}>
         <GlassCard className="pointer-events-auto">
           <MainToolbar
-            onToggleSidebar={() => setSidebarOpen(o => !o)}
-            sidebarOpen={sidebarOpen}
             onToggleRenderSettings={isPro ? () => setRenderSettingsOpen(o => !o) : undefined}
             renderSettingsOpen={renderSettingsOpen}
             onToggleQuickSettings={isPro ? () => setQuickSettingsOpen(o => !o) : undefined}
@@ -114,36 +112,25 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       </div>
 
       {/* ── Right collapsible sidebar ───────────────────────────────────── */}
-      {/* top-16 keeps the sidebar clear of the top toolbar so it stays fully visible */}
+      {/* top-16 keeps the sidebar clear of the top toolbar so it stays fully
+          visible. The panel slides off the right edge when collapsed, and its
+          chevron handle rides the panel's left edge so it moves out with it. */}
       <div
         className={cn(
-          "absolute top-16 bottom-10 right-3 z-30",
-          "transition-all duration-200",
-          sidebarOpen ? "w-72 xl:w-80" : "w-0 overflow-hidden",
+          "absolute top-16 bottom-10 right-3 z-30 w-72 xl:w-80",
+          "transition-transform duration-200",
+          sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]",
         )}
         style={chromeScale}
       >
-        {sidebarOpen && (
-          <GlassCard className="h-full overflow-hidden">
-            <Sidebar />
-          </GlassCard>
-        )}
-      </div>
-
-      {/* ── Side chevron tab toggle for the sidebar ─────────────────────── */}
-      {/* Anchored to the viewport's right edge & vertically centered so it stays
-          visible and clickable whether the sidebar is open or closed. */}
-      <div
-        className="absolute top-1/2 right-0 -translate-y-1/2 z-40 pointer-events-none"
-        style={chromeScale}
-      >
+        {/* Chevron handle on the sidebar's left edge — the only sidebar toggle */}
         <button
           onClick={() => setSidebarOpen(o => !o)}
           title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           className={cn(
-            "pointer-events-auto flex items-center justify-center",
-            "w-5 h-12 rounded-l-lg",
+            "absolute top-1/2 -translate-y-1/2 -left-5 z-40",
+            "flex items-center justify-center w-5 h-12 rounded-l-lg",
             "backdrop-blur-xl bg-black/30 dark:bg-black/40",
             "border border-r-0 border-white/15 dark:border-white/10",
             "shadow-2xl shadow-black/20",
@@ -152,6 +139,10 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
         >
           {sidebarOpen ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
+
+        <GlassCard className="h-full overflow-hidden">
+          <Sidebar />
+        </GlassCard>
       </div>
 
       {/* ── Clip management toolbar (Pro + has boxes) ───────────────────── */}

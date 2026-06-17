@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Sun, Moon, Map, Layers, Info, PanelRight, Sliders, Settings } from "lucide-react";
+import { Sun, Moon, Map, Layers, Sliders, Settings } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useTheme } from "../../providers/theme-provider";
@@ -32,17 +32,14 @@ function ToolbarSection({ label, children, className }: ToolbarSectionProps) {
 export { ToolbarSection };
 
 interface MainToolbarProps {
-  onOpenAbout?: () => void;
   onOpenCloudSelector?: () => void;
-  onToggleSidebar?: () => void;
   onToggleRenderSettings?: () => void;
   onToggleQuickSettings?: () => void;
-  sidebarOpen?: boolean;
   renderSettingsOpen?: boolean;
   quickSettingsOpen?: boolean;
 }
 
-export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar, onToggleRenderSettings, onToggleQuickSettings, sidebarOpen, renderSettingsOpen, quickSettingsOpen }: MainToolbarProps) {
+export function MainToolbar({ onOpenCloudSelector, onToggleRenderSettings, onToggleQuickSettings, renderSettingsOpen, quickSettingsOpen }: MainToolbarProps) {
   const { showMinimap, setShowMinimap, uiMode } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().toolbar;
@@ -110,20 +107,6 @@ export function MainToolbar({ onOpenAbout, onOpenCloudSelector, onToggleSidebar,
           active={false}
           onClick={toggleTheme}
           title={resolvedTheme === "dark" ? t.switchToLight : t.switchToDark}
-        />
-        <ToolbarIconBtn
-          icon={<Info size={14} />}
-          label={t.about}
-          active={false}
-          onClick={onOpenAbout}
-          title={t.about}
-        />
-        <ToolbarIconBtn
-          icon={<PanelRight size={14} />}
-          label={t.sidebar}
-          active={sidebarOpen}
-          onClick={onToggleSidebar}
-          title={t.toggleSidebar}
         />
       </ToolbarSection>
     </div>

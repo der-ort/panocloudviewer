@@ -43,6 +43,7 @@ export type {
   ViewerConfig,
   Theme,
   UiMode,
+  PanoEngine,
 } from "./types";
 export { DISPLAY_PRESETS } from "./types";
 

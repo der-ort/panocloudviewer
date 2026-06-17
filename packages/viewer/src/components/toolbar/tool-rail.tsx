@@ -51,14 +51,6 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SubLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-[7px] font-mono uppercase tracking-wider text-muted-foreground/30 text-center leading-none">
-      {children}
-    </span>
-  );
-}
-
 // ── Measurement tool definitions grouped by category ─────────────────────────
 
 const BASIC_MEASURES: { type: MeasurementType; tool: ActiveTool; icon: React.ReactNode; titleKey: string }[] = [
@@ -108,7 +100,6 @@ export function ToolRail() {
     <div className="flex flex-col items-center gap-0.5 py-2 px-1 w-10 shrink-0">
       {/* ── Measure: Basic ──────────────────────── */}
       <GroupLabel>{t.measureGroup}</GroupLabel>
-      <SubLabel>Basic</SubLabel>
       {BASIC_MEASURES.map(def => (
         <RailBtn
           key={def.tool}
@@ -120,9 +111,10 @@ export function ToolRail() {
       ))}
 
       {/* ── Measure: Advanced (Professional only) ─── */}
+      {/* Divided from the basic tools by a plain rule — no group labels. */}
       {isPro && (
         <>
-          <SubLabel>Advanced</SubLabel>
+          <Divider />
           {ADVANCED_MEASURES.map(def => (
             <RailBtn
               key={def.tool}

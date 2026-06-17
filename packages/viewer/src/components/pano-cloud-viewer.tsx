@@ -9,7 +9,7 @@ import { WorkspaceLayout } from "./workspace-layout";
 import { PanoViewer } from "./overlays/pano-viewer";
 import { ComponentsProvider } from "../providers/components-provider";
 import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
-import type { PointCloudSource, UiMode } from "@der-ort/pano-cloud-viewer-core";
+import type { PointCloudSource, UiMode, PanoEngine } from "@der-ort/pano-cloud-viewer-core";
 import type { ViewerLocale } from "../i18n/types";
 import { cn } from "../lib/utils";
 import type { ViewerComponents } from "../providers/components-provider";
@@ -88,6 +88,20 @@ export interface PanoCloudViewerProps {
    * - `"lite"`: beginner set — nav modes, basic measurements, panorama/minimap/theme toggles only.
    */
   uiMode?: UiMode;
+  /**
+   * Which 360° panorama engine renders the equirectangular overlay when a camera
+   * marker is opened. Defaults to `"photo-sphere-viewer"`.
+   *
+   * - `"photo-sphere-viewer"` (default): feature-rich ([photo-sphere-viewer.js.org](https://photo-sphere-viewer.js.org)),
+   *   Three.js based, with on-screen zoom/move/fullscreen controls. Loaded from
+   *   CDN with its own isolated Three.js instance, so it does not clash with the
+   *   viewer's pinned Three.js version.
+   * - `"pannellum"`: lightweight, mature; loaded from CDN. Optional fallback.
+   *
+   * @example
+   * <PanoCloudViewer source={source} panoEngine="pannellum" />
+   */
+  panoEngine?: PanoEngine;
   /**
    * Scale factor for the UI chrome (toolbars, tool-rail, sidebar, floating
    * palettes, dialogs / overlay panels, status bar). Defaults to `1`.
@@ -201,9 +215,9 @@ function PcvRoot({ className, uiScale = 1, children }: PcvRootProps) {
  * />
  * ```
  */
-export function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, uiScale = 1, children, components }: PanoCloudViewerProps) {
+export function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, uiScale = 1, children, components }: PanoCloudViewerProps) {
   const adapter = createAdapter(source);
-  const config = { source, uiMode };
+  const config = { source, uiMode, panoEngine };
 
   return (
     <LocaleProvider locale={locale}>

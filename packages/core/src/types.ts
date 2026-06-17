@@ -113,6 +113,16 @@ export type Theme = "dark" | "light" | "system";
 
 export type UiMode = "professional" | "lite";
 
+/**
+ * Which 360° panorama viewer engine renders the equirectangular overlay when a
+ * camera marker is opened.
+ * - `"photo-sphere-viewer"` (default): feature-rich (zoom, markers, gallery,
+ *   virtual-tour, …), Three.js based; loaded from CDN with its own isolated
+ *   Three.js instance so it does not clash with the viewer's pinned Three.js.
+ * - `"pannellum"`: lightweight, mature; loaded from CDN. Optional fallback.
+ */
+export type PanoEngine = "pannellum" | "photo-sphere-viewer";
+
 export interface ViewerConfig {
   source: PointCloudSource;
   theme?: Theme;
@@ -136,6 +146,11 @@ export interface ViewerConfig {
    * - "lite": beginner set — nav modes, basic measurements (point/distance/height), panorama/minimap/theme toggles only.
    */
   uiMode?: UiMode;
+  /**
+   * Which 360° panorama engine renders the equirectangular overlay.
+   * Defaults to `"photo-sphere-viewer"`.
+   */
+  panoEngine?: PanoEngine;
 }
 
 // ── Viewer state (context) ───────────────────────────────────

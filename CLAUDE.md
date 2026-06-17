@@ -37,7 +37,7 @@ packages/viewer/        → React UI library
     components/         → React UI components
       toolbar/          → MainToolbar, ViewControls, DisplayControls, MeasureTools, SectionTools, ExportTools, ToolRail
       sidebar/          → Sidebar, PanoPanel, ScenePanel, MeasurementsPanel, ClassificationPanel, ScenesPanel
-      overlays/         → PanoViewer, AboutDialog, RenderingSettings, DisplaySettingsDialog
+      overlays/         → PanoViewer (+ pano-engines/), AboutDialog, RenderingSettings, DisplaySettingsDialog
       pano-cloud-viewer.tsx  → Root drop-in component
       viewport.tsx           → Three.js wiring component
       workspace-layout.tsx   → Default shell layout (toolbar + viewport + sidebar)
@@ -224,7 +224,7 @@ WorkspaceLayout
   MainToolbar               ← top bar (logo, view controls, toggles, quick-settings gear)
   ToolRail                  ← left icon rail (measure/section tools)
   Viewport [lazy]           ← Three.js init, event handlers, minimap overlay
-  PanoViewer                ← 360° panorama overlay (conditionally rendered)
+  PanoViewer                ← 360° panorama overlay (conditionally rendered; engine-pluggable)
   QuickSettingsPopover      ← simple quick-settings popover (gear button) — panos/minimap toggles, color mode, point size
   RenderingSettings         ← advanced rendering settings panel overlay
   Sidebar                   ← right collapsible sidebar (starts below the toolbar; chevron toggle on its side)
@@ -334,6 +334,12 @@ potree-core's default material settings are `inputColorEncoding=SRGB, outputColo
 ### Lazy-import of potree-core
 potree-core is a heavy, WebGL-only bundle. Importing it at module load time would break SSR (Next.js server renders) and slow initial bundle load. It is always imported inside `async` functions: `const { Potree, PointColorType } = await import("potree-core")`.
 
+### Pluggable panorama engine (`panoEngine`)
+The 360° overlay (`PanoViewer`) is engine-pluggable via the `panoEngine` prop / config field (`"photo-sphere-viewer"` default | `"pannellum"` fallback), also switchable at runtime through `useViewer().setPanoEngine` (the overlay header has an A/B toggle). Engine adapters live in `packages/viewer/src/components/overlays/pano-engines/` — each exports a `PanoEngineInit` (`(container, camera) => Promise<{ destroy() }>`). `getPanoEngine(engine)` maps the config value to its adapter. Both engines load **lazily from CDN** (nothing ships in the SSR/initial bundle).
+
+- **Photo Sphere Viewer (PSV)** — default engine. Loaded from jsDelivr's `+esm` endpoint, with on-screen zoom/move/fullscreen controls (`navbar`) + mousewheel zoom. PSV requires `three@^0.184` while this project pins `three@0.170`, so PSV runs with its **own isolated Three.js** (the `+esm` endpoint resolves PSV's `three` to a separate CDN copy — no importmap needed). This is safe because the panorama overlay is a fully separate scene sharing no Three.js objects with the potree viewport. The CDN ESM module is loaded via a `new Function("u","return import(u)")` indirection so esbuild/webpack/Next never try to statically resolve the absolute `https://` URL.
+- **Pannellum** — optional fallback. UMD global injected via `<script>`/`<link>` (jsDelivr). The loader caches a single load promise that resolves only once `window.pannellum` is actually defined — never on mere `<script>`-tag presence — to avoid a race (StrictMode double-invoke / engine switch) where the global is still `undefined`.
+
 ### `"use client"` on all components
 Three.js uses `window`, `document`, `requestAnimationFrame`, `WebGLRenderingContext` — none of which exist in Node.js. All viewer components carry the `"use client"` directive to prevent Next.js from attempting server-side rendering of any part of the tree.
 
@@ -432,6 +438,7 @@ project/
 ## Common Pitfalls
 
 - **Never import potree-core at the top level** — always `await import("potree-core")` inside async functions.
+- **Don't add Photo Sphere Viewer (or its `three`) as a bundled dependency** — PSV needs `three@^0.184` which conflicts with the pinned `three@0.170`. Keep loading it from CDN via the `+esm` endpoint with the `new Function`/`import(u)` indirection (its isolated `three` is intentional). Bundling it would force a project-wide Three.js upgrade and risk double-loading three into the potree scene.
 - **Never add `"use server"` or remove `"use client"`** from viewer components — Three.js is browser-only.
 - **After any `setColorMode()`** — `outputColorEncoding=1` must be re-applied or RGB clouds will show incorrect brightness.
 - **`renderer.outputColorSpace`** — must stay `THREE.LinearSRGBColorSpace`. Changing to `SRGBColorSpace` whitewashes the cloud.

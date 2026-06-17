@@ -11,7 +11,7 @@ import type { MinimapRenderer } from "@der-ort/pano-cloud-viewer-core";
 import type { ClipManager } from "@der-ort/pano-cloud-viewer-core";
 import type { ClipBoxEntry } from "@der-ort/pano-cloud-viewer-core";
 import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
-import type { ActiveTool, CameraData, CameraProjection, DisplaySettings, Measurement, NavigationMode, UiMode, ViewerConfig } from "@der-ort/pano-cloud-viewer-core";
+import type { ActiveTool, CameraData, CameraProjection, DisplaySettings, Measurement, NavigationMode, PanoEngine, UiMode, ViewerConfig } from "@der-ort/pano-cloud-viewer-core";
 import { DISPLAY_PRESETS } from "@der-ort/pano-cloud-viewer-core";
 
 interface ViewerContextValue {
@@ -69,6 +69,10 @@ interface ViewerContextValue {
 
   /** Resolved UI mode — defaults to "professional" when not set in config */
   uiMode: UiMode;
+
+  /** Active panorama engine — seeded from config (default "photo-sphere-viewer"); switchable at runtime */
+  panoEngine: PanoEngine;
+  setPanoEngine: (engine: PanoEngine) => void;
 
   config: ViewerConfig;
 }
@@ -133,6 +137,7 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const setClipManager = useCallback((c: ClipManager) => _setClipManager(c), []);
 
   const uiMode: UiMode = config.uiMode ?? "professional";
+  const [panoEngine, setPanoEngine] = useState<PanoEngine>(config.panoEngine ?? "photo-sphere-viewer");
 
   const value: ViewerContextValue = {
     sceneManager, loader, measurementManager, markerManager, cameraAnimator, exporter, minimap, clipManager,
@@ -153,6 +158,7 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
     projection, setProjection,
     displaySettings, setDisplaySettings,
     uiMode,
+    panoEngine, setPanoEngine,
     config,
   };
 
