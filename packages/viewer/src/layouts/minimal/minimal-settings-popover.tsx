@@ -4,6 +4,7 @@ import React from "react";
 import { Camera, Map } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
+import { PCV_VERSION, PCV_BUILD } from "../../version";
 import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
 
 interface MinimalSettingsPopoverProps {
@@ -140,6 +141,13 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
               className="pcv-slider w-full"
             />
           </div>
+        </div>
+
+        {/* Build/version — confirm the deployed viewer build */}
+        <div className="border-t border-white/10 pt-2 px-1">
+          <p className="text-[9px] font-mono text-white/35 leading-tight" title="Viewer version · build">
+            v{PCV_VERSION} · {PCV_BUILD}
+          </p>
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 {
   "name": "@der-ort/pano-cloud-viewer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Modular point cloud viewer with panorama support, measurements, sections, and export",
   "author": "der-ort",
   "license": "MIT",

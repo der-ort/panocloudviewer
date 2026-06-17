@@ -5891,6 +5891,11 @@ function Slider({ label, value, min, max, step, onChange, display }) {
 // src/components/overlays/quick-settings-popover.tsx
 init_utils();
 init_viewer_provider();
+
+// src/version.ts
+var PCV_VERSION = "0.2.0" ;
+var PCV_BUILD = "035144e \xB7 2026-06-17 13:27Z" ;
+var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 var COLOR_MODES2 = [
   { value: "rgb", label: "RGB" },
   { value: "height", label: "Elevation" },
@@ -6012,7 +6017,13 @@ function QuickSettingsPopover({ onClose: _onClose }) {
               className: "pcv-slider w-full"
             }
           ) })
-        ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "border-t border-white/10 pt-2 px-1", children: /* @__PURE__ */ jsxRuntime.jsxs("p", { className: "text-[9px] font-mono text-white/35 leading-tight", title: "Viewer version \xB7 build", children: [
+          "v",
+          PCV_VERSION,
+          " \xB7 ",
+          PCV_BUILD
+        ] }) })
       ]
     }
   ) });
@@ -6717,7 +6728,13 @@ function MinimalSettingsPopover({ onClose }) {
               className: "pcv-slider w-full"
             }
           ) })
-        ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "border-t border-white/10 pt-2 px-1", children: /* @__PURE__ */ jsxRuntime.jsxs("p", { className: "text-[9px] font-mono text-white/35 leading-tight", title: "Viewer version \xB7 build", children: [
+          "v",
+          PCV_VERSION,
+          " \xB7 ",
+          PCV_BUILD
+        ] }) })
       ]
     }
   ) });
@@ -7343,7 +7360,13 @@ function AboutDialog({ onClose }) {
         ] }),
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "mb-4", children: [
           /* @__PURE__ */ jsxRuntime.jsx("p", { className: "font-bold text-foreground text-base", children: t.productName }),
-          /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-muted-foreground text-xs mt-0.5", children: "@der-ort/pano-cloud-viewer" })
+          /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-muted-foreground text-xs mt-0.5", children: "@der-ort/pano-cloud-viewer" }),
+          /* @__PURE__ */ jsxRuntime.jsxs("p", { className: "text-[10px] font-mono text-muted-foreground/70 mt-1", title: "Viewer version \xB7 build", children: [
+            "v",
+            PCV_VERSION,
+            " \xB7 ",
+            PCV_BUILD
+          ] })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-xs text-muted-foreground leading-relaxed mb-4", children: t.description }),
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "space-y-1 text-xs text-muted-foreground border-t border-[hsl(var(--border))] pt-3", children: [
@@ -8069,6 +8092,9 @@ exports.MainToolbar = MainToolbar;
 exports.MeasureTools = MeasureTools;
 exports.MeasurementsPanel = MeasurementsPanel;
 exports.MinimalLayout = MinimalLayout;
+exports.PCV_BUILD = PCV_BUILD;
+exports.PCV_VERSION = PCV_VERSION;
+exports.PCV_VERSION_STRING = PCV_VERSION_STRING;
 exports.PanoCloudViewer = PanoCloudViewer;
 exports.PanoPanel = PanoPanel;
 exports.PanoViewer = PanoViewer;

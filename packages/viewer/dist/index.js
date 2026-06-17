@@ -5859,6 +5859,11 @@ function Slider({ label, value, min, max, step, onChange, display }) {
 // src/components/overlays/quick-settings-popover.tsx
 init_utils();
 init_viewer_provider();
+
+// src/version.ts
+var PCV_VERSION = "0.2.0" ;
+var PCV_BUILD = "035144e \xB7 2026-06-17 13:27Z" ;
+var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 var COLOR_MODES2 = [
   { value: "rgb", label: "RGB" },
   { value: "height", label: "Elevation" },
@@ -5980,7 +5985,13 @@ function QuickSettingsPopover({ onClose: _onClose }) {
               className: "pcv-slider w-full"
             }
           ) })
-        ] })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "border-t border-white/10 pt-2 px-1", children: /* @__PURE__ */ jsxs("p", { className: "text-[9px] font-mono text-white/35 leading-tight", title: "Viewer version \xB7 build", children: [
+          "v",
+          PCV_VERSION,
+          " \xB7 ",
+          PCV_BUILD
+        ] }) })
       ]
     }
   ) });
@@ -6685,7 +6696,13 @@ function MinimalSettingsPopover({ onClose }) {
               className: "pcv-slider w-full"
             }
           ) })
-        ] })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "border-t border-white/10 pt-2 px-1", children: /* @__PURE__ */ jsxs("p", { className: "text-[9px] font-mono text-white/35 leading-tight", title: "Viewer version \xB7 build", children: [
+          "v",
+          PCV_VERSION,
+          " \xB7 ",
+          PCV_BUILD
+        ] }) })
       ]
     }
   ) });
@@ -7311,7 +7328,13 @@ function AboutDialog({ onClose }) {
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "mb-4", children: [
           /* @__PURE__ */ jsx("p", { className: "font-bold text-foreground text-base", children: t.productName }),
-          /* @__PURE__ */ jsx("p", { className: "text-muted-foreground text-xs mt-0.5", children: "@der-ort/pano-cloud-viewer" })
+          /* @__PURE__ */ jsx("p", { className: "text-muted-foreground text-xs mt-0.5", children: "@der-ort/pano-cloud-viewer" }),
+          /* @__PURE__ */ jsxs("p", { className: "text-[10px] font-mono text-muted-foreground/70 mt-1", title: "Viewer version \xB7 build", children: [
+            "v",
+            PCV_VERSION,
+            " \xB7 ",
+            PCV_BUILD
+          ] })
         ] }),
         /* @__PURE__ */ jsx("p", { className: "text-xs text-muted-foreground leading-relaxed mb-4", children: t.description }),
         /* @__PURE__ */ jsxs("div", { className: "space-y-1 text-xs text-muted-foreground border-t border-[hsl(var(--border))] pt-3", children: [
@@ -8013,6 +8036,6 @@ var de = createLocale(en, {
   }
 });
 
-export { AboutDialog, AxisWidget, Button, CameraAnimator, ClassificationPanel, ClipManager, ClipToolbar, CollapsibleSidebar, ComponentsProvider, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, DisplaySettingsDialog, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, MinimapRenderer, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider2 as Slider, Tabs, TabsContent, TabsList, TabsTrigger, ThemeProvider, Toggle, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, AxisWidget, Button, CameraAnimator, ClassificationPanel, ClipManager, ClipToolbar, CollapsibleSidebar, ComponentsProvider, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, DisplaySettingsDialog, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, MinimapRenderer, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider2 as Slider, Tabs, TabsContent, TabsList, TabsTrigger, ThemeProvider, Toggle, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

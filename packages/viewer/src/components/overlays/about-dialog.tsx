@@ -3,6 +3,7 @@
 import React from "react";
 import { X } from "lucide-react";
 import { useLocale } from "../../i18n/locale-context";
+import { PCV_VERSION, PCV_BUILD } from "../../version";
 
 interface AboutDialogProps {
   onClose: () => void;
@@ -26,6 +27,9 @@ export function AboutDialog({ onClose }: AboutDialogProps) {
         <div className="mb-4">
           <p className="font-bold text-foreground text-base">{t.productName}</p>
           <p className="text-muted-foreground text-xs mt-0.5">@der-ort/pano-cloud-viewer</p>
+          <p className="text-[10px] font-mono text-muted-foreground/70 mt-1" title="Viewer version · build">
+            v{PCV_VERSION} · {PCV_BUILD}
+          </p>
         </div>
 
         <p className="text-xs text-muted-foreground leading-relaxed mb-4">{t.description}</p>
