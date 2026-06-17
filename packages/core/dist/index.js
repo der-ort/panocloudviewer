@@ -35,7 +35,10 @@ var SceneManager = class {
     this.camera.position.set(0, -50, 30);
     this.renderer = new THREE5.WebGLRenderer({
       antialias: true,
-      logarithmicDepthBuffer: true
+      logarithmicDepthBuffer: true,
+      // Keep the drawing buffer so the picking magnifier (a 2D loupe) can sample
+      // the rendered canvas between frames via drawImage.
+      preserveDrawingBuffer: true
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(w, h);
@@ -773,16 +776,13 @@ var MarkerManager = class {
 
 // src/format.ts
 function formatLength(meters) {
-  if (meters < 1) return `${(meters * 100).toFixed(1)} cm`;
-  if (meters < 100) return `${meters.toFixed(2)} m`;
-  return `${meters.toFixed(1)} m`;
+  return `${meters.toFixed(2)} m`;
 }
 function formatArea(m2) {
-  if (m2 < 1) return `${(m2 * 1e4).toFixed(1)} cm\xB2`;
   return `${m2.toFixed(2)} m\xB2`;
 }
 function formatVolume(m3) {
-  return `${m3.toFixed(3)} m\xB3`;
+  return `${m3.toFixed(2)} m\xB3`;
 }
 function formatAngle(radians) {
   return `${(radians * 180 / Math.PI).toFixed(1)}\xB0`;
@@ -1166,7 +1166,7 @@ var MeasurementManager = class {
     edges.renderOrder = 2;
     this.group.add(edges);
     objects.push(edges);
-    const text = `${m.value.toFixed(3)} m\xB3`;
+    const text = formatVolume(m.value);
     const sprite = this.makeTextSprite(text, m.color);
     sprite.position.copy(center).add(new THREE5.Vector3(0, 0, size.z / 2 + 0.5));
     const ls = this._displaySettings.measurementLabelScale;
@@ -1274,7 +1274,7 @@ var MeasurementManager = class {
           text = formatAngle(m.value);
           break;
         case "volume":
-          text = `${m.value.toFixed(3)} m\xB3`;
+          text = formatVolume(m.value);
           break;
         case "point": {
           const p = pts[0];
@@ -1620,93 +1620,6 @@ var MinimapRenderer = class {
     this.glCanvas = null;
     this.overlayCanvas = null;
     this.container = null;
-  }
-};
-var MagnifierRenderer = class {
-  sm;
-  _cam;
-  _target = null;
-  _active = false;
-  _zoom = 7;
-  _tmpColor = new THREE5.Color();
-  /** Square edge length and corner margin, in CSS pixels. */
-  size = 168;
-  margin = 12;
-  /** Distance from the RIGHT viewport edge, CSS px (raised to clear the sidebar). */
-  _rightCss = 12;
-  constructor(sm) {
-    this.sm = sm;
-    this._cam = new THREE5.PerspectiveCamera(50, 1, 0.01, 1e7);
-  }
-  setActive(active) {
-    this._active = active;
-    if (!active) this._target = null;
-  }
-  /** Set the gap from the right edge (CSS px) so the panel clears the sidebar. */
-  setRightOffsetCss(px) {
-    this._rightCss = Math.max(this.margin, px);
-  }
-  /** Center the magnifier on a world position (the snapped point). */
-  setTarget(world) {
-    this._target = world ? world.clone() : null;
-  }
-  /** Magnification factor (relative to the main FOV). */
-  setZoom(zoom) {
-    this._zoom = Math.max(2, zoom);
-  }
-  /** Whether the magnifier currently has something to show. */
-  isShowing() {
-    return this._active && this._target !== null;
-  }
-  /** CSS-pixel rect (top-left origin) so the DOM overlay can match the region. */
-  getRectCss() {
-    const el = this.sm.renderer.domElement;
-    return { left: el.clientWidth - this.size - this.margin, top: this.margin, size: this.size };
-  }
-  /** Run from a post-render callback (after the main scene render). */
-  render() {
-    if (!this._active || !this._target) return;
-    const renderer = this.sm.renderer;
-    const el = renderer.domElement;
-    const wCss = el.clientWidth;
-    const hCss = el.clientHeight;
-    if (wCss === 0 || hCss === 0) return;
-    const dpr = renderer.getPixelRatio();
-    const sizePx = Math.round(this.size * dpr);
-    const topPx = Math.round(this.margin * dpr);
-    const rightPx = Math.round(this._rightCss * dpr);
-    const wBuf = Math.round(wCss * dpr);
-    const hBuf = Math.round(hCss * dpr);
-    const x = wBuf - sizePx - rightPx;
-    const y = hBuf - sizePx - topPx;
-    if (x < 0 || y < 0) return;
-    const main = this.sm.camera;
-    this._cam.position.copy(main.position);
-    this._cam.up.copy(main.up);
-    this._cam.near = main.near;
-    this._cam.far = main.far;
-    this._cam.fov = Math.max(1.5, main.fov / this._zoom);
-    this._cam.aspect = 1;
-    this._cam.lookAt(this._target);
-    this._cam.updateProjectionMatrix();
-    const savedVp = renderer.getViewport(new THREE5.Vector4());
-    const savedSc = renderer.getScissor(new THREE5.Vector4());
-    const savedScTest = renderer.getScissorTest();
-    const savedAutoClear = renderer.autoClear;
-    const savedClear = renderer.getClearColor(this._tmpColor).clone();
-    const savedClearAlpha = renderer.getClearAlpha();
-    renderer.autoClear = false;
-    renderer.setScissorTest(true);
-    renderer.setScissor(x, y, sizePx, sizePx);
-    renderer.setViewport(x, y, sizePx, sizePx);
-    renderer.setClearColor(658970, 1);
-    renderer.clear(true, true, false);
-    renderer.render(this.sm.scene, this._cam);
-    renderer.setViewport(savedVp);
-    renderer.setScissor(savedSc);
-    renderer.setScissorTest(savedScTest);
-    renderer.autoClear = savedAutoClear;
-    renderer.setClearColor(savedClear, savedClearAlpha);
   }
 };
 var AXIS_COLOR = {
@@ -2778,6 +2691,6 @@ function createAdapter(source) {
   }
 }
 
-export { AxisWidget, CameraAnimator, ClipManager, DISPLAY_PRESETS, ElectronSourceAdapter, ExportManager, MagnifierRenderer, MarkerManager, MeasurementManager, MinimapRenderer, PointCloudLoader, PresentationManager, S3SourceAdapter, SceneManager, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };
+export { AxisWidget, CameraAnimator, ClipManager, DISPLAY_PRESETS, ElectronSourceAdapter, ExportManager, MarkerManager, MeasurementManager, MinimapRenderer, PointCloudLoader, PresentationManager, S3SourceAdapter, SceneManager, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

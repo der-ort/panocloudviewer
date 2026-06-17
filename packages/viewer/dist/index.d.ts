@@ -496,50 +496,6 @@ declare class MinimapRenderer {
 }
 
 /**
- * Point-picking magnifier. While a measurement tool is active, this renders a
- * zoomed-in view of the area around the snapped point into a small square
- * region in the top-right of the viewport, so the user can place points with
- * pixel precision. It reuses the MAIN renderer via a scissored post-render pass
- * (like {@link AxisWidget}) — no second WebGL context and no duplicated point
- * uploads — so it stays cheap.
- *
- * The zoom is achieved by aiming a cloned camera at the snap target with a
- * narrow FOV, which keeps the target centered (under the DOM crosshair the
- * viewport draws over this region).
- */
-declare class MagnifierRenderer {
-    private sm;
-    private _cam;
-    private _target;
-    private _active;
-    private _zoom;
-    private _tmpColor;
-    /** Square edge length and corner margin, in CSS pixels. */
-    readonly size = 168;
-    readonly margin = 12;
-    /** Distance from the RIGHT viewport edge, CSS px (raised to clear the sidebar). */
-    private _rightCss;
-    constructor(sm: SceneManager);
-    setActive(active: boolean): void;
-    /** Set the gap from the right edge (CSS px) so the panel clears the sidebar. */
-    setRightOffsetCss(px: number): void;
-    /** Center the magnifier on a world position (the snapped point). */
-    setTarget(world: THREE.Vector3 | null): void;
-    /** Magnification factor (relative to the main FOV). */
-    setZoom(zoom: number): void;
-    /** Whether the magnifier currently has something to show. */
-    isShowing(): boolean;
-    /** CSS-pixel rect (top-left origin) so the DOM overlay can match the region. */
-    getRectCss(): {
-        left: number;
-        top: number;
-        size: number;
-    };
-    /** Run from a post-render callback (after the main scene render). */
-    render(): void;
-}
-
-/**
  * Manages 6 face-center handles for interactive Box3 resizing.
  * Each handle controls one face of the box (min.x, max.x, min.y, max.y, min.z, max.z).
  */
@@ -798,11 +754,11 @@ declare function captureScene(name: string, cameraPos: {
     z: number;
 }, clipBoxes: ClipBoxEntry[], colorMode: string, pointSize: number, pointBudget: number): Omit<ViewerScene, "id" | "createdAt">;
 
-/** Format a number in meters with appropriate precision */
+/** Format a length in meters — always metric, 2 decimals. */
 declare function formatLength(meters: number): string;
-/** Format area in m² */
+/** Format area in square meters — always metric, 2 decimals. */
 declare function formatArea(m2: number): string;
-/** Format volume in m³ */
+/** Format volume in cubic meters — always metric, 2 decimals. */
 declare function formatVolume(m3: number): string;
 /** Format angle in degrees */
 declare function formatAngle(radians: number): string;
@@ -1575,4 +1531,4 @@ declare const en: ViewerLocale;
 
 declare const de: ViewerLocale;
 
-export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type LocalSource, LocaleProvider, MagnifierRenderer, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };

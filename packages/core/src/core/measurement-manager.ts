@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { DisplaySettings, Measurement, MeasurementType } from "../types";
 import { DISPLAY_PRESETS } from "../types";
-import { formatLength, formatArea, formatAngle } from "../format";
+import { formatLength, formatArea, formatAngle, formatVolume } from "../format";
 
 let _idCounter = 0;
 function nextId() { return `m-${++_idCounter}`; }
@@ -350,7 +350,7 @@ export class MeasurementManager {
     objects.push(edges);
 
     // Volume label
-    const text = `${m.value!.toFixed(3)} m³`;
+    const text = formatVolume(m.value!);
     const sprite = this.makeTextSprite(text, m.color);
     sprite.position.copy(center).add(new THREE.Vector3(0, 0, size.z / 2 + 0.5));
     const ls = this._displaySettings.measurementLabelScale;
@@ -455,7 +455,7 @@ export class MeasurementManager {
         case "height":   text = formatLength(m.value); break;
         case "area":     text = formatArea(m.value); break;
         case "angle":    text = formatAngle(m.value); break;
-        case "volume":   text = `${m.value.toFixed(3)} m³`; break;
+        case "volume":   text = formatVolume(m.value); break;
         case "point": {
           const p = pts[0];
           text = `${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}`;

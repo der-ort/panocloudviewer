@@ -81,8 +81,8 @@ pnpm lint                                             # TypeScript check across 
 │  LAYER 2 — Manager Classes  (packages/core)         │
 │  SceneManager · PointCloudLoader · CameraAnimator   │
 │  MarkerManager · MeasurementManager · ClipManager   │
-│  ExportManager · MinimapRenderer · MagnifierRenderer│
-│  PresentationManager · AxisWidget                   │
+│  ExportManager · MinimapRenderer · PresentationMgr  │
+│  AxisWidget                                         │
 │  Instantiated inside Viewport; passed up via setters│
 ├─────────────────────────────────────────────────────┤
 │  LAYER 3 — Renderer / WebGL                         │
@@ -193,12 +193,6 @@ Top-down orthographic minimap with overlay, rendered in the **bottom-right** cor
 - **`resize()`**: Syncs canvas dimensions to container.
 - **`dispose()`**: Removes canvases, disposes renderer.
 
-### `MagnifierRenderer` (`core/magnifier-renderer.ts`)
-Point-picking magnifier shown while a (non-volume) measurement tool is active. Renders a zoomed view of the area around the snapped point into a small square in the **top-right** of the viewport for pixel-precise picking.
-
-- Reuses the **main renderer** via a scissored post-render pass (registered with `SceneManager.addPostRenderCallback`) — like `AxisWidget`, so **no second WebGL context** and no duplicated point uploads. Only renders when `setActive(true)` AND a target is set.
-- **Zoom** = a cloned camera at the main eye, aimed (`lookAt`) at the snap target with a narrow FOV (`mainFov / zoom`), which keeps the target centered under the DOM crosshair the viewport overlays on the region.
-- **`setActive(b)` / `setTarget(world|null)` / `setZoom(z)` / `setRightOffsetCss(px)`**: the viewport drives these from the measurement snap handler. `setRightOffsetCss` clears the sidebar by reusing the `--pcv-minimap-right` offset so the on-canvas region lines up with its DOM frame.
 
 ### `PresentationManager` (`core/presentation-manager.ts`)
 Persists named viewer scenes (camera position + clip boxes + display settings) in `localStorage`.
@@ -351,6 +345,12 @@ potree-core's visibility traversal calls `shouldClip(node)` and **skips octree n
 
 ### Measuring snaps to VISIBLE points only
 `SceneManager.pickPoint` uses potree-core's GPU pick, which returns the front-most *rendered* point under the cursor (so hidden/behind points aren't picked). On top of that, the Viewport's `pickVisiblePoint` rejects any pick that fails `ClipManager.isPointVisible(p)` and falls back to a ground-plane projection — so a section box never lets you measure to clipped-away geometry. `isPointVisible` does a point-in-(rotated)-box test against the entry's center/size/quaternion and honours the global enable flag + clip mode.
+
+### Picking magnifier is a 2D loupe (not a re-render)
+While a point-snapping measurement tool is active, the Viewport shows a small **loupe** that follows the cursor and magnifies the area around the snapped point for precise picking. It is a plain 2D `<canvas>` that `drawImage`s a small region of the **already-rendered** WebGL canvas (centered on the snap point's projected pixel) scaled up — so it shows the *actual* points with no second render and no camera/uniform mismatch. This requires `preserveDrawingBuffer: true` on the renderer (set in `SceneManager`). An earlier attempt re-rendered the scene with a zoomed camera via a scissor pass, but potree's point-size uniforms are coupled to the main camera/viewport so points didn't show — the pixel-copy loupe avoids that entirely. While measuring, the OS cursor is hidden (`cursor: none`) so only the 3D snap crosshair shows (no doubled cross).
+
+### Metric measurement formatting
+`format.ts` reports lengths/areas/volumes in **plain metric with 2 decimals** — `formatLength` → `"X.XX m"`, `formatArea` → `"X.XX m²"`, `formatVolume` → `"X.XX m³"` (no cm/km adaptive switching). Measurement labels (3D sprites) and the measurements panel both go through these, so units stay consistent.
 
 ### Pluggable panorama engine (`panoEngine`)
 The 360° overlay (`PanoViewer`) is engine-pluggable via the `panoEngine` prop / config field (`"photo-sphere-viewer"` default | `"pannellum"` fallback), also switchable at runtime through `useViewer().setPanoEngine` (the overlay header has an A/B toggle). Engine adapters live in `packages/viewer/src/components/overlays/pano-engines/` — each exports a `PanoEngineInit` (`(container, camera) => Promise<{ destroy() }>`). `getPanoEngine(engine)` maps the config value to its adapter. Both engines load **lazily from CDN** (nothing ships in the SSR/initial bundle).

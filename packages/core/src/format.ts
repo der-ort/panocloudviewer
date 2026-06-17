@@ -1,21 +1,18 @@
 import type { Measurement } from "./types";
 
-/** Format a number in meters with appropriate precision */
+/** Format a length in meters — always metric, 2 decimals. */
 export function formatLength(meters: number): string {
-  if (meters < 1) return `${(meters * 100).toFixed(1)} cm`;
-  if (meters < 100) return `${meters.toFixed(2)} m`;
-  return `${meters.toFixed(1)} m`;
+  return `${meters.toFixed(2)} m`;
 }
 
-/** Format area in m² */
+/** Format area in square meters — always metric, 2 decimals. */
 export function formatArea(m2: number): string {
-  if (m2 < 1) return `${(m2 * 10000).toFixed(1)} cm²`;
   return `${m2.toFixed(2)} m²`;
 }
 
-/** Format volume in m³ */
+/** Format volume in cubic meters — always metric, 2 decimals. */
 export function formatVolume(m3: number): string {
-  return `${m3.toFixed(3)} m³`;
+  return `${m3.toFixed(2)} m³`;
 }
 
 /** Format angle in degrees */

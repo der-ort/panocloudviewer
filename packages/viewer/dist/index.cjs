@@ -60,16 +60,13 @@ function easeOutQuart(t) {
   return 1 - Math.pow(1 - t, 4);
 }
 function formatLength(meters) {
-  if (meters < 1) return `${(meters * 100).toFixed(1)} cm`;
-  if (meters < 100) return `${meters.toFixed(2)} m`;
-  return `${meters.toFixed(1)} m`;
+  return `${meters.toFixed(2)} m`;
 }
 function formatArea(m2) {
-  if (m2 < 1) return `${(m2 * 1e4).toFixed(1)} cm\xB2`;
   return `${m2.toFixed(2)} m\xB2`;
 }
 function formatVolume(m3) {
-  return `${m3.toFixed(3)} m\xB3`;
+  return `${m3.toFixed(2)} m\xB3`;
 }
 function formatAngle(radians) {
   return `${(radians * 180 / Math.PI).toFixed(1)}\xB0`;
@@ -182,7 +179,7 @@ function createAdapter(source) {
       return new exports.S3SourceAdapter(source.basePath);
   }
 }
-exports.SceneManager = void 0; exports.PointCloudLoader = void 0; exports.CameraAnimator = void 0; exports.DISPLAY_PRESETS = void 0; var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE; exports.MarkerManager = void 0; var _idCounter, COLORS; exports.MeasurementManager = void 0; var VIEW_DIRECTIONS; exports.ExportManager = void 0; exports.MinimapRenderer = void 0; exports.MagnifierRenderer = void 0; var AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId; exports.ClipManager = void 0; exports.AxisWidget = void 0; var MAX_SCENES, _nextId2; exports.PresentationManager = void 0; exports.S3SourceAdapter = void 0; exports.ElectronSourceAdapter = void 0;
+exports.SceneManager = void 0; exports.PointCloudLoader = void 0; exports.CameraAnimator = void 0; exports.DISPLAY_PRESETS = void 0; var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE; exports.MarkerManager = void 0; var _idCounter, COLORS; exports.MeasurementManager = void 0; var VIEW_DIRECTIONS; exports.ExportManager = void 0; exports.MinimapRenderer = void 0; var AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId; exports.ClipManager = void 0; exports.AxisWidget = void 0; var MAX_SCENES, _nextId2; exports.PresentationManager = void 0; exports.S3SourceAdapter = void 0; exports.ElectronSourceAdapter = void 0;
 var init_dist = __esm({
   "../core/dist/index.js"() {
     exports.SceneManager = class {
@@ -218,7 +215,10 @@ var init_dist = __esm({
         this.camera.position.set(0, -50, 30);
         this.renderer = new THREE5__namespace.WebGLRenderer({
           antialias: true,
-          logarithmicDepthBuffer: true
+          logarithmicDepthBuffer: true,
+          // Keep the drawing buffer so the picking magnifier (a 2D loupe) can sample
+          // the rendered canvas between frames via drawImage.
+          preserveDrawingBuffer: true
         });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         this.renderer.setSize(w, h);
@@ -1250,7 +1250,7 @@ var init_dist = __esm({
         edges.renderOrder = 2;
         this.group.add(edges);
         objects.push(edges);
-        const text = `${m.value.toFixed(3)} m\xB3`;
+        const text = formatVolume(m.value);
         const sprite = this.makeTextSprite(text, m.color);
         sprite.position.copy(center).add(new THREE5__namespace.Vector3(0, 0, size.z / 2 + 0.5));
         const ls = this._displaySettings.measurementLabelScale;
@@ -1358,7 +1358,7 @@ var init_dist = __esm({
               text = formatAngle(m.value);
               break;
             case "volume":
-              text = `${m.value.toFixed(3)} m\xB3`;
+              text = formatVolume(m.value);
               break;
             case "point": {
               const p = pts[0];
@@ -1704,93 +1704,6 @@ var init_dist = __esm({
         this.glCanvas = null;
         this.overlayCanvas = null;
         this.container = null;
-      }
-    };
-    exports.MagnifierRenderer = class {
-      sm;
-      _cam;
-      _target = null;
-      _active = false;
-      _zoom = 7;
-      _tmpColor = new THREE5__namespace.Color();
-      /** Square edge length and corner margin, in CSS pixels. */
-      size = 168;
-      margin = 12;
-      /** Distance from the RIGHT viewport edge, CSS px (raised to clear the sidebar). */
-      _rightCss = 12;
-      constructor(sm) {
-        this.sm = sm;
-        this._cam = new THREE5__namespace.PerspectiveCamera(50, 1, 0.01, 1e7);
-      }
-      setActive(active) {
-        this._active = active;
-        if (!active) this._target = null;
-      }
-      /** Set the gap from the right edge (CSS px) so the panel clears the sidebar. */
-      setRightOffsetCss(px) {
-        this._rightCss = Math.max(this.margin, px);
-      }
-      /** Center the magnifier on a world position (the snapped point). */
-      setTarget(world) {
-        this._target = world ? world.clone() : null;
-      }
-      /** Magnification factor (relative to the main FOV). */
-      setZoom(zoom) {
-        this._zoom = Math.max(2, zoom);
-      }
-      /** Whether the magnifier currently has something to show. */
-      isShowing() {
-        return this._active && this._target !== null;
-      }
-      /** CSS-pixel rect (top-left origin) so the DOM overlay can match the region. */
-      getRectCss() {
-        const el = this.sm.renderer.domElement;
-        return { left: el.clientWidth - this.size - this.margin, top: this.margin, size: this.size };
-      }
-      /** Run from a post-render callback (after the main scene render). */
-      render() {
-        if (!this._active || !this._target) return;
-        const renderer = this.sm.renderer;
-        const el = renderer.domElement;
-        const wCss = el.clientWidth;
-        const hCss = el.clientHeight;
-        if (wCss === 0 || hCss === 0) return;
-        const dpr = renderer.getPixelRatio();
-        const sizePx = Math.round(this.size * dpr);
-        const topPx = Math.round(this.margin * dpr);
-        const rightPx = Math.round(this._rightCss * dpr);
-        const wBuf = Math.round(wCss * dpr);
-        const hBuf = Math.round(hCss * dpr);
-        const x = wBuf - sizePx - rightPx;
-        const y = hBuf - sizePx - topPx;
-        if (x < 0 || y < 0) return;
-        const main = this.sm.camera;
-        this._cam.position.copy(main.position);
-        this._cam.up.copy(main.up);
-        this._cam.near = main.near;
-        this._cam.far = main.far;
-        this._cam.fov = Math.max(1.5, main.fov / this._zoom);
-        this._cam.aspect = 1;
-        this._cam.lookAt(this._target);
-        this._cam.updateProjectionMatrix();
-        const savedVp = renderer.getViewport(new THREE5__namespace.Vector4());
-        const savedSc = renderer.getScissor(new THREE5__namespace.Vector4());
-        const savedScTest = renderer.getScissorTest();
-        const savedAutoClear = renderer.autoClear;
-        const savedClear = renderer.getClearColor(this._tmpColor).clone();
-        const savedClearAlpha = renderer.getClearAlpha();
-        renderer.autoClear = false;
-        renderer.setScissorTest(true);
-        renderer.setScissor(x, y, sizePx, sizePx);
-        renderer.setViewport(x, y, sizePx, sizePx);
-        renderer.setClearColor(658970, 1);
-        renderer.clear(true, true, false);
-        renderer.render(this.sm.scene, this._cam);
-        renderer.setViewport(savedVp);
-        renderer.setScissor(savedSc);
-        renderer.setScissorTest(savedScTest);
-        renderer.autoClear = savedAutoClear;
-        renderer.setClearColor(savedClear, savedClearAlpha);
       }
     };
     AXIS_COLOR = {
@@ -3292,9 +3205,10 @@ function Viewport({ className }) {
   const markerRef = React25.useRef(null);
   const measureRef = React25.useRef(null);
   const minimapRef = React25.useRef(null);
-  const magnifierRef = React25.useRef(null);
   const clipRef = React25.useRef(null);
+  const loupeCanvasRef = React25.useRef(null);
   const [magnifierOn, setMagnifierOn] = React25__default.default.useState(false);
+  const [loupePos, setLoupePos] = React25__default.default.useState({ x: 0, y: 0 });
   const animRef = React25.useRef(null);
   const axisRef = React25.useRef(null);
   const clipDraftRef = React25.useRef(null);
@@ -3339,10 +3253,6 @@ function Viewport({ className }) {
     axisRef.current = axisWidget;
     const axisFrame = () => axisWidget.render();
     sm.addPostRenderCallback(axisFrame);
-    const magnifier = new exports.MagnifierRenderer(sm);
-    magnifierRef.current = magnifier;
-    const magFrame = () => magnifier.render();
-    sm.addPostRenderCallback(magFrame);
     sm.start();
     loader.load("metadata.json", pointBudget).then(() => {
       const pc = loader.getPointCloud();
@@ -3369,7 +3279,6 @@ function Viewport({ className }) {
     return () => {
       sm.removeFrameCallback(minimapFrame);
       sm.removePostRenderCallback(axisFrame);
-      sm.removePostRenderCallback(magFrame);
       sm.dispose();
       measureMgr.dispose();
       markerMgr.dispose();
@@ -3450,7 +3359,6 @@ function Viewport({ className }) {
       clipDownRef.current = null;
       clipRef.current?.setDraft(null);
     }
-    magnifierRef.current?.setActive(magnifierTool);
     if (!magnifierTool) setMagnifierOn(false);
   }, [activeTool, magnifierTool]);
   React25.useEffect(() => {
@@ -3481,6 +3389,35 @@ function Viewport({ className }) {
     }
     return projectToPlaneZ(nx, ny, sm.controls.target.z);
   }, [projectToPlaneZ]);
+  const drawLoupe = React25.useCallback((hit) => {
+    const sm = smRef.current;
+    const src = sm?.renderer.domElement;
+    const loupe = loupeCanvasRef.current;
+    if (!sm || !src || !loupe) return;
+    const ctx = loupe.getContext("2d");
+    if (!ctx) return;
+    const ndc = hit.clone().project(sm.camera);
+    const bufX = (ndc.x * 0.5 + 0.5) * src.width;
+    const bufY = (1 - (ndc.y * 0.5 + 0.5)) * src.height;
+    const ratio = src.clientWidth > 0 ? src.width / src.clientWidth : 1;
+    const srcSize = LOUPE_SIZE / LOUPE_ZOOM * ratio;
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, LOUPE_SIZE, LOUPE_SIZE);
+    try {
+      ctx.drawImage(
+        src,
+        bufX - srcSize / 2,
+        bufY - srcSize / 2,
+        srcSize,
+        srcSize,
+        0,
+        0,
+        LOUPE_SIZE,
+        LOUPE_SIZE
+      );
+    } catch {
+    }
+  }, []);
   const buildClipDraftAt = React25.useCallback((nx, ny) => {
     const sm = smRef.current;
     if (!sm) return null;
@@ -3601,19 +3538,20 @@ function Viewport({ className }) {
       if (hit) {
         measureRef.current.updateSnap(hit);
         if (magnifierTool) {
-          const el = containerRef.current;
-          if (el) {
-            const raw = getComputedStyle(el).getPropertyValue("--pcv-minimap-right").trim();
-            const rem = parseFloat(raw) || 0.75;
-            const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-            magnifierRef.current?.setRightOffsetCss(rem * rootPx);
-          }
-          magnifierRef.current?.setTarget(hit);
+          drawLoupe(hit);
+          const rect = e.currentTarget.getBoundingClientRect();
+          const cx = e.clientX - rect.left;
+          const cy = e.clientY - rect.top;
+          let px = cx + LOUPE_OFFSET;
+          let py = cy + LOUPE_OFFSET;
+          if (px + LOUPE_SIZE > rect.width) px = cx - LOUPE_OFFSET - LOUPE_SIZE;
+          if (py + LOUPE_SIZE > rect.height) py = cy - LOUPE_OFFSET - LOUPE_SIZE;
+          setLoupePos({ x: Math.max(4, px), y: Math.max(4, py) });
           if (!magnifierOn) setMagnifierOn(true);
         }
       }
     }
-  }, [activeTool, pickVisiblePoint, buildClipDraftAt, magnifierTool, magnifierOn]);
+  }, [activeTool, pickVisiblePoint, buildClipDraftAt, magnifierTool, magnifierOn, drawLoupe]);
   const handleMouseUp = React25.useCallback((e) => {
     const sm = smRef.current;
     const fh = clipRef.current?.faceHandles;
@@ -3696,7 +3634,6 @@ function Viewport({ className }) {
   }, [activeTool, cameras, config, pickVisiblePoint, showMarkers]);
   const handleMouseLeave = React25.useCallback(() => {
     measureRef.current?.clearSnap();
-    magnifierRef.current?.setTarget(null);
     setMagnifierOn(false);
   }, []);
   const handleContextMenu = React25.useCallback((e) => {
@@ -3732,21 +3669,34 @@ function Viewport({ className }) {
         onMouseLeave: handleMouseLeave,
         onContextMenu: handleContextMenu,
         onDragStart: (e) => e.preventDefault(),
-        style: { cursor: activeTool === "section-box" ? "crosshair" : activeTool !== "none" ? "crosshair" : "default" }
+        style: {
+          // Hide the OS cursor while point-snapping so only the 3D crosshair
+          // shows (no doubled cross); keep a crosshair for the section tool.
+          cursor: activeTool === "section-box" ? "crosshair" : activeTool.startsWith("measure-") ? "none" : "default"
+        }
       }
     ),
     magnifierOn && magnifierTool && /* @__PURE__ */ jsxRuntime.jsxs(
       "div",
       {
-        className: "absolute rounded-lg overflow-hidden border border-white/20 shadow-xl pointer-events-none ring-1 ring-black/40",
-        style: { top: 12, right: "var(--pcv-minimap-right, 0.75rem)", width: 168, height: 168 },
+        className: "absolute rounded-lg overflow-hidden border border-white/20 shadow-xl pointer-events-none ring-1 ring-black/40 bg-[#0a0e1a]",
+        style: { left: loupePos.x, top: loupePos.y, width: LOUPE_SIZE, height: LOUPE_SIZE },
         children: [
-          /* @__PURE__ */ jsxRuntime.jsxs("svg", { width: "168", height: "168", className: "absolute inset-0", viewBox: "0 0 168 168", children: [
+          /* @__PURE__ */ jsxRuntime.jsx(
+            "canvas",
+            {
+              ref: loupeCanvasRef,
+              width: LOUPE_SIZE,
+              height: LOUPE_SIZE,
+              className: "block w-full h-full"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntime.jsxs("svg", { width: LOUPE_SIZE, height: LOUPE_SIZE, className: "absolute inset-0", viewBox: "0 0 168 168", children: [
             /* @__PURE__ */ jsxRuntime.jsx("line", { x1: "84", y1: "58", x2: "84", y2: "78", stroke: "#DCD546", strokeWidth: "1.25" }),
             /* @__PURE__ */ jsxRuntime.jsx("line", { x1: "84", y1: "90", x2: "84", y2: "110", stroke: "#DCD546", strokeWidth: "1.25" }),
             /* @__PURE__ */ jsxRuntime.jsx("line", { x1: "58", y1: "84", x2: "78", y2: "84", stroke: "#DCD546", strokeWidth: "1.25" }),
             /* @__PURE__ */ jsxRuntime.jsx("line", { x1: "90", y1: "84", x2: "110", y2: "84", stroke: "#DCD546", strokeWidth: "1.25" }),
-            /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "84", cy: "84", r: "5", fill: "none", stroke: "#DCD546", strokeWidth: "1", opacity: "0.8" })
+            /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "84", cy: "84", r: "5", fill: "none", stroke: "#DCD546", strokeWidth: "1", opacity: "0.85" })
           ] }),
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute top-1 left-2 text-[9px] font-mono text-white/45 select-none", children: "ZOOM" })
         ]
@@ -3794,6 +3744,7 @@ function Viewport({ className }) {
     ] })
   ] });
 }
+var LOUPE_SIZE, LOUPE_ZOOM, LOUPE_OFFSET;
 var init_viewport = __esm({
   "src/components/viewport.tsx"() {
     "use client";
@@ -3811,7 +3762,9 @@ var init_viewport = __esm({
     init_dist();
     init_dist();
     init_dist();
-    init_dist();
+    LOUPE_SIZE = 168;
+    LOUPE_ZOOM = 7;
+    LOUPE_OFFSET = 22;
   }
 });
 
