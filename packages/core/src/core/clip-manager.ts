@@ -205,6 +205,9 @@ export class ClipManager {
       this._faceHandles = new FaceHandleController(
         this.sm.scene, this.sm.camera, this.sm.renderer.domElement,
       );
+      // While a resize sphere is hovered, disable the move/rotate gizmos so a
+      // press can't grab two overlapping handles at once.
+      this._faceHandles.onHoverChange = (hovering) => this._setGizmosEnabled(!hovering);
     }
     this._faceHandles.setQuaternion(entry.quaternion);
     this._faceHandles.attach(entry.box, () => {
@@ -269,6 +272,37 @@ export class ClipManager {
     (this.tcMove as any)?.detach();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (this.tcRotate as any)?.detach();
+  }
+
+  /** Enable/disable picking on both gizmos (never mid-drag). */
+  private _setGizmosEnabled(enabled: boolean): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const move = this.tcMove as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rotate = this.tcRotate as any;
+    // Flipping enablement mid-drag would break an in-progress move/rotate.
+    if (move?.dragging || rotate?.dragging) return;
+    if (move) move.enabled = enabled;
+    if (rotate) rotate.enabled = enabled;
+  }
+
+  /**
+   * Reset a box's orientation back to axis-aligned (identity rotation). Targets
+   * the given box, or the selected one when omitted.
+   */
+  resetRotation(id?: string): void {
+    const targetId = id ?? this.selectedId;
+    if (!targetId) return;
+    const entry = this.entries.find(e => e.id === targetId);
+    if (!entry) return;
+    entry.quaternion.identity();
+    if (this.selectedId === targetId) {
+      this.pivot?.quaternion.identity();
+      this._faceHandles?.setQuaternion(entry.quaternion);
+    }
+    this.updateHelper(entry);
+    this.applyAll();
+    this.onChange?.(this.getBoxes());
   }
 
   removeBox(id: string): void {

@@ -487,6 +487,12 @@ declare class FaceHandleController {
     private disposed;
     /** Orientation of the box (full 3-axis rotation). */
     private _quaternion;
+    /**
+     * Fired when the cursor starts / stops hovering a resize handle. The owner
+     * (ClipManager) uses this to disable the move/rotate gizmos while a sphere is
+     * hovered, so a press can't grab two overlapping handles at once.
+     */
+    onHoverChange?: (hovering: boolean) => void;
     constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement);
     private createHandles;
     attach(box: THREE.Box3, onChange: (box: THREE.Box3) => void): void;
@@ -584,6 +590,13 @@ declare class ClipManager {
     private _attachGizmos;
     /** Detach both gizmos. */
     private _detachGizmos;
+    /** Enable/disable picking on both gizmos (never mid-drag). */
+    private _setGizmosEnabled;
+    /**
+     * Reset a box's orientation back to axis-aligned (identity rotation). Targets
+     * the given box, or the selected one when omitted.
+     */
+    resetRotation(id?: string): void;
     removeBox(id: string): void;
     setBoxMode(id: string, mode: ClipMode): void;
     /**

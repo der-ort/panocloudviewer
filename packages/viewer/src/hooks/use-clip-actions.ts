@@ -48,6 +48,10 @@ export function useClipActions() {
     clipManager?.selectBox(id);
   }, [clipManager]);
 
+  const resetRotation = useCallback((id?: string) => {
+    clipManager?.resetRotation(id);
+  }, [clipManager]);
+
   const removeBox = useCallback((id: string) => {
     clipManager?.removeBox(id);
   }, [clipManager]);
@@ -73,6 +77,7 @@ export function useClipActions() {
     setEnabled,
     setOutlinesVisible,
     selectBox,
+    resetRotation,
     removeBox,
     setBoxVisible,
     setModeAll,

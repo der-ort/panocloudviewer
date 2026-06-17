@@ -52,6 +52,13 @@ export class FaceHandleController {
   /** Orientation of the box (full 3-axis rotation). */
   private _quaternion = new THREE.Quaternion();
 
+  /**
+   * Fired when the cursor starts / stops hovering a resize handle. The owner
+   * (ClipManager) uses this to disable the move/rotate gizmos while a sphere is
+   * hovered, so a press can't grab two overlapping handles at once.
+   */
+  onHoverChange?: (hovering: boolean) => void;
+
   constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement) {
     this.scene = scene;
     this.camera = camera;
@@ -99,11 +106,13 @@ export class FaceHandleController {
   }
 
   detach(): void {
+    const wasHovering = this.hoveredHandle !== null;
     this.box = null;
     this.onChange = null;
     this.drag = null;
     this.hoveredHandle = null;
     for (const h of this.handles) h.mesh.visible = false;
+    if (wasHovering) this.onHoverChange?.(false);
   }
 
   isAttached(): boolean {
@@ -144,6 +153,11 @@ export class FaceHandleController {
       } else {
         offset[h.axis] = this.box.min[h.axis] - center[h.axis];
       }
+      // Push the handle slightly OFF the face (along its own axis) plus a
+      // constant pad so it doesn't sit on top of the move arrows / rotate rings,
+      // making each handle easier to grab without catching a neighbour.
+      const half = Math.abs(offset[h.axis]);
+      offset[h.axis] += h.sign * (half * 0.12 + radius * 1.5);
       // Rotate the offset by the box orientation, then translate by center.
       offset.applyQuaternion(this._quaternion);
       h.mesh.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
@@ -249,6 +263,7 @@ export class FaceHandleController {
 
     const hit = this.hitTest(clientX, clientY);
     if (hit !== this.hoveredHandle) {
+      const wasHovering = this.hoveredHandle !== null;
       if (this.hoveredHandle) {
         this.setHandleColor(this.hoveredHandle, AXIS_COLOR[this.hoveredHandle.axis]);
       }
@@ -256,6 +271,8 @@ export class FaceHandleController {
       if (hit) {
         this.setHandleColor(hit, HANDLE_HOVER_COLOR);
       }
+      const nowHovering = hit !== null;
+      if (nowHovering !== wasHovering) this.onHoverChange?.(nowHovering);
     }
   }
 

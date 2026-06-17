@@ -7,6 +7,7 @@ import {
   EyeOff,
   Plus,
   Power,
+  RotateCcw,
   Scissors,
   ScissorsLineDashed,
   Trash2,
@@ -16,7 +17,7 @@ import { useClipActions } from "../../hooks/use-clip-actions";
 import { useLocale } from "../../i18n/locale-context";
 
 export function ClipToolbar() {
-  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible } =
+  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible, resetRotation } =
     useClipActions();
   const t = useLocale().clipToolbar;
 
@@ -177,9 +178,22 @@ export function ClipToolbar() {
           rotation rings, and face-resize handles) are shown together in the
           viewport — no mode switching needed. */}
       {selectedClipBoxId && (
-        <p className="px-2 pt-2 text-[10px] leading-snug text-muted-foreground/70">
-          Drag the arrows to move, the rings to rotate, and the coloured handles to resize.
-        </p>
+        <>
+          <div className="h-px bg-white/10 mx-1 mt-1.5 mb-1.5" />
+          <div className="px-1">
+            <button
+              onClick={() => resetRotation()}
+              title="Reset the box back to axis-aligned"
+              className="w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs border border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            >
+              <RotateCcw size={12} />
+              <span className="flex-1 text-left">Reset rotation</span>
+            </button>
+          </div>
+          <p className="px-2 pt-2 text-[10px] leading-snug text-muted-foreground/70">
+            Drag the arrows to move, the rings to rotate, and the coloured handles to resize.
+          </p>
+        </>
       )}
     </div>
   );

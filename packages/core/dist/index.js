@@ -1577,6 +1577,12 @@ var FaceHandleController = class {
   disposed = false;
   /** Orientation of the box (full 3-axis rotation). */
   _quaternion = new THREE5.Quaternion();
+  /**
+   * Fired when the cursor starts / stops hovering a resize handle. The owner
+   * (ClipManager) uses this to disable the move/rotate gizmos while a sphere is
+   * hovered, so a press can't grab two overlapping handles at once.
+   */
+  onHoverChange;
   constructor(scene, camera, domElement) {
     this.scene = scene;
     this.camera = camera;
@@ -1619,11 +1625,13 @@ var FaceHandleController = class {
     if (this.box) this.updatePositions();
   }
   detach() {
+    const wasHovering = this.hoveredHandle !== null;
     this.box = null;
     this.onChange = null;
     this.drag = null;
     this.hoveredHandle = null;
     for (const h of this.handles) h.mesh.visible = false;
+    if (wasHovering) this.onHoverChange?.(false);
   }
   isAttached() {
     return this.box !== null;
@@ -1654,6 +1662,8 @@ var FaceHandleController = class {
       } else {
         offset[h.axis] = this.box.min[h.axis] - center[h.axis];
       }
+      const half = Math.abs(offset[h.axis]);
+      offset[h.axis] += h.sign * (half * 0.12 + radius * 1.5);
       offset.applyQuaternion(this._quaternion);
       h.mesh.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
       h.mesh.scale.setScalar(radius);
@@ -1735,6 +1745,7 @@ var FaceHandleController = class {
     if (this.drag || !this.box) return;
     const hit = this.hitTest(clientX, clientY);
     if (hit !== this.hoveredHandle) {
+      const wasHovering = this.hoveredHandle !== null;
       if (this.hoveredHandle) {
         this.setHandleColor(this.hoveredHandle, AXIS_COLOR[this.hoveredHandle.axis]);
       }
@@ -1742,6 +1753,8 @@ var FaceHandleController = class {
       if (hit) {
         this.setHandleColor(hit, HANDLE_HOVER_COLOR);
       }
+      const nowHovering = hit !== null;
+      if (nowHovering !== wasHovering) this.onHoverChange?.(nowHovering);
     }
   }
   dispose() {
@@ -1927,6 +1940,7 @@ var ClipManager = class {
         this.sm.camera,
         this.sm.renderer.domElement
       );
+      this._faceHandles.onHoverChange = (hovering) => this._setGizmosEnabled(!hovering);
     }
     this._faceHandles.setQuaternion(entry.quaternion);
     this._faceHandles.attach(entry.box, () => {
@@ -1975,6 +1989,32 @@ var ClipManager = class {
   _detachGizmos() {
     this.tcMove?.detach();
     this.tcRotate?.detach();
+  }
+  /** Enable/disable picking on both gizmos (never mid-drag). */
+  _setGizmosEnabled(enabled) {
+    const move = this.tcMove;
+    const rotate = this.tcRotate;
+    if (move?.dragging || rotate?.dragging) return;
+    if (move) move.enabled = enabled;
+    if (rotate) rotate.enabled = enabled;
+  }
+  /**
+   * Reset a box's orientation back to axis-aligned (identity rotation). Targets
+   * the given box, or the selected one when omitted.
+   */
+  resetRotation(id) {
+    const targetId = id ?? this.selectedId;
+    if (!targetId) return;
+    const entry = this.entries.find((e) => e.id === targetId);
+    if (!entry) return;
+    entry.quaternion.identity();
+    if (this.selectedId === targetId) {
+      this.pivot?.quaternion.identity();
+      this._faceHandles?.setQuaternion(entry.quaternion);
+    }
+    this.updateHelper(entry);
+    this.applyAll();
+    this.onChange?.(this.getBoxes());
   }
   removeBox(id) {
     const idx = this.entries.findIndex((e) => e.id === id);

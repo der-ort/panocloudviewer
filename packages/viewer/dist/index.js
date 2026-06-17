@@ -4,7 +4,7 @@ import React25, { createContext, lazy, useContext, useState, useCallback, useEff
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { X, ChevronDown, ChevronUp, Check, Download, Settings, Sliders, Map as Map$1, Layers, Sun, Moon, BoxSelect, Plus, Trash2, Scissors, ScissorsLineDashed, Power, Eye, EyeOff, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Camera, Tag, ChevronRight, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, RotateCcw, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Check, Download, Settings, Sliders, Map as Map$1, Layers, Sun, Moon, BoxSelect, Plus, Trash2, Scissors, ScissorsLineDashed, Power, Eye, EyeOff, RotateCcw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Camera, Tag, ChevronRight, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cva } from 'class-variance-authority';
 import * as SliderPrimitive from '@radix-ui/react-slider';
@@ -1629,6 +1629,12 @@ var init_dist = __esm({
       disposed = false;
       /** Orientation of the box (full 3-axis rotation). */
       _quaternion = new THREE5.Quaternion();
+      /**
+       * Fired when the cursor starts / stops hovering a resize handle. The owner
+       * (ClipManager) uses this to disable the move/rotate gizmos while a sphere is
+       * hovered, so a press can't grab two overlapping handles at once.
+       */
+      onHoverChange;
       constructor(scene, camera, domElement) {
         this.scene = scene;
         this.camera = camera;
@@ -1671,11 +1677,13 @@ var init_dist = __esm({
         if (this.box) this.updatePositions();
       }
       detach() {
+        const wasHovering = this.hoveredHandle !== null;
         this.box = null;
         this.onChange = null;
         this.drag = null;
         this.hoveredHandle = null;
         for (const h of this.handles) h.mesh.visible = false;
+        if (wasHovering) this.onHoverChange?.(false);
       }
       isAttached() {
         return this.box !== null;
@@ -1706,6 +1714,8 @@ var init_dist = __esm({
           } else {
             offset[h.axis] = this.box.min[h.axis] - center[h.axis];
           }
+          const half = Math.abs(offset[h.axis]);
+          offset[h.axis] += h.sign * (half * 0.12 + radius * 1.5);
           offset.applyQuaternion(this._quaternion);
           h.mesh.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
           h.mesh.scale.setScalar(radius);
@@ -1787,6 +1797,7 @@ var init_dist = __esm({
         if (this.drag || !this.box) return;
         const hit = this.hitTest(clientX, clientY);
         if (hit !== this.hoveredHandle) {
+          const wasHovering = this.hoveredHandle !== null;
           if (this.hoveredHandle) {
             this.setHandleColor(this.hoveredHandle, AXIS_COLOR[this.hoveredHandle.axis]);
           }
@@ -1794,6 +1805,8 @@ var init_dist = __esm({
           if (hit) {
             this.setHandleColor(hit, HANDLE_HOVER_COLOR);
           }
+          const nowHovering = hit !== null;
+          if (nowHovering !== wasHovering) this.onHoverChange?.(nowHovering);
         }
       }
       dispose() {
@@ -1974,6 +1987,7 @@ var init_dist = __esm({
             this.sm.camera,
             this.sm.renderer.domElement
           );
+          this._faceHandles.onHoverChange = (hovering) => this._setGizmosEnabled(!hovering);
         }
         this._faceHandles.setQuaternion(entry.quaternion);
         this._faceHandles.attach(entry.box, () => {
@@ -2022,6 +2036,32 @@ var init_dist = __esm({
       _detachGizmos() {
         this.tcMove?.detach();
         this.tcRotate?.detach();
+      }
+      /** Enable/disable picking on both gizmos (never mid-drag). */
+      _setGizmosEnabled(enabled) {
+        const move = this.tcMove;
+        const rotate = this.tcRotate;
+        if (move?.dragging || rotate?.dragging) return;
+        if (move) move.enabled = enabled;
+        if (rotate) rotate.enabled = enabled;
+      }
+      /**
+       * Reset a box's orientation back to axis-aligned (identity rotation). Targets
+       * the given box, or the selected one when omitted.
+       */
+      resetRotation(id) {
+        const targetId = id ?? this.selectedId;
+        if (!targetId) return;
+        const entry = this.entries.find((e) => e.id === targetId);
+        if (!entry) return;
+        entry.quaternion.identity();
+        if (this.selectedId === targetId) {
+          this.pivot?.quaternion.identity();
+          this._faceHandles?.setQuaternion(entry.quaternion);
+        }
+        this.updateHelper(entry);
+        this.applyAll();
+        this.onChange?.(this.getBoxes());
       }
       removeBox(id) {
         const idx = this.entries.findIndex((e) => e.id === id);
@@ -4202,6 +4242,9 @@ function useClipActions() {
   const selectBox = useCallback((id) => {
     clipManager?.selectBox(id);
   }, [clipManager]);
+  const resetRotation = useCallback((id) => {
+    clipManager?.resetRotation(id);
+  }, [clipManager]);
   const removeBox = useCallback((id) => {
     clipManager?.removeBox(id);
   }, [clipManager]);
@@ -4224,6 +4267,7 @@ function useClipActions() {
     setEnabled,
     setOutlinesVisible,
     selectBox,
+    resetRotation,
     removeBox,
     setBoxVisible,
     setModeAll
@@ -4233,7 +4277,7 @@ function useClipActions() {
 // src/components/toolbar/clip-toolbar.tsx
 init_locale_context();
 function ClipToolbar() {
-  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible } = useClipActions();
+  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible, resetRotation } = useClipActions();
   const t = useLocale().clipToolbar;
   const [enabled, setEnabledLocal] = React25.useState(isEnabled);
   const [outlines, setOutlinesLocal] = React25.useState(outlinesVisible);
@@ -4374,7 +4418,22 @@ function ClipToolbar() {
         box.id
       );
     }) }),
-    selectedClipBoxId && /* @__PURE__ */ jsx("p", { className: "px-2 pt-2 text-[10px] leading-snug text-muted-foreground/70", children: "Drag the arrows to move, the rings to rotate, and the coloured handles to resize." })
+    selectedClipBoxId && /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsx("div", { className: "h-px bg-white/10 mx-1 mt-1.5 mb-1.5" }),
+      /* @__PURE__ */ jsx("div", { className: "px-1", children: /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: () => resetRotation(),
+          title: "Reset the box back to axis-aligned",
+          className: "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs border border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
+          children: [
+            /* @__PURE__ */ jsx(RotateCcw, { size: 12 }),
+            /* @__PURE__ */ jsx("span", { className: "flex-1 text-left", children: "Reset rotation" })
+          ]
+        }
+      ) }),
+      /* @__PURE__ */ jsx("p", { className: "px-2 pt-2 text-[10px] leading-snug text-muted-foreground/70", children: "Drag the arrows to move, the rings to rotate, and the coloured handles to resize." })
+    ] })
   ] });
 }
 
