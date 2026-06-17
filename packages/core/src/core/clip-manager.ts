@@ -392,6 +392,36 @@ export class ClipManager {
   }
 
   /**
+   * Whether a world-space point survives the current clipping (i.e. is part of
+   * the kept/visible region). Used to cull out-of-bounds panorama markers and to
+   * reject picks on clipped-away points. Returns true when clipping is off or
+   * there are no visible boxes.
+   */
+  isPointVisible(p: THREE.Vector3): boolean {
+    if (!this._enabled) return true;
+    const visible = this.entries.filter(e => e.visible);
+    if (visible.length === 0) return true;
+    const insideAny = visible.some(e => this._pointInBox(p, e));
+    // Global mode (potree allows one): "outside" keeps points INSIDE the box,
+    // "inside" removes points inside the box.
+    return visible[0].mode === "outside" ? insideAny : !insideAny;
+  }
+
+  /** Point-in-(rotated)-box test using the entry's center, size and quaternion. */
+  private _pointInBox(p: THREE.Vector3, entry: ClipBoxEntry): boolean {
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    entry.box.getCenter(center);
+    entry.box.getSize(size);
+    const local = p.clone().sub(center).applyQuaternion(entry.quaternion.clone().invert());
+    return (
+      Math.abs(local.x) <= size.x / 2 &&
+      Math.abs(local.y) <= size.y / 2 &&
+      Math.abs(local.z) <= size.z / 2
+    );
+  }
+
+  /**
    * Globally show/hide ALL box outlines, fills, handles and gizmos WITHOUT
    * affecting clipping — clipping stays active so you keep the cropped view but
    * get a clean image (e.g. for screenshots). Per-box visibility still applies

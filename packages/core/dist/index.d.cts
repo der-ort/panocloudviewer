@@ -343,11 +343,22 @@ declare class MarkerManager {
     private _pinTexture?;
     /** World-space vertical offset for the label anchor above the pin. */
     private _labelOffset;
+    /** Optional clip predicate — markers whose position fails it are hidden. */
+    private _clipFilter;
     constructor(scene: THREE.Scene);
     /** Apply new display settings and rebuild all markers */
     applyDisplaySettings(settings: DisplaySettings): void;
     /** Build markers from camera data. Pass worldBox for auto-scaling. */
     build(cameras: CameraData[], worldBox?: THREE.Box3): void;
+    /**
+     * Hide panorama markers whose camera position falls outside the kept clip
+     * region. Pass `null` to clear the filter (all markers visible). The predicate
+     * is typically `ClipManager.isPointVisible`.
+     */
+    applyClipFilter(predicate: ((pos: THREE.Vector3) => boolean) | null): void;
+    /** Whether a marker survives the active clip filter. */
+    private _passesClip;
+    private _applyAllMarkerVisibility;
     /** Lazily build (and cache) the shared circular pin texture. */
     private _getPinTexture;
     private _makePin;
@@ -375,8 +386,9 @@ declare class MeasurementManager {
     onChange?: (measurements: Measurement[]) => void;
     activeMeasurement: Measurement | null;
     private previewLine;
-    private _snapSphere;
+    private _snapCross;
     private _snapLine;
+    private _crossTexture?;
     constructor(scene: THREE.Scene);
     getAll(): Measurement[];
     /** Apply new display settings and rebuild all existing measurements */
@@ -398,6 +410,8 @@ declare class MeasurementManager {
      *  - A rubber-band line from the last placed point to the snap position
      */
     updateSnap(worldPos: THREE.Vector3, color?: string): void;
+    /** Build (and cache) the stylized crosshair sprite texture. */
+    private _getCrossTexture;
     /** Hide the snap preview (call on mouse leave or tool deactivation) */
     clearSnap(): void;
     private _volumeDraft;
@@ -467,6 +481,50 @@ declare class MinimapRenderer {
     /** Handle resize (called by parent when container size changes) */
     resize(): void;
     dispose(): void;
+}
+
+/**
+ * Point-picking magnifier. While a measurement tool is active, this renders a
+ * zoomed-in view of the area around the snapped point into a small square
+ * region in the top-right of the viewport, so the user can place points with
+ * pixel precision. It reuses the MAIN renderer via a scissored post-render pass
+ * (like {@link AxisWidget}) — no second WebGL context and no duplicated point
+ * uploads — so it stays cheap.
+ *
+ * The zoom is achieved by aiming a cloned camera at the snap target with a
+ * narrow FOV, which keeps the target centered (under the DOM crosshair the
+ * viewport draws over this region).
+ */
+declare class MagnifierRenderer {
+    private sm;
+    private _cam;
+    private _target;
+    private _active;
+    private _zoom;
+    private _tmpColor;
+    /** Square edge length and corner margin, in CSS pixels. */
+    readonly size = 168;
+    readonly margin = 12;
+    /** Distance from the RIGHT viewport edge, CSS px (raised to clear the sidebar). */
+    private _rightCss;
+    constructor(sm: SceneManager);
+    setActive(active: boolean): void;
+    /** Set the gap from the right edge (CSS px) so the panel clears the sidebar. */
+    setRightOffsetCss(px: number): void;
+    /** Center the magnifier on a world position (the snapped point). */
+    setTarget(world: THREE.Vector3 | null): void;
+    /** Magnification factor (relative to the main FOV). */
+    setZoom(zoom: number): void;
+    /** Whether the magnifier currently has something to show. */
+    isShowing(): boolean;
+    /** CSS-pixel rect (top-left origin) so the DOM overlay can match the region. */
+    getRectCss(): {
+        left: number;
+        top: number;
+        size: number;
+    };
+    /** Run from a post-render callback (after the main scene render). */
+    render(): void;
 }
 
 /**
@@ -612,6 +670,15 @@ declare class ClipManager {
     setEnabled(enabled: boolean): void;
     isEnabled(): boolean;
     /**
+     * Whether a world-space point survives the current clipping (i.e. is part of
+     * the kept/visible region). Used to cull out-of-bounds panorama markers and to
+     * reject picks on clipped-away points. Returns true when clipping is off or
+     * there are no visible boxes.
+     */
+    isPointVisible(p: THREE.Vector3): boolean;
+    /** Point-in-(rotated)-box test using the entry's center, size and quaternion. */
+    private _pointInBox;
+    /**
      * Globally show/hide ALL box outlines, fills, handles and gizmos WITHOUT
      * affecting clipping — clipping stays active so you keep the cropped view but
      * get a clean image (e.g. for screenshots). Per-box visibility still applies
@@ -732,4 +799,4 @@ declare function formatCoord(x: number, y: number, z: number, decimals?: number)
 /** Export measurements as a CSV string */
 declare function exportMeasurementsCSV(measurements: Measurement[]): string;
 
-export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };
+export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type LocalSource, MagnifierRenderer, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };

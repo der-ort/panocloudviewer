@@ -81,8 +81,8 @@ pnpm lint                                             # TypeScript check across 
 │  LAYER 2 — Manager Classes  (packages/core)         │
 │  SceneManager · PointCloudLoader · CameraAnimator   │
 │  MarkerManager · MeasurementManager · ClipManager   │
-│  ExportManager · MinimapRenderer · PresentationMgr  │
-│  AxisWidget                                         │
+│  ExportManager · MinimapRenderer · MagnifierRenderer│
+│  PresentationManager · AxisWidget                   │
 │  Instantiated inside Viewport; passed up via setters│
 ├─────────────────────────────────────────────────────┤
 │  LAYER 3 — Renderer / WebGL                         │
@@ -170,6 +170,7 @@ Renders panorama camera markers as constant on-screen-size pins.
 - **`getMeshes()`**: Returns sprites for raycasting.
 - **`setHovered(idx)` / `setSelected(idx)`**: Recolors the sprite texture (default=yellow, hover=white, selected=orange-red); also reveals the label when `markerLabelMode="hover"`.
 - **`setVisible(visible)`**: Shows/hides the entire group.
+- **`applyClipFilter(predicate | null)`**: Hides markers whose camera position fails the predicate (typically `ClipManager.isPointVisible`), so panorama pins **out of the clip bounds are culled**. The Viewport re-applies this on every clip mutation; `build()` re-applies the stored filter. Pass `null` to show all.
 - **`dispose()`**: Disposes textures and materials, removes group from scene.
 
 ### `MeasurementManager` (`core/measurement-manager.ts`)
@@ -179,6 +180,7 @@ Interactive 3D measurement tool with visual scene objects.
 - **`addPoint(point)`**: Appends a point to the active measurement. Auto-finishes for `point` (1 pt), `distance`/`height` (2 pts), `angle` (3 pts). Rebuilds preview line while drawing.
 - **`finish()`**: Computes value (distance, height, area via shoelace, angle, volume via bounding box), builds permanent 3D objects (spheres + lines + text sprite), stores in map, fires `onChange`.
 - **`remove(id)` / `clearAll()`**: Disposes geometry/materials, removes from scene.
+- **`updateSnap(worldPos, color?)` / `clearSnap()`**: Live cursor preview while measuring. The indicator is a **constant on-screen crosshair sprite** (`sizeAttenuation:false`, `depthTest:false`) — not a ball — for precise targeting, plus a dashed rubber-band line from the last placed point. Paired with the `MagnifierRenderer` zoom.
 - **`onChange?: (measurements: Measurement[]) => void`**: Wired to `setMeasurementList` in Viewport.
 
 ### `MinimapRenderer` (`core/minimap-renderer.ts`)
@@ -190,6 +192,13 @@ Top-down orthographic minimap with overlay, rendered in the **bottom-right** cor
 - **`canvasToWorld(cx, cy)`**: Converts canvas pixel coordinates to world XY for click-to-navigate.
 - **`resize()`**: Syncs canvas dimensions to container.
 - **`dispose()`**: Removes canvases, disposes renderer.
+
+### `MagnifierRenderer` (`core/magnifier-renderer.ts`)
+Point-picking magnifier shown while a (non-volume) measurement tool is active. Renders a zoomed view of the area around the snapped point into a small square in the **top-right** of the viewport for pixel-precise picking.
+
+- Reuses the **main renderer** via a scissored post-render pass (registered with `SceneManager.addPostRenderCallback`) — like `AxisWidget`, so **no second WebGL context** and no duplicated point uploads. Only renders when `setActive(true)` AND a target is set.
+- **Zoom** = a cloned camera at the main eye, aimed (`lookAt`) at the snap target with a narrow FOV (`mainFov / zoom`), which keeps the target centered under the DOM crosshair the viewport overlays on the region.
+- **`setActive(b)` / `setTarget(world|null)` / `setZoom(z)` / `setRightOffsetCss(px)`**: the viewport drives these from the measurement snap handler. `setRightOffsetCss` clears the sidebar by reusing the `--pcv-minimap-right` offset so the on-canvas region lines up with its DOM frame.
 
 ### `PresentationManager` (`core/presentation-manager.ts`)
 Persists named viewer scenes (camera position + clip boxes + display settings) in `localStorage`.
@@ -336,6 +345,12 @@ potree-core's default material settings are `inputColorEncoding=SRGB, outputColo
 
 ### Lazy-import of potree-core
 potree-core is a heavy, WebGL-only bundle. Importing it at module load time would break SSR (Next.js server renders) and slow initial bundle load. It is always imported inside `async` functions: `const { Potree, PointColorType } = await import("potree-core")`.
+
+### Clipping already concentrates the point budget (potree-core node culling)
+potree-core's visibility traversal calls `shouldClip(node)` and **skips octree nodes whose bounding box lies entirely outside the clip box** — but only when the material's `clipMode === CLIP_OUTSIDE` (=1), i.e. our **"outside" / "Keep inside box"** mode (the default). Those nodes are never loaded/rendered and **don't consume the point budget**, so the budget is automatically reallocated to subdivide the cropped region (higher density inside the crop). This is built into potree-core — `ClipManager.applyAll()` just needs to set `clipMode=1` and call `setClipBoxes(...)`, which it does. The "inside" / "Keep outside box" mode (clipMode=2) can't node-cull (most of the cloud is kept) — that's inherent. Points in nodes that *partially* intersect the box are still shader-clipped per-point.
+
+### Measuring snaps to VISIBLE points only
+`SceneManager.pickPoint` uses potree-core's GPU pick, which returns the front-most *rendered* point under the cursor (so hidden/behind points aren't picked). On top of that, the Viewport's `pickVisiblePoint` rejects any pick that fails `ClipManager.isPointVisible(p)` and falls back to a ground-plane projection — so a section box never lets you measure to clipped-away geometry. `isPointVisible` does a point-in-(rotated)-box test against the entry's center/size/quaternion and honours the global enable flag + clip mode.
 
 ### Pluggable panorama engine (`panoEngine`)
 The 360° overlay (`PanoViewer`) is engine-pluggable via the `panoEngine` prop / config field (`"photo-sphere-viewer"` default | `"pannellum"` fallback), also switchable at runtime through `useViewer().setPanoEngine` (the overlay header has an A/B toggle). Engine adapters live in `packages/viewer/src/components/overlays/pano-engines/` — each exports a `PanoEngineInit` (`(container, camera) => Promise<{ destroy() }>`). `getPanoEngine(engine)` maps the config value to its adapter. Both engines load **lazily from CDN** (nothing ships in the SSR/initial bundle).

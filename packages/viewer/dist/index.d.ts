@@ -355,11 +355,22 @@ declare class MarkerManager {
     private _pinTexture?;
     /** World-space vertical offset for the label anchor above the pin. */
     private _labelOffset;
+    /** Optional clip predicate — markers whose position fails it are hidden. */
+    private _clipFilter;
     constructor(scene: THREE.Scene);
     /** Apply new display settings and rebuild all markers */
     applyDisplaySettings(settings: DisplaySettings): void;
     /** Build markers from camera data. Pass worldBox for auto-scaling. */
     build(cameras: CameraData[], worldBox?: THREE.Box3): void;
+    /**
+     * Hide panorama markers whose camera position falls outside the kept clip
+     * region. Pass `null` to clear the filter (all markers visible). The predicate
+     * is typically `ClipManager.isPointVisible`.
+     */
+    applyClipFilter(predicate: ((pos: THREE.Vector3) => boolean) | null): void;
+    /** Whether a marker survives the active clip filter. */
+    private _passesClip;
+    private _applyAllMarkerVisibility;
     /** Lazily build (and cache) the shared circular pin texture. */
     private _getPinTexture;
     private _makePin;
@@ -387,8 +398,9 @@ declare class MeasurementManager {
     onChange?: (measurements: Measurement[]) => void;
     activeMeasurement: Measurement | null;
     private previewLine;
-    private _snapSphere;
+    private _snapCross;
     private _snapLine;
+    private _crossTexture?;
     constructor(scene: THREE.Scene);
     getAll(): Measurement[];
     /** Apply new display settings and rebuild all existing measurements */
@@ -410,6 +422,8 @@ declare class MeasurementManager {
      *  - A rubber-band line from the last placed point to the snap position
      */
     updateSnap(worldPos: THREE.Vector3, color?: string): void;
+    /** Build (and cache) the stylized crosshair sprite texture. */
+    private _getCrossTexture;
     /** Hide the snap preview (call on mouse leave or tool deactivation) */
     clearSnap(): void;
     private _volumeDraft;
@@ -479,6 +493,50 @@ declare class MinimapRenderer {
     /** Handle resize (called by parent when container size changes) */
     resize(): void;
     dispose(): void;
+}
+
+/**
+ * Point-picking magnifier. While a measurement tool is active, this renders a
+ * zoomed-in view of the area around the snapped point into a small square
+ * region in the top-right of the viewport, so the user can place points with
+ * pixel precision. It reuses the MAIN renderer via a scissored post-render pass
+ * (like {@link AxisWidget}) — no second WebGL context and no duplicated point
+ * uploads — so it stays cheap.
+ *
+ * The zoom is achieved by aiming a cloned camera at the snap target with a
+ * narrow FOV, which keeps the target centered (under the DOM crosshair the
+ * viewport draws over this region).
+ */
+declare class MagnifierRenderer {
+    private sm;
+    private _cam;
+    private _target;
+    private _active;
+    private _zoom;
+    private _tmpColor;
+    /** Square edge length and corner margin, in CSS pixels. */
+    readonly size = 168;
+    readonly margin = 12;
+    /** Distance from the RIGHT viewport edge, CSS px (raised to clear the sidebar). */
+    private _rightCss;
+    constructor(sm: SceneManager);
+    setActive(active: boolean): void;
+    /** Set the gap from the right edge (CSS px) so the panel clears the sidebar. */
+    setRightOffsetCss(px: number): void;
+    /** Center the magnifier on a world position (the snapped point). */
+    setTarget(world: THREE.Vector3 | null): void;
+    /** Magnification factor (relative to the main FOV). */
+    setZoom(zoom: number): void;
+    /** Whether the magnifier currently has something to show. */
+    isShowing(): boolean;
+    /** CSS-pixel rect (top-left origin) so the DOM overlay can match the region. */
+    getRectCss(): {
+        left: number;
+        top: number;
+        size: number;
+    };
+    /** Run from a post-render callback (after the main scene render). */
+    render(): void;
 }
 
 /**
@@ -623,6 +681,15 @@ declare class ClipManager {
      */
     setEnabled(enabled: boolean): void;
     isEnabled(): boolean;
+    /**
+     * Whether a world-space point survives the current clipping (i.e. is part of
+     * the kept/visible region). Used to cull out-of-bounds panorama markers and to
+     * reject picks on clipped-away points. Returns true when clipping is off or
+     * there are no visible boxes.
+     */
+    isPointVisible(p: THREE.Vector3): boolean;
+    /** Point-in-(rotated)-box test using the entry's center, size and quaternion. */
+    private _pointInBox;
     /**
      * Globally show/hide ALL box outlines, fills, handles and gizmos WITHOUT
      * affecting clipping — clipping stays active so you keep the cropped view but
@@ -1508,4 +1575,4 @@ declare const en: ViewerLocale;
 
 declare const de: ViewerLocale;
 
-export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type LocalSource, LocaleProvider, MagnifierRenderer, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };

@@ -182,7 +182,7 @@ function createAdapter(source) {
       return new exports.S3SourceAdapter(source.basePath);
   }
 }
-exports.SceneManager = void 0; exports.PointCloudLoader = void 0; exports.CameraAnimator = void 0; exports.DISPLAY_PRESETS = void 0; var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE; exports.MarkerManager = void 0; var _idCounter, COLORS; exports.MeasurementManager = void 0; var VIEW_DIRECTIONS; exports.ExportManager = void 0; exports.MinimapRenderer = void 0; var AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId; exports.ClipManager = void 0; exports.AxisWidget = void 0; var MAX_SCENES, _nextId2; exports.PresentationManager = void 0; exports.S3SourceAdapter = void 0; exports.ElectronSourceAdapter = void 0;
+exports.SceneManager = void 0; exports.PointCloudLoader = void 0; exports.CameraAnimator = void 0; exports.DISPLAY_PRESETS = void 0; var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE; exports.MarkerManager = void 0; var _idCounter, COLORS; exports.MeasurementManager = void 0; var VIEW_DIRECTIONS; exports.ExportManager = void 0; exports.MinimapRenderer = void 0; exports.MagnifierRenderer = void 0; var AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId; exports.ClipManager = void 0; exports.AxisWidget = void 0; var MAX_SCENES, _nextId2; exports.PresentationManager = void 0; exports.S3SourceAdapter = void 0; exports.ElectronSourceAdapter = void 0;
 var init_dist = __esm({
   "../core/dist/index.js"() {
     exports.SceneManager = class {
@@ -737,6 +737,8 @@ var init_dist = __esm({
       _pinTexture;
       /** World-space vertical offset for the label anchor above the pin. */
       _labelOffset = 0.5;
+      /** Optional clip predicate — markers whose position fails it are hidden. */
+      _clipFilter = null;
       constructor(scene) {
         this.scene = scene;
         this.group = new THREE5__namespace.Group();
@@ -776,6 +778,31 @@ var init_dist = __esm({
           this.group.add(label);
           this.entries.push({ pin, label });
         });
+        this._applyAllMarkerVisibility();
+      }
+      /**
+       * Hide panorama markers whose camera position falls outside the kept clip
+       * region. Pass `null` to clear the filter (all markers visible). The predicate
+       * is typically `ClipManager.isPointVisible`.
+       */
+      applyClipFilter(predicate) {
+        this._clipFilter = predicate;
+        this._applyAllMarkerVisibility();
+      }
+      /** Whether a marker survives the active clip filter. */
+      _passesClip(idx) {
+        if (!this._clipFilter) return true;
+        const cam = this._cameras[idx];
+        if (!cam?.position) return true;
+        return this._clipFilter(new THREE5__namespace.Vector3(cam.position.x, cam.position.y, cam.position.z));
+      }
+      _applyAllMarkerVisibility() {
+        for (let i = 0; i < this.entries.length; i++) {
+          const entry = this.entries[i];
+          const pass = this._passesClip(i);
+          entry.pin.visible = pass;
+          entry.label.visible = pass && this._labelShouldShow(i);
+        }
       }
       /** Lazily build (and cache) the shared circular pin texture. */
       _getPinTexture() {
@@ -866,7 +893,7 @@ var init_dist = __esm({
       _applyLabelVisibility(idx) {
         const entry = this.entries[idx];
         if (!entry) return;
-        entry.label.visible = this._labelShouldShow(idx);
+        entry.label.visible = this._passesClip(idx) && this._labelShouldShow(idx);
       }
       setVisible(visible) {
         this.group.visible = visible;
@@ -939,9 +966,11 @@ var init_dist = __esm({
       activeMeasurement = null;
       previewLine = null;
       // Snap preview — cursor indicator + rubber-band line to show where the
-      // next point will land before the user clicks.
-      _snapSphere = null;
+      // next point will land before the user clicks. The indicator is a constant
+      // on-screen crosshair sprite (not a ball) for precise targeting.
+      _snapCross = null;
       _snapLine = null;
+      _crossTexture;
       constructor(scene) {
         this.scene = scene;
         this.group = new THREE5__namespace.Group();
@@ -1031,20 +1060,24 @@ var init_dist = __esm({
        */
       updateSnap(worldPos, color) {
         const c = new THREE5__namespace.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
-        if (!this._snapSphere) {
-          const geo = new THREE5__namespace.SphereGeometry(this._displaySettings.measurementSphereRadius * 0.8, 10, 8);
-          const mat = new THREE5__namespace.MeshBasicMaterial({
+        if (!this._snapCross) {
+          const mat = new THREE5__namespace.SpriteMaterial({
+            map: this._getCrossTexture(),
             color: c,
+            sizeAttenuation: false,
+            // constant pixel size at any zoom
             depthTest: false,
-            transparent: true,
-            opacity: 0.8
+            // always visible through the cloud
+            depthWrite: false,
+            transparent: true
           });
-          this._snapSphere = new THREE5__namespace.Mesh(geo, mat);
-          this._snapSphere.renderOrder = 4;
-          this.group.add(this._snapSphere);
+          this._snapCross = new THREE5__namespace.Sprite(mat);
+          this._snapCross.scale.set(0.05, 0.05, 1);
+          this._snapCross.renderOrder = 5;
+          this.group.add(this._snapCross);
         }
-        this._snapSphere.position.copy(worldPos);
-        this._snapSphere.material.color.copy(c);
+        this._snapCross.position.copy(worldPos);
+        this._snapCross.material.color.copy(c);
         const lastPt = this.activeMeasurement?.points[this.activeMeasurement.points.length - 1];
         if (lastPt) {
           if (this._snapLine) {
@@ -1069,13 +1102,44 @@ var init_dist = __esm({
           }
         } else if (!this.activeMeasurement && !lastPt) ;
       }
+      /** Build (and cache) the stylized crosshair sprite texture. */
+      _getCrossTexture() {
+        if (this._crossTexture) return this._crossTexture;
+        const S = 64;
+        const canvas = document.createElement("canvas");
+        canvas.width = S;
+        canvas.height = S;
+        const ctx = canvas.getContext("2d");
+        const c = S / 2;
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        const gap = 6;
+        const arm = 22;
+        ctx.beginPath();
+        ctx.moveTo(c - arm, c);
+        ctx.lineTo(c - gap, c);
+        ctx.moveTo(c + gap, c);
+        ctx.lineTo(c + arm, c);
+        ctx.moveTo(c, c - arm);
+        ctx.lineTo(c, c - gap);
+        ctx.moveTo(c, c + gap);
+        ctx.lineTo(c, c + arm);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(c, c, 2.5, 0, Math.PI * 2);
+        ctx.stroke();
+        const tex = new THREE5__namespace.CanvasTexture(canvas);
+        tex.minFilter = THREE5__namespace.LinearFilter;
+        this._crossTexture = tex;
+        return tex;
+      }
       /** Hide the snap preview (call on mouse leave or tool deactivation) */
       clearSnap() {
-        if (this._snapSphere) {
-          this._snapSphere.geometry.dispose();
-          this._snapSphere.material.dispose();
-          this.group.remove(this._snapSphere);
-          this._snapSphere = null;
+        if (this._snapCross) {
+          this._snapCross.material.dispose();
+          this.group.remove(this._snapCross);
+          this._snapCross = null;
         }
         if (this._snapLine) {
           this._snapLine.geometry.dispose();
@@ -1374,6 +1438,8 @@ var init_dist = __esm({
         this.clearAll();
         this.clearPreview();
         this.clearSnap();
+        this._crossTexture?.dispose();
+        this._crossTexture = void 0;
         this.scene.remove(this.group);
       }
     };
@@ -1638,6 +1704,93 @@ var init_dist = __esm({
         this.glCanvas = null;
         this.overlayCanvas = null;
         this.container = null;
+      }
+    };
+    exports.MagnifierRenderer = class {
+      sm;
+      _cam;
+      _target = null;
+      _active = false;
+      _zoom = 7;
+      _tmpColor = new THREE5__namespace.Color();
+      /** Square edge length and corner margin, in CSS pixels. */
+      size = 168;
+      margin = 12;
+      /** Distance from the RIGHT viewport edge, CSS px (raised to clear the sidebar). */
+      _rightCss = 12;
+      constructor(sm) {
+        this.sm = sm;
+        this._cam = new THREE5__namespace.PerspectiveCamera(50, 1, 0.01, 1e7);
+      }
+      setActive(active) {
+        this._active = active;
+        if (!active) this._target = null;
+      }
+      /** Set the gap from the right edge (CSS px) so the panel clears the sidebar. */
+      setRightOffsetCss(px) {
+        this._rightCss = Math.max(this.margin, px);
+      }
+      /** Center the magnifier on a world position (the snapped point). */
+      setTarget(world) {
+        this._target = world ? world.clone() : null;
+      }
+      /** Magnification factor (relative to the main FOV). */
+      setZoom(zoom) {
+        this._zoom = Math.max(2, zoom);
+      }
+      /** Whether the magnifier currently has something to show. */
+      isShowing() {
+        return this._active && this._target !== null;
+      }
+      /** CSS-pixel rect (top-left origin) so the DOM overlay can match the region. */
+      getRectCss() {
+        const el = this.sm.renderer.domElement;
+        return { left: el.clientWidth - this.size - this.margin, top: this.margin, size: this.size };
+      }
+      /** Run from a post-render callback (after the main scene render). */
+      render() {
+        if (!this._active || !this._target) return;
+        const renderer = this.sm.renderer;
+        const el = renderer.domElement;
+        const wCss = el.clientWidth;
+        const hCss = el.clientHeight;
+        if (wCss === 0 || hCss === 0) return;
+        const dpr = renderer.getPixelRatio();
+        const sizePx = Math.round(this.size * dpr);
+        const topPx = Math.round(this.margin * dpr);
+        const rightPx = Math.round(this._rightCss * dpr);
+        const wBuf = Math.round(wCss * dpr);
+        const hBuf = Math.round(hCss * dpr);
+        const x = wBuf - sizePx - rightPx;
+        const y = hBuf - sizePx - topPx;
+        if (x < 0 || y < 0) return;
+        const main = this.sm.camera;
+        this._cam.position.copy(main.position);
+        this._cam.up.copy(main.up);
+        this._cam.near = main.near;
+        this._cam.far = main.far;
+        this._cam.fov = Math.max(1.5, main.fov / this._zoom);
+        this._cam.aspect = 1;
+        this._cam.lookAt(this._target);
+        this._cam.updateProjectionMatrix();
+        const savedVp = renderer.getViewport(new THREE5__namespace.Vector4());
+        const savedSc = renderer.getScissor(new THREE5__namespace.Vector4());
+        const savedScTest = renderer.getScissorTest();
+        const savedAutoClear = renderer.autoClear;
+        const savedClear = renderer.getClearColor(this._tmpColor).clone();
+        const savedClearAlpha = renderer.getClearAlpha();
+        renderer.autoClear = false;
+        renderer.setScissorTest(true);
+        renderer.setScissor(x, y, sizePx, sizePx);
+        renderer.setViewport(x, y, sizePx, sizePx);
+        renderer.setClearColor(658970, 1);
+        renderer.clear(true, true, false);
+        renderer.render(this.sm.scene, this._cam);
+        renderer.setViewport(savedVp);
+        renderer.setScissor(savedSc);
+        renderer.setScissorTest(savedScTest);
+        renderer.autoClear = savedAutoClear;
+        renderer.setClearColor(savedClear, savedClearAlpha);
       }
     };
     AXIS_COLOR = {
@@ -2167,6 +2320,28 @@ var init_dist = __esm({
       }
       isEnabled() {
         return this._enabled;
+      }
+      /**
+       * Whether a world-space point survives the current clipping (i.e. is part of
+       * the kept/visible region). Used to cull out-of-bounds panorama markers and to
+       * reject picks on clipped-away points. Returns true when clipping is off or
+       * there are no visible boxes.
+       */
+      isPointVisible(p) {
+        if (!this._enabled) return true;
+        const visible = this.entries.filter((e) => e.visible);
+        if (visible.length === 0) return true;
+        const insideAny = visible.some((e) => this._pointInBox(p, e));
+        return visible[0].mode === "outside" ? insideAny : !insideAny;
+      }
+      /** Point-in-(rotated)-box test using the entry's center, size and quaternion. */
+      _pointInBox(p, entry) {
+        const center = new THREE5__namespace.Vector3();
+        const size = new THREE5__namespace.Vector3();
+        entry.box.getCenter(center);
+        entry.box.getSize(size);
+        const local = p.clone().sub(center).applyQuaternion(entry.quaternion.clone().invert());
+        return Math.abs(local.x) <= size.x / 2 && Math.abs(local.y) <= size.y / 2 && Math.abs(local.z) <= size.z / 2;
       }
       /**
        * Globally show/hide ALL box outlines, fills, handles and gizmos WITHOUT
@@ -3095,6 +3270,7 @@ function Viewport({ className }) {
     showMinimap,
     setMeasurementList,
     setSelectedCamera,
+    clipBoxEntries,
     setClipBoxEntries,
     setSelectedClipBoxId,
     navigationMode,
@@ -3116,7 +3292,9 @@ function Viewport({ className }) {
   const markerRef = React25.useRef(null);
   const measureRef = React25.useRef(null);
   const minimapRef = React25.useRef(null);
+  const magnifierRef = React25.useRef(null);
   const clipRef = React25.useRef(null);
+  const [magnifierOn, setMagnifierOn] = React25__default.default.useState(false);
   const animRef = React25.useRef(null);
   const axisRef = React25.useRef(null);
   const clipDraftRef = React25.useRef(null);
@@ -3161,6 +3339,10 @@ function Viewport({ className }) {
     axisRef.current = axisWidget;
     const axisFrame = () => axisWidget.render();
     sm.addPostRenderCallback(axisFrame);
+    const magnifier = new exports.MagnifierRenderer(sm);
+    magnifierRef.current = magnifier;
+    const magFrame = () => magnifier.render();
+    sm.addPostRenderCallback(magFrame);
     sm.start();
     loader.load("metadata.json", pointBudget).then(() => {
       const pc = loader.getPointCloud();
@@ -3187,6 +3369,7 @@ function Viewport({ className }) {
     return () => {
       sm.removeFrameCallback(minimapFrame);
       sm.removePostRenderCallback(axisFrame);
+      sm.removePostRenderCallback(magFrame);
       sm.dispose();
       measureMgr.dispose();
       markerMgr.dispose();
@@ -3248,6 +3431,13 @@ function Viewport({ className }) {
     markerRef.current?.setVisible(showMarkers);
   }, [showMarkers]);
   React25.useEffect(() => {
+    const mm = markerRef.current;
+    const cm = clipRef.current;
+    if (!mm) return;
+    mm.applyClipFilter(cm ? (p) => cm.isPointVisible(p) : null);
+  }, [clipBoxEntries]);
+  const magnifierTool = activeTool.startsWith("measure-") && activeTool !== "measure-volume";
+  React25.useEffect(() => {
     if (!activeTool.startsWith("measure-")) {
       measureRef.current?.clearSnap();
     }
@@ -3260,7 +3450,9 @@ function Viewport({ className }) {
       clipDownRef.current = null;
       clipRef.current?.setDraft(null);
     }
-  }, [activeTool]);
+    magnifierRef.current?.setActive(magnifierTool);
+    if (!magnifierTool) setMagnifierOn(false);
+  }, [activeTool, magnifierTool]);
   React25.useEffect(() => {
     smRef.current?.setNavigationMode(navigationMode);
   }, [navigationMode]);
@@ -3280,6 +3472,15 @@ function Viewport({ className }) {
     const hit = new THREE5__namespace.Vector3();
     return raycaster.ray.intersectPlane(plane, hit) ? hit : null;
   }, []);
+  const pickVisiblePoint = React25.useCallback((nx, ny) => {
+    const sm = smRef.current;
+    if (!sm) return null;
+    const picked = sm.pickPoint(nx, ny);
+    if (picked && (!clipRef.current || clipRef.current.isPointVisible(picked))) {
+      return picked;
+    }
+    return projectToPlaneZ(nx, ny, sm.controls.target.z);
+  }, [projectToPlaneZ]);
   const buildClipDraftAt = React25.useCallback((nx, ny) => {
     const sm = smRef.current;
     if (!sm) return null;
@@ -3396,12 +3597,23 @@ function Viewport({ className }) {
       const sm = smRef.current;
       if (!sm) return;
       const { nx, ny } = getNDC(e);
-      const hit = sm.pickPoint(nx, ny) ?? projectToPlaneZ(nx, ny, sm.controls.target.z);
+      const hit = pickVisiblePoint(nx, ny);
       if (hit) {
         measureRef.current.updateSnap(hit);
+        if (magnifierTool) {
+          const el = containerRef.current;
+          if (el) {
+            const raw = getComputedStyle(el).getPropertyValue("--pcv-minimap-right").trim();
+            const rem = parseFloat(raw) || 0.75;
+            const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+            magnifierRef.current?.setRightOffsetCss(rem * rootPx);
+          }
+          magnifierRef.current?.setTarget(hit);
+          if (!magnifierOn) setMagnifierOn(true);
+        }
       }
     }
-  }, [activeTool, projectToPlaneZ, buildClipDraftAt]);
+  }, [activeTool, pickVisiblePoint, buildClipDraftAt, magnifierTool, magnifierOn]);
   const handleMouseUp = React25.useCallback((e) => {
     const sm = smRef.current;
     const fh = clipRef.current?.faceHandles;
@@ -3475,13 +3687,18 @@ function Viewport({ className }) {
     }
     if (activeTool.startsWith("measure-") && activeTool !== "measure-volume" && measureRef.current) {
       const type = activeTool.replace("measure-", "");
-      const hit = sm.pickPoint(nx, ny) ?? projectToPlaneZ(nx, ny, sm.controls.target.z);
+      const hit = pickVisiblePoint(nx, ny);
       if (hit) {
         if (!measureRef.current.activeMeasurement) measureRef.current.start(type);
         measureRef.current.addPoint(hit);
       }
     }
-  }, [activeTool, cameras, config, projectToPlaneZ, showMarkers]);
+  }, [activeTool, cameras, config, pickVisiblePoint, showMarkers]);
+  const handleMouseLeave = React25.useCallback(() => {
+    measureRef.current?.clearSnap();
+    magnifierRef.current?.setTarget(null);
+    setMagnifierOn(false);
+  }, []);
   const handleContextMenu = React25.useCallback((e) => {
     e.preventDefault();
     if (volumeDragRef.current) {
@@ -3512,9 +3729,27 @@ function Viewport({ className }) {
         onMouseDown: handleMouseDown,
         onMouseMove: handleMouseMove,
         onMouseUp: handleMouseUp,
+        onMouseLeave: handleMouseLeave,
         onContextMenu: handleContextMenu,
         onDragStart: (e) => e.preventDefault(),
         style: { cursor: activeTool === "section-box" ? "crosshair" : activeTool !== "none" ? "crosshair" : "default" }
+      }
+    ),
+    magnifierOn && magnifierTool && /* @__PURE__ */ jsxRuntime.jsxs(
+      "div",
+      {
+        className: "absolute rounded-lg overflow-hidden border border-white/20 shadow-xl pointer-events-none ring-1 ring-black/40",
+        style: { top: 12, right: "var(--pcv-minimap-right, 0.75rem)", width: 168, height: 168 },
+        children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("svg", { width: "168", height: "168", className: "absolute inset-0", viewBox: "0 0 168 168", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("line", { x1: "84", y1: "58", x2: "84", y2: "78", stroke: "#DCD546", strokeWidth: "1.25" }),
+            /* @__PURE__ */ jsxRuntime.jsx("line", { x1: "84", y1: "90", x2: "84", y2: "110", stroke: "#DCD546", strokeWidth: "1.25" }),
+            /* @__PURE__ */ jsxRuntime.jsx("line", { x1: "58", y1: "84", x2: "78", y2: "84", stroke: "#DCD546", strokeWidth: "1.25" }),
+            /* @__PURE__ */ jsxRuntime.jsx("line", { x1: "90", y1: "84", x2: "110", y2: "84", stroke: "#DCD546", strokeWidth: "1.25" }),
+            /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "84", cy: "84", r: "5", fill: "none", stroke: "#DCD546", strokeWidth: "1", opacity: "0.8" })
+          ] }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute top-1 left-2 text-[9px] font-mono text-white/45 select-none", children: "ZOOM" })
+        ]
       }
     ),
     showMinimap && /* @__PURE__ */ jsxRuntime.jsxs(
@@ -3566,6 +3801,7 @@ var init_viewport = __esm({
     init_viewer_provider();
     init_data_provider();
     init_locale_context();
+    init_dist();
     init_dist();
     init_dist();
     init_dist();

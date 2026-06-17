@@ -43,6 +43,8 @@ export class MarkerManager {
   private _pinTexture?: THREE.CanvasTexture;
   /** World-space vertical offset for the label anchor above the pin. */
   private _labelOffset = 0.5;
+  /** Optional clip predicate — markers whose position fails it are hidden. */
+  private _clipFilter: ((pos: THREE.Vector3) => boolean) | null = null;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -95,6 +97,36 @@ export class MarkerManager {
 
       this.entries.push({ pin, label });
     });
+
+    // Re-apply any active clip filter to the freshly built markers.
+    this._applyAllMarkerVisibility();
+  }
+
+  /**
+   * Hide panorama markers whose camera position falls outside the kept clip
+   * region. Pass `null` to clear the filter (all markers visible). The predicate
+   * is typically `ClipManager.isPointVisible`.
+   */
+  applyClipFilter(predicate: ((pos: THREE.Vector3) => boolean) | null): void {
+    this._clipFilter = predicate;
+    this._applyAllMarkerVisibility();
+  }
+
+  /** Whether a marker survives the active clip filter. */
+  private _passesClip(idx: number): boolean {
+    if (!this._clipFilter) return true;
+    const cam = this._cameras[idx];
+    if (!cam?.position) return true;
+    return this._clipFilter(new THREE.Vector3(cam.position.x, cam.position.y, cam.position.z));
+  }
+
+  private _applyAllMarkerVisibility(): void {
+    for (let i = 0; i < this.entries.length; i++) {
+      const entry = this.entries[i];
+      const pass = this._passesClip(i);
+      entry.pin.visible = pass;
+      entry.label.visible = pass && this._labelShouldShow(i);
+    }
   }
 
   /** Lazily build (and cache) the shared circular pin texture. */
@@ -203,7 +235,7 @@ export class MarkerManager {
   private _applyLabelVisibility(idx: number) {
     const entry = this.entries[idx];
     if (!entry) return;
-    entry.label.visible = this._labelShouldShow(idx);
+    entry.label.visible = this._passesClip(idx) && this._labelShouldShow(idx);
   }
 
   setVisible(visible: boolean) {

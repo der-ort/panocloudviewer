@@ -12,6 +12,7 @@ import { MarkerManager } from "@der-ort/pano-cloud-viewer-core";
 import { CameraAnimator } from "@der-ort/pano-cloud-viewer-core";
 import { ExportManager } from "@der-ort/pano-cloud-viewer-core";
 import { MinimapRenderer } from "@der-ort/pano-cloud-viewer-core";
+import { MagnifierRenderer } from "@der-ort/pano-cloud-viewer-core";
 import { ClipManager } from "@der-ort/pano-cloud-viewer-core";
 import { AxisWidget } from "@der-ort/pano-cloud-viewer-core";
 import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
@@ -34,7 +35,7 @@ export function Viewport({ className }: ViewportProps) {
     setCameraAnimator, setExporter, setMinimap, setClipManager,
     setFps, activeTool, pointBudget,
     showMarkers, showMinimap, setMeasurementList, setSelectedCamera,
-    setClipBoxEntries, setSelectedClipBoxId,
+    clipBoxEntries, setClipBoxEntries, setSelectedClipBoxId,
     navigationMode, projection, displaySettings,
   } = useViewer();
   const { cameras, metadata } = useData();
@@ -55,7 +56,10 @@ export function Viewport({ className }: ViewportProps) {
   const markerRef = useRef<MarkerManager | null>(null);
   const measureRef = useRef<MeasurementManager | null>(null);
   const minimapRef = useRef<MinimapRenderer | null>(null);
+  const magnifierRef = useRef<MagnifierRenderer | null>(null);
   const clipRef = useRef<ClipManager | null>(null);
+  // Whether the picking magnifier is currently showing (drives the DOM overlay).
+  const [magnifierOn, setMagnifierOn] = React.useState(false);
   const animRef = useRef<CameraAnimator | null>(null);
   const axisRef = useRef<AxisWidget | null>(null);
 
@@ -126,6 +130,12 @@ export function Viewport({ className }: ViewportProps) {
     const axisFrame = () => axisWidget.render();
     sm.addPostRenderCallback(axisFrame);
 
+    // Point-picking magnifier — post-render scissor pass (only renders when active)
+    const magnifier = new MagnifierRenderer(sm);
+    magnifierRef.current = magnifier;
+    const magFrame = () => magnifier.render();
+    sm.addPostRenderCallback(magFrame);
+
     sm.start();
 
     // Load point cloud and set minimap bounds
@@ -158,6 +168,7 @@ export function Viewport({ className }: ViewportProps) {
     return () => {
       sm.removeFrameCallback(minimapFrame);
       sm.removePostRenderCallback(axisFrame);
+      sm.removePostRenderCallback(magFrame);
       sm.dispose();
       measureMgr.dispose();
       markerMgr.dispose();
@@ -230,6 +241,19 @@ export function Viewport({ className }: ViewportProps) {
     markerRef.current?.setVisible(showMarkers);
   }, [showMarkers]);
 
+  // Cull panorama markers that fall outside the active clip region. Re-runs on
+  // every clip mutation (add/remove/move/mode/enable all refresh clipBoxEntries).
+  useEffect(() => {
+    const mm = markerRef.current;
+    const cm = clipRef.current;
+    if (!mm) return;
+    mm.applyClipFilter(cm ? (p) => cm.isPointVisible(p) : null);
+  }, [clipBoxEntries]);
+
+  // The point-picking magnifier is shown for point-snapping measurement tools
+  // (not the drag-based volume tool).
+  const magnifierTool = activeTool.startsWith("measure-") && activeTool !== "measure-volume";
+
   // Clear snap/draft preview when switching away from a measurement tool
   useEffect(() => {
     if (!activeTool.startsWith("measure-")) {
@@ -244,7 +268,11 @@ export function Viewport({ className }: ViewportProps) {
       clipDownRef.current = null;
       clipRef.current?.setDraft(null);
     }
-  }, [activeTool]);
+    // Toggle the magnifier with the active tool; it only renders once it has a
+    // target (set on the next mousemove).
+    magnifierRef.current?.setActive(magnifierTool);
+    if (!magnifierTool) setMagnifierOn(false);
+  }, [activeTool, magnifierTool]);
 
   // Sync navigation mode
   useEffect(() => {
@@ -272,6 +300,20 @@ export function Viewport({ className }: ViewportProps) {
     const hit = new THREE.Vector3();
     return raycaster.ray.intersectPlane(plane, hit) ? hit : null;
   }, []);
+
+  // Pick the front-most VISIBLE cloud point under the cursor (GPU pick already
+  // returns the closest rendered point). Points clipped away by an active
+  // section box are rejected so measuring never snaps to hidden geometry; falls
+  // back to a ground-plane projection when nothing valid is picked.
+  const pickVisiblePoint = useCallback((nx: number, ny: number): THREE.Vector3 | null => {
+    const sm = smRef.current;
+    if (!sm) return null;
+    const picked = sm.pickPoint(nx, ny);
+    if (picked && (!clipRef.current || clipRef.current.isPointVisible(picked))) {
+      return picked;
+    }
+    return projectToPlaneZ(nx, ny, sm.controls.target.z);
+  }, [projectToPlaneZ]);
 
   // Build a section-box draft centered at the cursor's ground point. The box is
   // kept compact (flat in Z) so all six face handles stay on screen.
@@ -418,17 +460,31 @@ export function Viewport({ className }: ViewportProps) {
       return;
     }
 
-    // Measurement snap preview — show where the point will land before clicking
+    // Measurement snap preview — show where the point will land before clicking,
+    // and feed the picking magnifier so it zooms into the snapped area.
     if (activeTool.startsWith("measure-") && measureRef.current) {
       const sm = smRef.current;
       if (!sm) return;
       const { nx, ny } = getNDC(e);
-      const hit = sm.pickPoint(nx, ny) ?? projectToPlaneZ(nx, ny, sm.controls.target.z);
+      const hit = pickVisiblePoint(nx, ny);
       if (hit) {
         measureRef.current.updateSnap(hit);
+        if (magnifierTool) {
+          // Keep the on-canvas magnifier aligned with its DOM frame, both of
+          // which clear the sidebar via the shared `--pcv-minimap-right` offset.
+          const el = containerRef.current;
+          if (el) {
+            const raw = getComputedStyle(el).getPropertyValue("--pcv-minimap-right").trim();
+            const rem = parseFloat(raw) || 0.75;
+            const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+            magnifierRef.current?.setRightOffsetCss(rem * rootPx);
+          }
+          magnifierRef.current?.setTarget(hit);
+          if (!magnifierOn) setMagnifierOn(true);
+        }
       }
     }
-  }, [activeTool, projectToPlaneZ, buildClipDraftAt]);
+  }, [activeTool, pickVisiblePoint, buildClipDraftAt, magnifierTool, magnifierOn]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const sm = smRef.current;
@@ -517,17 +573,24 @@ export function Viewport({ className }: ViewportProps) {
       }
     }
 
-    // Measurement clicks — snap to point cloud via GPU picking (volume uses drag, not clicks)
+    // Measurement clicks — snap to the front-most VISIBLE point (rejects points
+    // clipped away by a section box); volume uses drag, not clicks.
     if (activeTool.startsWith("measure-") && activeTool !== "measure-volume" && measureRef.current) {
       const type = activeTool.replace("measure-", "") as import("@der-ort/pano-cloud-viewer-core").MeasurementType;
-      // Try potree GPU pick first, fall back to plane projection
-      const hit = sm.pickPoint(nx, ny) ?? projectToPlaneZ(nx, ny, sm.controls.target.z);
+      const hit = pickVisiblePoint(nx, ny);
       if (hit) {
         if (!measureRef.current.activeMeasurement) measureRef.current.start(type);
         measureRef.current.addPoint(hit);
       }
     }
-  }, [activeTool, cameras, config, projectToPlaneZ, showMarkers]);
+  }, [activeTool, cameras, config, pickVisiblePoint, showMarkers]);
+
+  // Hide the snap crosshair + magnifier when the cursor leaves the viewport.
+  const handleMouseLeave = useCallback(() => {
+    measureRef.current?.clearSnap();
+    magnifierRef.current?.setTarget(null);
+    setMagnifierOn(false);
+  }, []);
 
   // Right-click to finish measurement, cancel volume drag, or clear clip box
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -562,10 +625,29 @@ export function Viewport({ className }: ViewportProps) {
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
         onContextMenu={handleContextMenu}
         onDragStart={(e) => e.preventDefault()}
         style={{ cursor: activeTool === "section-box" ? "crosshair" : activeTool !== "none" ? "crosshair" : "default" }}
       />
+
+      {/* Point-picking magnifier overlay — frames the zoomed scissor region the
+          MagnifierRenderer draws on the canvas (top-right) and adds a crosshair. */}
+      {magnifierOn && magnifierTool && (
+        <div
+          className="absolute rounded-lg overflow-hidden border border-white/20 shadow-xl pointer-events-none ring-1 ring-black/40"
+          style={{ top: 12, right: "var(--pcv-minimap-right, 0.75rem)", width: 168, height: 168 }}
+        >
+          <svg width="168" height="168" className="absolute inset-0" viewBox="0 0 168 168">
+            <line x1="84" y1="58" x2="84" y2="78" stroke="#DCD546" strokeWidth="1.25" />
+            <line x1="84" y1="90" x2="84" y2="110" stroke="#DCD546" strokeWidth="1.25" />
+            <line x1="58" y1="84" x2="78" y2="84" stroke="#DCD546" strokeWidth="1.25" />
+            <line x1="90" y1="84" x2="110" y2="84" stroke="#DCD546" strokeWidth="1.25" />
+            <circle cx="84" cy="84" r="5" fill="none" stroke="#DCD546" strokeWidth="1" opacity="0.8" />
+          </svg>
+          <div className="absolute top-1 left-2 text-[9px] font-mono text-white/45 select-none">ZOOM</div>
+        </div>
+      )}
 
       {/* Minimap overlay */}
       {showMinimap && (

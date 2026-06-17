@@ -583,6 +583,8 @@ var MarkerManager = class {
   _pinTexture;
   /** World-space vertical offset for the label anchor above the pin. */
   _labelOffset = 0.5;
+  /** Optional clip predicate — markers whose position fails it are hidden. */
+  _clipFilter = null;
   constructor(scene) {
     this.scene = scene;
     this.group = new THREE5__namespace.Group();
@@ -622,6 +624,31 @@ var MarkerManager = class {
       this.group.add(label);
       this.entries.push({ pin, label });
     });
+    this._applyAllMarkerVisibility();
+  }
+  /**
+   * Hide panorama markers whose camera position falls outside the kept clip
+   * region. Pass `null` to clear the filter (all markers visible). The predicate
+   * is typically `ClipManager.isPointVisible`.
+   */
+  applyClipFilter(predicate) {
+    this._clipFilter = predicate;
+    this._applyAllMarkerVisibility();
+  }
+  /** Whether a marker survives the active clip filter. */
+  _passesClip(idx) {
+    if (!this._clipFilter) return true;
+    const cam = this._cameras[idx];
+    if (!cam?.position) return true;
+    return this._clipFilter(new THREE5__namespace.Vector3(cam.position.x, cam.position.y, cam.position.z));
+  }
+  _applyAllMarkerVisibility() {
+    for (let i = 0; i < this.entries.length; i++) {
+      const entry = this.entries[i];
+      const pass = this._passesClip(i);
+      entry.pin.visible = pass;
+      entry.label.visible = pass && this._labelShouldShow(i);
+    }
   }
   /** Lazily build (and cache) the shared circular pin texture. */
   _getPinTexture() {
@@ -712,7 +739,7 @@ var MarkerManager = class {
   _applyLabelVisibility(idx) {
     const entry = this.entries[idx];
     if (!entry) return;
-    entry.label.visible = this._labelShouldShow(idx);
+    entry.label.visible = this._passesClip(idx) && this._labelShouldShow(idx);
   }
   setVisible(visible) {
     this.group.visible = visible;
@@ -877,9 +904,11 @@ var MeasurementManager = class {
   activeMeasurement = null;
   previewLine = null;
   // Snap preview — cursor indicator + rubber-band line to show where the
-  // next point will land before the user clicks.
-  _snapSphere = null;
+  // next point will land before the user clicks. The indicator is a constant
+  // on-screen crosshair sprite (not a ball) for precise targeting.
+  _snapCross = null;
   _snapLine = null;
+  _crossTexture;
   constructor(scene) {
     this.scene = scene;
     this.group = new THREE5__namespace.Group();
@@ -969,20 +998,24 @@ var MeasurementManager = class {
    */
   updateSnap(worldPos, color) {
     const c = new THREE5__namespace.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
-    if (!this._snapSphere) {
-      const geo = new THREE5__namespace.SphereGeometry(this._displaySettings.measurementSphereRadius * 0.8, 10, 8);
-      const mat = new THREE5__namespace.MeshBasicMaterial({
+    if (!this._snapCross) {
+      const mat = new THREE5__namespace.SpriteMaterial({
+        map: this._getCrossTexture(),
         color: c,
+        sizeAttenuation: false,
+        // constant pixel size at any zoom
         depthTest: false,
-        transparent: true,
-        opacity: 0.8
+        // always visible through the cloud
+        depthWrite: false,
+        transparent: true
       });
-      this._snapSphere = new THREE5__namespace.Mesh(geo, mat);
-      this._snapSphere.renderOrder = 4;
-      this.group.add(this._snapSphere);
+      this._snapCross = new THREE5__namespace.Sprite(mat);
+      this._snapCross.scale.set(0.05, 0.05, 1);
+      this._snapCross.renderOrder = 5;
+      this.group.add(this._snapCross);
     }
-    this._snapSphere.position.copy(worldPos);
-    this._snapSphere.material.color.copy(c);
+    this._snapCross.position.copy(worldPos);
+    this._snapCross.material.color.copy(c);
     const lastPt = this.activeMeasurement?.points[this.activeMeasurement.points.length - 1];
     if (lastPt) {
       if (this._snapLine) {
@@ -1007,13 +1040,44 @@ var MeasurementManager = class {
       }
     } else if (!this.activeMeasurement && !lastPt) ;
   }
+  /** Build (and cache) the stylized crosshair sprite texture. */
+  _getCrossTexture() {
+    if (this._crossTexture) return this._crossTexture;
+    const S = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = S;
+    canvas.height = S;
+    const ctx = canvas.getContext("2d");
+    const c = S / 2;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    const gap = 6;
+    const arm = 22;
+    ctx.beginPath();
+    ctx.moveTo(c - arm, c);
+    ctx.lineTo(c - gap, c);
+    ctx.moveTo(c + gap, c);
+    ctx.lineTo(c + arm, c);
+    ctx.moveTo(c, c - arm);
+    ctx.lineTo(c, c - gap);
+    ctx.moveTo(c, c + gap);
+    ctx.lineTo(c, c + arm);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(c, c, 2.5, 0, Math.PI * 2);
+    ctx.stroke();
+    const tex = new THREE5__namespace.CanvasTexture(canvas);
+    tex.minFilter = THREE5__namespace.LinearFilter;
+    this._crossTexture = tex;
+    return tex;
+  }
   /** Hide the snap preview (call on mouse leave or tool deactivation) */
   clearSnap() {
-    if (this._snapSphere) {
-      this._snapSphere.geometry.dispose();
-      this._snapSphere.material.dispose();
-      this.group.remove(this._snapSphere);
-      this._snapSphere = null;
+    if (this._snapCross) {
+      this._snapCross.material.dispose();
+      this.group.remove(this._snapCross);
+      this._snapCross = null;
     }
     if (this._snapLine) {
       this._snapLine.geometry.dispose();
@@ -1312,6 +1376,8 @@ var MeasurementManager = class {
     this.clearAll();
     this.clearPreview();
     this.clearSnap();
+    this._crossTexture?.dispose();
+    this._crossTexture = void 0;
     this.scene.remove(this.group);
   }
 };
@@ -1576,6 +1642,93 @@ var MinimapRenderer = class {
     this.glCanvas = null;
     this.overlayCanvas = null;
     this.container = null;
+  }
+};
+var MagnifierRenderer = class {
+  sm;
+  _cam;
+  _target = null;
+  _active = false;
+  _zoom = 7;
+  _tmpColor = new THREE5__namespace.Color();
+  /** Square edge length and corner margin, in CSS pixels. */
+  size = 168;
+  margin = 12;
+  /** Distance from the RIGHT viewport edge, CSS px (raised to clear the sidebar). */
+  _rightCss = 12;
+  constructor(sm) {
+    this.sm = sm;
+    this._cam = new THREE5__namespace.PerspectiveCamera(50, 1, 0.01, 1e7);
+  }
+  setActive(active) {
+    this._active = active;
+    if (!active) this._target = null;
+  }
+  /** Set the gap from the right edge (CSS px) so the panel clears the sidebar. */
+  setRightOffsetCss(px) {
+    this._rightCss = Math.max(this.margin, px);
+  }
+  /** Center the magnifier on a world position (the snapped point). */
+  setTarget(world) {
+    this._target = world ? world.clone() : null;
+  }
+  /** Magnification factor (relative to the main FOV). */
+  setZoom(zoom) {
+    this._zoom = Math.max(2, zoom);
+  }
+  /** Whether the magnifier currently has something to show. */
+  isShowing() {
+    return this._active && this._target !== null;
+  }
+  /** CSS-pixel rect (top-left origin) so the DOM overlay can match the region. */
+  getRectCss() {
+    const el = this.sm.renderer.domElement;
+    return { left: el.clientWidth - this.size - this.margin, top: this.margin, size: this.size };
+  }
+  /** Run from a post-render callback (after the main scene render). */
+  render() {
+    if (!this._active || !this._target) return;
+    const renderer = this.sm.renderer;
+    const el = renderer.domElement;
+    const wCss = el.clientWidth;
+    const hCss = el.clientHeight;
+    if (wCss === 0 || hCss === 0) return;
+    const dpr = renderer.getPixelRatio();
+    const sizePx = Math.round(this.size * dpr);
+    const topPx = Math.round(this.margin * dpr);
+    const rightPx = Math.round(this._rightCss * dpr);
+    const wBuf = Math.round(wCss * dpr);
+    const hBuf = Math.round(hCss * dpr);
+    const x = wBuf - sizePx - rightPx;
+    const y = hBuf - sizePx - topPx;
+    if (x < 0 || y < 0) return;
+    const main = this.sm.camera;
+    this._cam.position.copy(main.position);
+    this._cam.up.copy(main.up);
+    this._cam.near = main.near;
+    this._cam.far = main.far;
+    this._cam.fov = Math.max(1.5, main.fov / this._zoom);
+    this._cam.aspect = 1;
+    this._cam.lookAt(this._target);
+    this._cam.updateProjectionMatrix();
+    const savedVp = renderer.getViewport(new THREE5__namespace.Vector4());
+    const savedSc = renderer.getScissor(new THREE5__namespace.Vector4());
+    const savedScTest = renderer.getScissorTest();
+    const savedAutoClear = renderer.autoClear;
+    const savedClear = renderer.getClearColor(this._tmpColor).clone();
+    const savedClearAlpha = renderer.getClearAlpha();
+    renderer.autoClear = false;
+    renderer.setScissorTest(true);
+    renderer.setScissor(x, y, sizePx, sizePx);
+    renderer.setViewport(x, y, sizePx, sizePx);
+    renderer.setClearColor(658970, 1);
+    renderer.clear(true, true, false);
+    renderer.render(this.sm.scene, this._cam);
+    renderer.setViewport(savedVp);
+    renderer.setScissor(savedSc);
+    renderer.setScissorTest(savedScTest);
+    renderer.autoClear = savedAutoClear;
+    renderer.setClearColor(savedClear, savedClearAlpha);
   }
 };
 var AXIS_COLOR = {
@@ -2112,6 +2265,28 @@ var ClipManager = class {
     return this._enabled;
   }
   /**
+   * Whether a world-space point survives the current clipping (i.e. is part of
+   * the kept/visible region). Used to cull out-of-bounds panorama markers and to
+   * reject picks on clipped-away points. Returns true when clipping is off or
+   * there are no visible boxes.
+   */
+  isPointVisible(p) {
+    if (!this._enabled) return true;
+    const visible = this.entries.filter((e) => e.visible);
+    if (visible.length === 0) return true;
+    const insideAny = visible.some((e) => this._pointInBox(p, e));
+    return visible[0].mode === "outside" ? insideAny : !insideAny;
+  }
+  /** Point-in-(rotated)-box test using the entry's center, size and quaternion. */
+  _pointInBox(p, entry) {
+    const center = new THREE5__namespace.Vector3();
+    const size = new THREE5__namespace.Vector3();
+    entry.box.getCenter(center);
+    entry.box.getSize(size);
+    const local = p.clone().sub(center).applyQuaternion(entry.quaternion.clone().invert());
+    return Math.abs(local.x) <= size.x / 2 && Math.abs(local.y) <= size.y / 2 && Math.abs(local.z) <= size.z / 2;
+  }
+  /**
    * Globally show/hide ALL box outlines, fills, handles and gizmos WITHOUT
    * affecting clipping — clipping stays active so you keep the cropped view but
    * get a clean image (e.g. for screenshots). Per-box visibility still applies
@@ -2631,6 +2806,7 @@ exports.ClipManager = ClipManager;
 exports.DISPLAY_PRESETS = DISPLAY_PRESETS;
 exports.ElectronSourceAdapter = ElectronSourceAdapter;
 exports.ExportManager = ExportManager;
+exports.MagnifierRenderer = MagnifierRenderer;
 exports.MarkerManager = MarkerManager;
 exports.MeasurementManager = MeasurementManager;
 exports.MinimapRenderer = MinimapRenderer;

@@ -11,6 +11,7 @@ export { MarkerManager } from "./core/marker-manager";
 export { MeasurementManager } from "./core/measurement-manager";
 export { ExportManager } from "./core/export-manager";
 export { MinimapRenderer } from "./core/minimap-renderer";
+export { MagnifierRenderer } from "./core/magnifier-renderer";
 export { ClipManager } from "./core/clip-manager";
 export type { ClipMode, ClipBoxEntry } from "./core/clip-manager";
 export { AxisWidget } from "./core/axis-widget";

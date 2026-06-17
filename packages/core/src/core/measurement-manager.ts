@@ -29,9 +29,11 @@ export class MeasurementManager {
   private previewLine: THREE.Line | null = null;
 
   // Snap preview — cursor indicator + rubber-band line to show where the
-  // next point will land before the user clicks.
-  private _snapSphere: THREE.Mesh | null = null;
+  // next point will land before the user clicks. The indicator is a constant
+  // on-screen crosshair sprite (not a ball) for precise targeting.
+  private _snapCross: THREE.Sprite | null = null;
   private _snapLine: THREE.Line | null = null;
+  private _crossTexture?: THREE.CanvasTexture;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -143,21 +145,23 @@ export class MeasurementManager {
   updateSnap(worldPos: THREE.Vector3, color?: string): void {
     const c = new THREE.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
 
-    // ── Snap sphere ──
-    if (!this._snapSphere) {
-      const geo = new THREE.SphereGeometry(this._displaySettings.measurementSphereRadius * 0.8, 10, 8);
-      const mat = new THREE.MeshBasicMaterial({
+    // ── Snap crosshair (constant on-screen size) ──
+    if (!this._snapCross) {
+      const mat = new THREE.SpriteMaterial({
+        map: this._getCrossTexture(),
         color: c,
-        depthTest: false,
+        sizeAttenuation: false, // constant pixel size at any zoom
+        depthTest: false,       // always visible through the cloud
+        depthWrite: false,
         transparent: true,
-        opacity: 0.8,
       });
-      this._snapSphere = new THREE.Mesh(geo, mat);
-      this._snapSphere.renderOrder = 4;
-      this.group.add(this._snapSphere);
+      this._snapCross = new THREE.Sprite(mat);
+      this._snapCross.scale.set(0.05, 0.05, 1);
+      this._snapCross.renderOrder = 5;
+      this.group.add(this._snapCross);
     }
-    this._snapSphere.position.copy(worldPos);
-    (this._snapSphere.material as THREE.MeshBasicMaterial).color.copy(c);
+    this._snapCross.position.copy(worldPos);
+    (this._snapCross.material as THREE.SpriteMaterial).color.copy(c);
 
     // ── Rubber-band line from last placed point → snap position ──
     const lastPt = this.activeMeasurement?.points[this.activeMeasurement.points.length - 1];
@@ -188,13 +192,42 @@ export class MeasurementManager {
     }
   }
 
+  /** Build (and cache) the stylized crosshair sprite texture. */
+  private _getCrossTexture(): THREE.CanvasTexture {
+    if (this._crossTexture) return this._crossTexture;
+    const S = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = S;
+    canvas.height = S;
+    const ctx = canvas.getContext("2d")!;
+    const c = S / 2;
+    ctx.strokeStyle = "#ffffff"; // tinted by material.color
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    const gap = 6;   // empty centre so the exact pixel stays visible
+    const arm = 22;  // length of each crosshair arm
+    ctx.beginPath();
+    ctx.moveTo(c - arm, c); ctx.lineTo(c - gap, c); // left
+    ctx.moveTo(c + gap, c); ctx.lineTo(c + arm, c); // right
+    ctx.moveTo(c, c - arm); ctx.lineTo(c, c - gap); // top
+    ctx.moveTo(c, c + gap); ctx.lineTo(c, c + arm); // bottom
+    ctx.stroke();
+    // Small centre ring
+    ctx.beginPath();
+    ctx.arc(c, c, 2.5, 0, Math.PI * 2);
+    ctx.stroke();
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    this._crossTexture = tex;
+    return tex;
+  }
+
   /** Hide the snap preview (call on mouse leave or tool deactivation) */
   clearSnap(): void {
-    if (this._snapSphere) {
-      this._snapSphere.geometry.dispose();
-      (this._snapSphere.material as THREE.Material).dispose();
-      this.group.remove(this._snapSphere);
-      this._snapSphere = null;
+    if (this._snapCross) {
+      (this._snapCross.material as THREE.SpriteMaterial).dispose();
+      this.group.remove(this._snapCross);
+      this._snapCross = null;
     }
     if (this._snapLine) {
       this._snapLine.geometry.dispose();
@@ -508,6 +541,8 @@ export class MeasurementManager {
     this.clearAll();
     this.clearPreview();
     this.clearSnap();
+    this._crossTexture?.dispose();
+    this._crossTexture = undefined;
     this.scene.remove(this.group);
   }
 }
