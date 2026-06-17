@@ -1575,8 +1575,8 @@ var FaceHandleController = class {
   raycaster = new THREE5.Raycaster();
   group;
   disposed = false;
-  /** Rotation of the box about the world Z axis, in radians. */
-  _rotationZ = 0;
+  /** Orientation of the box (full 3-axis rotation). */
+  _quaternion = new THREE5.Quaternion();
   constructor(scene, camera, domElement) {
     this.scene = scene;
     this.camera = camera;
@@ -1595,7 +1595,7 @@ var FaceHandleController = class {
         const mat = new THREE5.MeshBasicMaterial({
           color: AXIS_COLOR[axis],
           transparent: true,
-          opacity: 0.7,
+          opacity: 0.95,
           depthTest: false
         });
         const mesh = new THREE5.Mesh(geo, mat);
@@ -1613,9 +1613,9 @@ var FaceHandleController = class {
     this.updatePositions();
     for (const h of this.handles) h.mesh.visible = true;
   }
-  /** Set the box's rotation about the world Z axis (radians) so handles follow it. */
-  setRotationZ(r) {
-    this._rotationZ = r;
+  /** Set the box's orientation (full 3-axis) so handles follow it. */
+  setQuaternion(q) {
+    this._quaternion.copy(q);
     if (this.box) this.updatePositions();
   }
   detach() {
@@ -1627,6 +1627,10 @@ var FaceHandleController = class {
   }
   isAttached() {
     return this.box !== null;
+  }
+  /** Show/hide the whole handle group without detaching (keeps box binding). */
+  setGroupVisible(visible) {
+    this.group.visible = visible;
   }
   isDragging() {
     return this.drag !== null;
@@ -1642,9 +1646,7 @@ var FaceHandleController = class {
     this.box.getCenter(center);
     this.box.getSize(size);
     const diag = size.length();
-    const radius = Math.max(0.05, Math.min(diag * 0.02, 2));
-    const cos = Math.cos(this._rotationZ);
-    const sin = Math.sin(this._rotationZ);
+    const radius = Math.max(0.08, Math.min(diag * 0.03, 3));
     for (const h of this.handles) {
       const offset = new THREE5.Vector3();
       if (h.sign === 1) {
@@ -1652,9 +1654,8 @@ var FaceHandleController = class {
       } else {
         offset[h.axis] = this.box.min[h.axis] - center[h.axis];
       }
-      const rx = offset.x * cos - offset.y * sin;
-      const ry = offset.x * sin + offset.y * cos;
-      h.mesh.position.set(center.x + rx, center.y + ry, center.z + offset.z);
+      offset.applyQuaternion(this._quaternion);
+      h.mesh.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
       h.mesh.scale.setScalar(radius);
     }
   }
@@ -1690,13 +1691,14 @@ var FaceHandleController = class {
     this.setHandleColor(handle, HANDLE_DRAG_COLOR);
     return true;
   }
-  /** World-space unit vector for a box-local face axis, rotated by _rotationZ around Z. */
+  /** World-space unit vector for a box-local face axis, rotated by the box orientation. */
   worldAxisFor(axis) {
-    const cos = Math.cos(this._rotationZ);
-    const sin = Math.sin(this._rotationZ);
-    if (axis === "x") return new THREE5.Vector3(cos, sin, 0);
-    if (axis === "y") return new THREE5.Vector3(-sin, cos, 0);
-    return new THREE5.Vector3(0, 0, 1);
+    const local = new THREE5.Vector3(
+      axis === "x" ? 1 : 0,
+      axis === "y" ? 1 : 0,
+      axis === "z" ? 1 : 0
+    );
+    return local.applyQuaternion(this._quaternion);
   }
   /** Update the box during a drag. Call on pointermove. */
   onPointerMove(clientX, clientY) {
@@ -1783,52 +1785,98 @@ var ClipManager = class {
   fills = /* @__PURE__ */ new Map();
   draftHelper = null;
   selectedId = null;
-  transformControls = null;
+  /** Move gizmo (translate arrows) — shown together with the rotate gizmo + face handles. */
+  tcMove = null;
+  /** Rotate gizmo (full XYZ rings) — shown together with the move gizmo + face handles. */
+  tcRotate = null;
   pivot = null;
   _faceHandles = null;
-  _transformMode = "translate";
   /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
   _enabled = true;
+  /** Whether box outlines / fills / handles render at all (off = clean screenshots). */
+  _outlinesVisible = true;
   onChange;
   onSelectChange;
   constructor(sm) {
     this.sm = sm;
   }
   async initTransformControls() {
-    if (this.transformControls) return;
+    if (this.tcMove && this.tcRotate) return;
     const { TransformControls } = await import('three/examples/jsm/controls/TransformControls.js');
-    const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement);
-    tc.setSpace("world");
-    tc.setSize(0.8);
-    tc.addEventListener("change", () => this.syncFromPivot());
-    tc.addEventListener("dragging-changed", (e) => {
-      this.sm.controls.enabled = !e.value;
-    });
-    this.sm.scene.add(tc.getHelper());
-    this.transformControls = tc;
+    const makeTc = (mode, size) => {
+      const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement);
+      tc.setSpace("world");
+      tc.setMode(mode);
+      tc.setSize(size);
+      tc.addEventListener("change", () => this.syncFromPivot());
+      tc.addEventListener("dragging-changed", (e) => {
+        this.sm.controls.enabled = !e.value;
+      });
+      this.sm.scene.add(tc.getHelper());
+      return tc;
+    };
+    this.tcMove = makeTc("translate", 0.8);
+    this.tcRotate = makeTc("rotate", 1.1);
     this._raiseGizmo();
   }
   /**
-   * Force the TransformControls gizmo to render on top of the point cloud.
-   * The gizmo uses default materials (depthTest=true, renderOrder=0) so it is
-   * occluded by the dense cloud. Traverse the gizmo tree and disable depth
-   * testing so the arrows/rings draw through. Must be re-applied after every
-   * setMode() because TransformControls rebuilds its gizmo/picker meshes.
+   * Force the TransformControls gizmos to render on top of the point cloud.
+   * The gizmos use default materials (depthTest=true, renderOrder=0) so they are
+   * occluded by the dense cloud. Traverse each gizmo tree and disable depth
+   * testing so the arrows/rings draw through.
    */
   _raiseGizmo() {
-    const tc = this.transformControls;
-    const helper = tc?.getHelper?.();
-    if (!helper) return;
-    helper.traverse((child) => {
-      if (!child.material) return;
-      const mats = Array.isArray(child.material) ? child.material : [child.material];
-      for (const m of mats) {
-        m.depthTest = false;
-        m.depthWrite = false;
-        m.transparent = true;
-      }
-      child.renderOrder = 5;
-    });
+    for (const tc of [this.tcMove, this.tcRotate]) {
+      const helper = tc?.getHelper?.();
+      if (!helper) continue;
+      helper.traverse((child) => {
+        if (!child.material) return;
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        for (const m of mats) {
+          m.depthTest = false;
+          m.depthWrite = false;
+          m.transparent = true;
+        }
+        child.renderOrder = 5;
+      });
+    }
+  }
+  /**
+   * Build an axis-aligned box centered on the current view target, sized to sit
+   * comfortably INSIDE the viewport at the current camera distance, then clamped
+   * to the cloud bounds. This replaces the old behavior of spanning the whole
+   * world box, which routinely extended far outside the viewport (and dwarfed
+   * the resize handles). The result is always fully visible and easy to grab.
+   */
+  makeViewportBox(worldBox) {
+    const cam = this.sm.camera;
+    const target = this.sm.controls.target.clone();
+    const dist = cam.position.distanceTo(target) || 1;
+    const vfov = THREE5.MathUtils.degToRad(cam.fov || 50);
+    const halfH = Math.tan(vfov / 2) * dist;
+    const halfW = halfH * (cam.aspect || 1);
+    let half = Math.min(halfH, halfW) * 0.45;
+    let halfZ = half * 0.6;
+    if (worldBox && !worldBox.isEmpty()) {
+      const ws = new THREE5.Vector3();
+      worldBox.getSize(ws);
+      half = Math.min(half, ws.x * 0.5, ws.y * 0.5);
+      halfZ = Math.min(halfZ, ws.z * 0.5);
+      target.clamp(worldBox.min, worldBox.max);
+    }
+    half = Math.max(half, 0.25);
+    halfZ = Math.max(halfZ, 0.15);
+    return new THREE5.Box3(
+      new THREE5.Vector3(target.x - half, target.y - half, target.z - halfZ),
+      new THREE5.Vector3(target.x + half, target.y + half, target.z + halfZ)
+    );
+  }
+  /**
+   * Add a clip box sized to fit the current viewport (see {@link makeViewportBox}).
+   * Preferred over `addBox(worldBox.clone())` for the "create default box" action.
+   */
+  addDefaultBox(worldBox, name) {
+    return this.addBox(this.makeViewportBox(worldBox), name);
   }
   addBox(box, name) {
     const id = genId();
@@ -1838,7 +1886,7 @@ var ClipManager = class {
       box: box.clone(),
       mode: "outside",
       visible: true,
-      rotationZ: 0
+      quaternion: new THREE5.Quaternion()
     };
     this.entries.push(entry);
     this.updateHelper(entry);
@@ -1848,8 +1896,7 @@ var ClipManager = class {
   }
   async selectBox(id) {
     this._highlightHelper(this.selectedId, false);
-    const tc = this.transformControls;
-    if (tc) tc.detach();
+    this._detachGizmos();
     if (this.pivot) {
       this.sm.scene.remove(this.pivot);
       this.pivot.geometry.dispose();
@@ -1862,7 +1909,6 @@ var ClipManager = class {
     const entry = this.entries.find((e) => e.id === id);
     if (!entry) return;
     await this.initTransformControls();
-    const controls = this.transformControls;
     const center = new THREE5.Vector3();
     const size = new THREE5.Vector3();
     entry.box.getCenter(center);
@@ -1872,11 +1918,9 @@ var ClipManager = class {
     this.pivot = new THREE5.Mesh(geo, mat);
     this.pivot.position.copy(center);
     this.pivot.scale.copy(size);
-    this.pivot.rotation.set(0, 0, entry.rotationZ ?? 0);
+    this.pivot.quaternion.copy(entry.quaternion);
     this.pivot.userData.clipId = id;
     this.sm.scene.add(this.pivot);
-    controls.attach(this.pivot);
-    controls.setMode("translate");
     if (!this._faceHandles) {
       this._faceHandles = new FaceHandleController(
         this.sm.scene,
@@ -1884,7 +1928,7 @@ var ClipManager = class {
         this.sm.renderer.domElement
       );
     }
-    this._faceHandles.setRotationZ(entry.rotationZ ?? 0);
+    this._faceHandles.setQuaternion(entry.quaternion);
     this._faceHandles.attach(entry.box, () => {
       this.updateHelper(entry);
       this.applyAll();
@@ -1898,60 +1942,39 @@ var ClipManager = class {
       }
       this.onChange?.(this.getBoxes());
     });
-    this._applyTransformMode();
+    this._attachGizmos();
+    this._applyOutlineVisibility();
     this._highlightHelper(id, true);
   }
-  setTransformMode(mode) {
-    this._transformMode = mode;
-    this._applyTransformMode();
+  /**
+   * @deprecated Transform handles (move, rotate, resize) are now shown together,
+   * so there is no single active mode. Kept as a no-op for API compatibility.
+   */
+  setTransformMode(_mode) {
   }
   /** Get the face handle controller (for viewport event forwarding) */
   get faceHandles() {
     return this._faceHandles;
   }
-  _applyTransformMode() {
-    const tc = this.transformControls;
-    if (this._transformMode === "scale") {
-      if (tc) tc.detach();
-      if (this._faceHandles && this.selectedId) {
-        const entry = this.entries.find((e) => e.id === this.selectedId);
-        if (entry && !this._faceHandles.isAttached()) {
-          this._faceHandles.setRotationZ(entry.rotationZ ?? 0);
-          this._faceHandles.attach(entry.box, () => {
-            this.updateHelper(entry);
-            this.applyAll();
-            if (this.pivot) {
-              const c = new THREE5.Vector3();
-              const s = new THREE5.Vector3();
-              entry.box.getCenter(c);
-              entry.box.getSize(s);
-              this.pivot.position.copy(c);
-              this.pivot.scale.copy(s);
-            }
-            this.onChange?.(this.getBoxes());
-          });
-        }
-        this._faceHandles.updatePositions();
-      }
-    } else {
-      if (tc && this.pivot) {
-        tc.attach(this.pivot);
-        tc.setMode(this._transformMode);
-        if (this._transformMode === "rotate") {
-          tc.showX = false;
-          tc.showY = false;
-          tc.showZ = true;
-          tc.setSize(1);
-        } else {
-          tc.showX = true;
-          tc.showY = true;
-          tc.showZ = true;
-          tc.setSize(0.8);
-        }
-        this._raiseGizmo();
-      }
-      this._faceHandles?.detach();
+  /** Attach both gizmos to the current pivot (move + full-XYZ rotate). */
+  _attachGizmos() {
+    if (!this.pivot) return;
+    const move = this.tcMove;
+    const rotate = this.tcRotate;
+    if (move) {
+      move.attach(this.pivot);
+      move.showX = move.showY = move.showZ = true;
     }
+    if (rotate) {
+      rotate.attach(this.pivot);
+      rotate.showX = rotate.showY = rotate.showZ = true;
+    }
+    this._raiseGizmo();
+  }
+  /** Detach both gizmos. */
+  _detachGizmos() {
+    this.tcMove?.detach();
+    this.tcRotate?.detach();
   }
   removeBox(id) {
     const idx = this.entries.findIndex((e) => e.id === id);
@@ -1971,7 +1994,7 @@ var ClipManager = class {
       this.fills.delete(id);
     }
     if (this.selectedId === id) {
-      this.transformControls?.detach();
+      this._detachGizmos();
       this._faceHandles?.detach();
       if (this.pivot) {
         this.sm.scene.remove(this.pivot);
@@ -2015,14 +2038,44 @@ var ClipManager = class {
   isEnabled() {
     return this._enabled;
   }
+  /**
+   * Globally show/hide ALL box outlines, fills, handles and gizmos WITHOUT
+   * affecting clipping — clipping stays active so you keep the cropped view but
+   * get a clean image (e.g. for screenshots). Per-box visibility still applies
+   * when outlines are on.
+   */
+  setOutlinesVisible(visible) {
+    this._outlinesVisible = visible;
+    this._applyOutlineVisibility();
+  }
+  areOutlinesVisible() {
+    return this._outlinesVisible;
+  }
+  /** Apply the global outline flag (and per-box visibility) to all scene objects. */
+  _applyOutlineVisibility() {
+    const show = this._outlinesVisible;
+    for (const entry of this.entries) {
+      const helper = this.helpers.get(entry.id);
+      if (helper) helper.visible = show && entry.visible;
+      const fill = this.fills.get(entry.id);
+      if (fill) fill.visible = show && entry.visible;
+    }
+    const selected = show && this.selectedId !== null;
+    if (selected) {
+      this._attachGizmos();
+    } else {
+      this._detachGizmos();
+    }
+    this._faceHandles?.setGroupVisible(selected);
+  }
   setBoxVisible(id, visible) {
     const entry = this.entries.find((e) => e.id === id);
     if (!entry) return;
     entry.visible = visible;
     const helper = this.helpers.get(id);
-    if (helper) helper.visible = visible;
+    if (helper) helper.visible = visible && this._outlinesVisible;
     const fill = this.fills.get(id);
-    if (fill) fill.visible = visible;
+    if (fill) fill.visible = visible && this._outlinesVisible;
     this.applyAll();
     this.onChange?.(this.getBoxes());
   }
@@ -2057,7 +2110,7 @@ var ClipManager = class {
     }
   }
   clear() {
-    this.transformControls?.detach();
+    this._detachGizmos();
     this._faceHandles?.detach();
     if (this.pivot) {
       this.sm.scene.remove(this.pivot);
@@ -2088,12 +2141,13 @@ var ClipManager = class {
   }
   dispose() {
     this.clear();
-    const tc = this.transformControls;
-    if (tc) {
+    for (const tc of [this.tcMove, this.tcRotate]) {
+      if (!tc) continue;
       this.sm.scene.remove(tc.getHelper());
       tc.dispose();
-      this.transformControls = null;
     }
+    this.tcMove = null;
+    this.tcRotate = null;
     if (this._faceHandles) {
       this._faceHandles.dispose();
       this._faceHandles = null;
@@ -2103,46 +2157,44 @@ var ClipManager = class {
     if (!this.pivot || !this.selectedId) return;
     const entry = this.entries.find((e) => e.id === this.selectedId);
     if (!entry) return;
-    if (this._transformMode === "rotate") {
-      const zRot = new THREE5.Euler().setFromQuaternion(this.pivot.quaternion, "ZYX").z;
-      entry.rotationZ = zRot;
-      this.pivot.rotation.set(0, 0, zRot);
-      this._faceHandles?.setRotationZ(zRot);
-    } else {
-      const center = this.pivot.position.clone();
-      const halfSize = new THREE5.Vector3(
-        Math.abs(this.pivot.scale.x) * 0.5,
-        Math.abs(this.pivot.scale.y) * 0.5,
-        Math.abs(this.pivot.scale.z) * 0.5
-      );
-      entry.box.min.copy(center).sub(halfSize);
-      entry.box.max.copy(center).add(halfSize);
-    }
+    const center = this.pivot.position.clone();
+    const halfSize = new THREE5.Vector3(
+      Math.abs(this.pivot.scale.x) * 0.5,
+      Math.abs(this.pivot.scale.y) * 0.5,
+      Math.abs(this.pivot.scale.z) * 0.5
+    );
+    entry.box.min.copy(center).sub(halfSize);
+    entry.box.max.copy(center).add(halfSize);
+    entry.quaternion.copy(this.pivot.quaternion);
+    this._faceHandles?.setQuaternion(entry.quaternion);
     this.updateHelper(entry);
     this.applyAll();
     this.onChange?.(this.getBoxes());
   }
-  /** Set wireframe color for selected/default state */
+  /**
+   * Set wireframe color: selected → bright yellow; deselected → black so the
+   * inactive crop boxes recede (and read cleanly on light point clouds).
+   */
   _highlightHelper(id, selected) {
     if (!id) return;
     const helper = this.helpers.get(id);
     if (helper) {
       helper.material.color.setHex(
-        selected ? 16777028 : 14472518
+        selected ? 16777028 : 0
       );
     }
   }
   updateHelper(entry) {
     if (!this.helpers.has(entry.id)) {
-      const helper2 = new THREE5.Box3Helper(entry.box, new THREE5.Color(14472518));
+      const helper2 = new THREE5.Box3Helper(entry.box, new THREE5.Color(0));
       helper2.material.linewidth = 1;
       helper2.renderOrder = 3;
-      helper2.visible = entry.visible;
+      helper2.visible = entry.visible && this._outlinesVisible;
       this.sm.scene.add(helper2);
       this.helpers.set(entry.id, helper2);
     }
     const helper = this.helpers.get(entry.id);
-    if (helper) helper.rotation.z = entry.rotationZ ?? 0;
+    if (helper) helper.quaternion.copy(entry.quaternion);
     const center = new THREE5.Vector3();
     const size = new THREE5.Vector3();
     entry.box.getCenter(center);
@@ -2151,7 +2203,7 @@ var ClipManager = class {
     if (existingFill) {
       existingFill.position.copy(center);
       existingFill.scale.copy(size);
-      existingFill.rotation.z = entry.rotationZ ?? 0;
+      existingFill.quaternion.copy(entry.quaternion);
     } else {
       const fillGeo = new THREE5.BoxGeometry(1, 1, 1);
       const fillMat = new THREE5.MeshBasicMaterial({
@@ -2164,9 +2216,9 @@ var ClipManager = class {
       const fillMesh = new THREE5.Mesh(fillGeo, fillMat);
       fillMesh.position.copy(center);
       fillMesh.scale.copy(size);
-      fillMesh.rotation.z = entry.rotationZ ?? 0;
+      fillMesh.quaternion.copy(entry.quaternion);
       fillMesh.renderOrder = 2;
-      fillMesh.visible = entry.visible;
+      fillMesh.visible = entry.visible && this._outlinesVisible;
       this.sm.scene.add(fillMesh);
       this.fills.set(entry.id, fillMesh);
     }
@@ -2195,11 +2247,7 @@ var ClipManager = class {
         const center = new THREE5.Vector3();
         entry.box.getSize(size);
         entry.box.getCenter(center);
-        const q = new THREE5.Quaternion().setFromAxisAngle(
-          new THREE5.Vector3(0, 0, 1),
-          entry.rotationZ ?? 0
-        );
-        const matrix = new THREE5.Matrix4().compose(center, q, size);
+        const matrix = new THREE5.Matrix4().compose(center, entry.quaternion, size);
         const inverse = matrix.clone().invert();
         return {
           box: entry.box.clone(),

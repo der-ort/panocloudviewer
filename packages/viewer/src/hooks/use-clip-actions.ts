@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback } from "react";
-import * as THREE from "three";
 import { useViewer } from "../providers/viewer-provider";
 import type { ClipMode } from "@der-ort/pano-cloud-viewer-core";
 
@@ -16,31 +15,12 @@ export function useClipActions() {
 
   const addBox = useCallback(() => {
     if (!clipManager || !loader) return;
-    const wb = loader.worldBox;
-    if (wb.isEmpty()) return;
+    if (loader.worldBox.isEmpty()) return;
 
-    // Build a CENTERED, SHORT box. Keep X/Y half-extents at ~½ of the world
-    // size, but collapse Z to a thin slab centered at the world mid-Z so the
-    // default box does not extend past the top/bottom of the viewport.
-    const center = new THREE.Vector3();
-    const size = new THREE.Vector3();
-    wb.getCenter(center);
-    wb.getSize(size);
-
-    const halfX = size.x * 0.5;
-    const halfY = size.y * 0.5;
-    // Thin Z slab: ~1/6 of cloud height, capped at 8 units, with a small floor.
-    const halfZ = Math.max(0.2, Math.min(size.z / 6, 8)) * 0.5;
-
-    const half = new THREE.Vector3(halfX, halfY, halfZ);
-    const box = new THREE.Box3(
-      center.clone().sub(half),
-      center.clone().add(half),
-    );
-
-    const entry = clipManager.addBox(box);
+    // Sized to fit the current viewport (centered on the view target, clamped to
+    // the cloud) so the box is always fully visible and easy to grab.
+    const entry = clipManager.addDefaultBox(loader.worldBox);
     clipManager.selectBox(entry.id);
-    clipManager.setTransformMode("scale");
   }, [clipManager, loader]);
 
   const clearAll = useCallback(() => {
@@ -58,21 +38,15 @@ export function useClipActions() {
   }, [clipManager]);
 
   const isEnabled = clipManager?.isEnabled() ?? true;
+  const outlinesVisible = clipManager?.areOutlinesVisible() ?? true;
+
+  const setOutlinesVisible = useCallback((visible: boolean) => {
+    clipManager?.setOutlinesVisible(visible);
+  }, [clipManager]);
 
   const selectBox = useCallback((id: string | null) => {
     clipManager?.selectBox(id);
   }, [clipManager]);
-
-  const setTransformMode = useCallback((mode: "translate" | "scale" | "rotate") => {
-    if (!clipManager) return;
-    const id = clipManager.getSelectedId();
-    if (id) {
-      clipManager.setTransformMode(mode);
-    } else if (boxes[0]) {
-      clipManager.selectBox(boxes[0].id);
-      clipManager.setTransformMode(mode);
-    }
-  }, [clipManager, boxes]);
 
   const removeBox = useCallback((id: string) => {
     clipManager?.removeBox(id);
@@ -92,12 +66,13 @@ export function useClipActions() {
     hasClipBox,
     clipMode,
     isEnabled,
+    outlinesVisible,
     addBox,
     clearAll,
     toggleMode,
     setEnabled,
+    setOutlinesVisible,
     selectBox,
-    setTransformMode,
     removeBox,
     setBoxVisible,
     setModeAll,

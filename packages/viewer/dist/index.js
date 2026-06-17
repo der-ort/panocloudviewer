@@ -4,7 +4,7 @@ import React25, { createContext, lazy, useContext, useState, useCallback, useEff
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { X, ChevronDown, ChevronUp, Check, Download, Settings, Sliders, Map as Map$1, Layers, Sun, Moon, BoxSelect, Plus, Trash2, Scissors, ScissorsLineDashed, Power, Eye, EyeOff, Move, Maximize2, RotateCw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Camera, Tag, ChevronRight, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, RotateCcw, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Check, Download, Settings, Sliders, Map as Map$1, Layers, Sun, Moon, BoxSelect, Plus, Trash2, Scissors, ScissorsLineDashed, Power, Eye, EyeOff, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Camera, Tag, ChevronRight, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Maximize, RotateCcw, Palette, Box, Square, Image, Circle, Minus } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cva } from 'class-variance-authority';
 import * as SliderPrimitive from '@radix-ui/react-slider';
@@ -1627,8 +1627,8 @@ var init_dist = __esm({
       raycaster = new THREE5.Raycaster();
       group;
       disposed = false;
-      /** Rotation of the box about the world Z axis, in radians. */
-      _rotationZ = 0;
+      /** Orientation of the box (full 3-axis rotation). */
+      _quaternion = new THREE5.Quaternion();
       constructor(scene, camera, domElement) {
         this.scene = scene;
         this.camera = camera;
@@ -1647,7 +1647,7 @@ var init_dist = __esm({
             const mat = new THREE5.MeshBasicMaterial({
               color: AXIS_COLOR[axis],
               transparent: true,
-              opacity: 0.7,
+              opacity: 0.95,
               depthTest: false
             });
             const mesh = new THREE5.Mesh(geo, mat);
@@ -1665,9 +1665,9 @@ var init_dist = __esm({
         this.updatePositions();
         for (const h of this.handles) h.mesh.visible = true;
       }
-      /** Set the box's rotation about the world Z axis (radians) so handles follow it. */
-      setRotationZ(r) {
-        this._rotationZ = r;
+      /** Set the box's orientation (full 3-axis) so handles follow it. */
+      setQuaternion(q) {
+        this._quaternion.copy(q);
         if (this.box) this.updatePositions();
       }
       detach() {
@@ -1679,6 +1679,10 @@ var init_dist = __esm({
       }
       isAttached() {
         return this.box !== null;
+      }
+      /** Show/hide the whole handle group without detaching (keeps box binding). */
+      setGroupVisible(visible) {
+        this.group.visible = visible;
       }
       isDragging() {
         return this.drag !== null;
@@ -1694,9 +1698,7 @@ var init_dist = __esm({
         this.box.getCenter(center);
         this.box.getSize(size);
         const diag = size.length();
-        const radius = Math.max(0.05, Math.min(diag * 0.02, 2));
-        const cos = Math.cos(this._rotationZ);
-        const sin = Math.sin(this._rotationZ);
+        const radius = Math.max(0.08, Math.min(diag * 0.03, 3));
         for (const h of this.handles) {
           const offset = new THREE5.Vector3();
           if (h.sign === 1) {
@@ -1704,9 +1706,8 @@ var init_dist = __esm({
           } else {
             offset[h.axis] = this.box.min[h.axis] - center[h.axis];
           }
-          const rx = offset.x * cos - offset.y * sin;
-          const ry = offset.x * sin + offset.y * cos;
-          h.mesh.position.set(center.x + rx, center.y + ry, center.z + offset.z);
+          offset.applyQuaternion(this._quaternion);
+          h.mesh.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
           h.mesh.scale.setScalar(radius);
         }
       }
@@ -1742,13 +1743,14 @@ var init_dist = __esm({
         this.setHandleColor(handle, HANDLE_DRAG_COLOR);
         return true;
       }
-      /** World-space unit vector for a box-local face axis, rotated by _rotationZ around Z. */
+      /** World-space unit vector for a box-local face axis, rotated by the box orientation. */
       worldAxisFor(axis) {
-        const cos = Math.cos(this._rotationZ);
-        const sin = Math.sin(this._rotationZ);
-        if (axis === "x") return new THREE5.Vector3(cos, sin, 0);
-        if (axis === "y") return new THREE5.Vector3(-sin, cos, 0);
-        return new THREE5.Vector3(0, 0, 1);
+        const local = new THREE5.Vector3(
+          axis === "x" ? 1 : 0,
+          axis === "y" ? 1 : 0,
+          axis === "z" ? 1 : 0
+        );
+        return local.applyQuaternion(this._quaternion);
       }
       /** Update the box during a drag. Call on pointermove. */
       onPointerMove(clientX, clientY) {
@@ -1830,52 +1832,98 @@ var init_dist = __esm({
       fills = /* @__PURE__ */ new Map();
       draftHelper = null;
       selectedId = null;
-      transformControls = null;
+      /** Move gizmo (translate arrows) — shown together with the rotate gizmo + face handles. */
+      tcMove = null;
+      /** Rotate gizmo (full XYZ rings) — shown together with the move gizmo + face handles. */
+      tcRotate = null;
       pivot = null;
       _faceHandles = null;
-      _transformMode = "translate";
       /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
       _enabled = true;
+      /** Whether box outlines / fills / handles render at all (off = clean screenshots). */
+      _outlinesVisible = true;
       onChange;
       onSelectChange;
       constructor(sm) {
         this.sm = sm;
       }
       async initTransformControls() {
-        if (this.transformControls) return;
+        if (this.tcMove && this.tcRotate) return;
         const { TransformControls } = await import('three/examples/jsm/controls/TransformControls.js');
-        const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement);
-        tc.setSpace("world");
-        tc.setSize(0.8);
-        tc.addEventListener("change", () => this.syncFromPivot());
-        tc.addEventListener("dragging-changed", (e) => {
-          this.sm.controls.enabled = !e.value;
-        });
-        this.sm.scene.add(tc.getHelper());
-        this.transformControls = tc;
+        const makeTc = (mode, size) => {
+          const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement);
+          tc.setSpace("world");
+          tc.setMode(mode);
+          tc.setSize(size);
+          tc.addEventListener("change", () => this.syncFromPivot());
+          tc.addEventListener("dragging-changed", (e) => {
+            this.sm.controls.enabled = !e.value;
+          });
+          this.sm.scene.add(tc.getHelper());
+          return tc;
+        };
+        this.tcMove = makeTc("translate", 0.8);
+        this.tcRotate = makeTc("rotate", 1.1);
         this._raiseGizmo();
       }
       /**
-       * Force the TransformControls gizmo to render on top of the point cloud.
-       * The gizmo uses default materials (depthTest=true, renderOrder=0) so it is
-       * occluded by the dense cloud. Traverse the gizmo tree and disable depth
-       * testing so the arrows/rings draw through. Must be re-applied after every
-       * setMode() because TransformControls rebuilds its gizmo/picker meshes.
+       * Force the TransformControls gizmos to render on top of the point cloud.
+       * The gizmos use default materials (depthTest=true, renderOrder=0) so they are
+       * occluded by the dense cloud. Traverse each gizmo tree and disable depth
+       * testing so the arrows/rings draw through.
        */
       _raiseGizmo() {
-        const tc = this.transformControls;
-        const helper = tc?.getHelper?.();
-        if (!helper) return;
-        helper.traverse((child) => {
-          if (!child.material) return;
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          for (const m of mats) {
-            m.depthTest = false;
-            m.depthWrite = false;
-            m.transparent = true;
-          }
-          child.renderOrder = 5;
-        });
+        for (const tc of [this.tcMove, this.tcRotate]) {
+          const helper = tc?.getHelper?.();
+          if (!helper) continue;
+          helper.traverse((child) => {
+            if (!child.material) return;
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            for (const m of mats) {
+              m.depthTest = false;
+              m.depthWrite = false;
+              m.transparent = true;
+            }
+            child.renderOrder = 5;
+          });
+        }
+      }
+      /**
+       * Build an axis-aligned box centered on the current view target, sized to sit
+       * comfortably INSIDE the viewport at the current camera distance, then clamped
+       * to the cloud bounds. This replaces the old behavior of spanning the whole
+       * world box, which routinely extended far outside the viewport (and dwarfed
+       * the resize handles). The result is always fully visible and easy to grab.
+       */
+      makeViewportBox(worldBox) {
+        const cam = this.sm.camera;
+        const target = this.sm.controls.target.clone();
+        const dist = cam.position.distanceTo(target) || 1;
+        const vfov = THREE5.MathUtils.degToRad(cam.fov || 50);
+        const halfH = Math.tan(vfov / 2) * dist;
+        const halfW = halfH * (cam.aspect || 1);
+        let half = Math.min(halfH, halfW) * 0.45;
+        let halfZ = half * 0.6;
+        if (worldBox && !worldBox.isEmpty()) {
+          const ws = new THREE5.Vector3();
+          worldBox.getSize(ws);
+          half = Math.min(half, ws.x * 0.5, ws.y * 0.5);
+          halfZ = Math.min(halfZ, ws.z * 0.5);
+          target.clamp(worldBox.min, worldBox.max);
+        }
+        half = Math.max(half, 0.25);
+        halfZ = Math.max(halfZ, 0.15);
+        return new THREE5.Box3(
+          new THREE5.Vector3(target.x - half, target.y - half, target.z - halfZ),
+          new THREE5.Vector3(target.x + half, target.y + half, target.z + halfZ)
+        );
+      }
+      /**
+       * Add a clip box sized to fit the current viewport (see {@link makeViewportBox}).
+       * Preferred over `addBox(worldBox.clone())` for the "create default box" action.
+       */
+      addDefaultBox(worldBox, name) {
+        return this.addBox(this.makeViewportBox(worldBox), name);
       }
       addBox(box, name) {
         const id = genId();
@@ -1885,7 +1933,7 @@ var init_dist = __esm({
           box: box.clone(),
           mode: "outside",
           visible: true,
-          rotationZ: 0
+          quaternion: new THREE5.Quaternion()
         };
         this.entries.push(entry);
         this.updateHelper(entry);
@@ -1895,8 +1943,7 @@ var init_dist = __esm({
       }
       async selectBox(id) {
         this._highlightHelper(this.selectedId, false);
-        const tc = this.transformControls;
-        if (tc) tc.detach();
+        this._detachGizmos();
         if (this.pivot) {
           this.sm.scene.remove(this.pivot);
           this.pivot.geometry.dispose();
@@ -1909,7 +1956,6 @@ var init_dist = __esm({
         const entry = this.entries.find((e) => e.id === id);
         if (!entry) return;
         await this.initTransformControls();
-        const controls = this.transformControls;
         const center = new THREE5.Vector3();
         const size = new THREE5.Vector3();
         entry.box.getCenter(center);
@@ -1919,11 +1965,9 @@ var init_dist = __esm({
         this.pivot = new THREE5.Mesh(geo, mat);
         this.pivot.position.copy(center);
         this.pivot.scale.copy(size);
-        this.pivot.rotation.set(0, 0, entry.rotationZ ?? 0);
+        this.pivot.quaternion.copy(entry.quaternion);
         this.pivot.userData.clipId = id;
         this.sm.scene.add(this.pivot);
-        controls.attach(this.pivot);
-        controls.setMode("translate");
         if (!this._faceHandles) {
           this._faceHandles = new FaceHandleController(
             this.sm.scene,
@@ -1931,7 +1975,7 @@ var init_dist = __esm({
             this.sm.renderer.domElement
           );
         }
-        this._faceHandles.setRotationZ(entry.rotationZ ?? 0);
+        this._faceHandles.setQuaternion(entry.quaternion);
         this._faceHandles.attach(entry.box, () => {
           this.updateHelper(entry);
           this.applyAll();
@@ -1945,60 +1989,39 @@ var init_dist = __esm({
           }
           this.onChange?.(this.getBoxes());
         });
-        this._applyTransformMode();
+        this._attachGizmos();
+        this._applyOutlineVisibility();
         this._highlightHelper(id, true);
       }
-      setTransformMode(mode) {
-        this._transformMode = mode;
-        this._applyTransformMode();
+      /**
+       * @deprecated Transform handles (move, rotate, resize) are now shown together,
+       * so there is no single active mode. Kept as a no-op for API compatibility.
+       */
+      setTransformMode(_mode) {
       }
       /** Get the face handle controller (for viewport event forwarding) */
       get faceHandles() {
         return this._faceHandles;
       }
-      _applyTransformMode() {
-        const tc = this.transformControls;
-        if (this._transformMode === "scale") {
-          if (tc) tc.detach();
-          if (this._faceHandles && this.selectedId) {
-            const entry = this.entries.find((e) => e.id === this.selectedId);
-            if (entry && !this._faceHandles.isAttached()) {
-              this._faceHandles.setRotationZ(entry.rotationZ ?? 0);
-              this._faceHandles.attach(entry.box, () => {
-                this.updateHelper(entry);
-                this.applyAll();
-                if (this.pivot) {
-                  const c = new THREE5.Vector3();
-                  const s = new THREE5.Vector3();
-                  entry.box.getCenter(c);
-                  entry.box.getSize(s);
-                  this.pivot.position.copy(c);
-                  this.pivot.scale.copy(s);
-                }
-                this.onChange?.(this.getBoxes());
-              });
-            }
-            this._faceHandles.updatePositions();
-          }
-        } else {
-          if (tc && this.pivot) {
-            tc.attach(this.pivot);
-            tc.setMode(this._transformMode);
-            if (this._transformMode === "rotate") {
-              tc.showX = false;
-              tc.showY = false;
-              tc.showZ = true;
-              tc.setSize(1);
-            } else {
-              tc.showX = true;
-              tc.showY = true;
-              tc.showZ = true;
-              tc.setSize(0.8);
-            }
-            this._raiseGizmo();
-          }
-          this._faceHandles?.detach();
+      /** Attach both gizmos to the current pivot (move + full-XYZ rotate). */
+      _attachGizmos() {
+        if (!this.pivot) return;
+        const move = this.tcMove;
+        const rotate = this.tcRotate;
+        if (move) {
+          move.attach(this.pivot);
+          move.showX = move.showY = move.showZ = true;
         }
+        if (rotate) {
+          rotate.attach(this.pivot);
+          rotate.showX = rotate.showY = rotate.showZ = true;
+        }
+        this._raiseGizmo();
+      }
+      /** Detach both gizmos. */
+      _detachGizmos() {
+        this.tcMove?.detach();
+        this.tcRotate?.detach();
       }
       removeBox(id) {
         const idx = this.entries.findIndex((e) => e.id === id);
@@ -2018,7 +2041,7 @@ var init_dist = __esm({
           this.fills.delete(id);
         }
         if (this.selectedId === id) {
-          this.transformControls?.detach();
+          this._detachGizmos();
           this._faceHandles?.detach();
           if (this.pivot) {
             this.sm.scene.remove(this.pivot);
@@ -2062,14 +2085,44 @@ var init_dist = __esm({
       isEnabled() {
         return this._enabled;
       }
+      /**
+       * Globally show/hide ALL box outlines, fills, handles and gizmos WITHOUT
+       * affecting clipping — clipping stays active so you keep the cropped view but
+       * get a clean image (e.g. for screenshots). Per-box visibility still applies
+       * when outlines are on.
+       */
+      setOutlinesVisible(visible) {
+        this._outlinesVisible = visible;
+        this._applyOutlineVisibility();
+      }
+      areOutlinesVisible() {
+        return this._outlinesVisible;
+      }
+      /** Apply the global outline flag (and per-box visibility) to all scene objects. */
+      _applyOutlineVisibility() {
+        const show = this._outlinesVisible;
+        for (const entry of this.entries) {
+          const helper = this.helpers.get(entry.id);
+          if (helper) helper.visible = show && entry.visible;
+          const fill = this.fills.get(entry.id);
+          if (fill) fill.visible = show && entry.visible;
+        }
+        const selected = show && this.selectedId !== null;
+        if (selected) {
+          this._attachGizmos();
+        } else {
+          this._detachGizmos();
+        }
+        this._faceHandles?.setGroupVisible(selected);
+      }
       setBoxVisible(id, visible) {
         const entry = this.entries.find((e) => e.id === id);
         if (!entry) return;
         entry.visible = visible;
         const helper = this.helpers.get(id);
-        if (helper) helper.visible = visible;
+        if (helper) helper.visible = visible && this._outlinesVisible;
         const fill = this.fills.get(id);
-        if (fill) fill.visible = visible;
+        if (fill) fill.visible = visible && this._outlinesVisible;
         this.applyAll();
         this.onChange?.(this.getBoxes());
       }
@@ -2104,7 +2157,7 @@ var init_dist = __esm({
         }
       }
       clear() {
-        this.transformControls?.detach();
+        this._detachGizmos();
         this._faceHandles?.detach();
         if (this.pivot) {
           this.sm.scene.remove(this.pivot);
@@ -2135,12 +2188,13 @@ var init_dist = __esm({
       }
       dispose() {
         this.clear();
-        const tc = this.transformControls;
-        if (tc) {
+        for (const tc of [this.tcMove, this.tcRotate]) {
+          if (!tc) continue;
           this.sm.scene.remove(tc.getHelper());
           tc.dispose();
-          this.transformControls = null;
         }
+        this.tcMove = null;
+        this.tcRotate = null;
         if (this._faceHandles) {
           this._faceHandles.dispose();
           this._faceHandles = null;
@@ -2150,46 +2204,44 @@ var init_dist = __esm({
         if (!this.pivot || !this.selectedId) return;
         const entry = this.entries.find((e) => e.id === this.selectedId);
         if (!entry) return;
-        if (this._transformMode === "rotate") {
-          const zRot = new THREE5.Euler().setFromQuaternion(this.pivot.quaternion, "ZYX").z;
-          entry.rotationZ = zRot;
-          this.pivot.rotation.set(0, 0, zRot);
-          this._faceHandles?.setRotationZ(zRot);
-        } else {
-          const center = this.pivot.position.clone();
-          const halfSize = new THREE5.Vector3(
-            Math.abs(this.pivot.scale.x) * 0.5,
-            Math.abs(this.pivot.scale.y) * 0.5,
-            Math.abs(this.pivot.scale.z) * 0.5
-          );
-          entry.box.min.copy(center).sub(halfSize);
-          entry.box.max.copy(center).add(halfSize);
-        }
+        const center = this.pivot.position.clone();
+        const halfSize = new THREE5.Vector3(
+          Math.abs(this.pivot.scale.x) * 0.5,
+          Math.abs(this.pivot.scale.y) * 0.5,
+          Math.abs(this.pivot.scale.z) * 0.5
+        );
+        entry.box.min.copy(center).sub(halfSize);
+        entry.box.max.copy(center).add(halfSize);
+        entry.quaternion.copy(this.pivot.quaternion);
+        this._faceHandles?.setQuaternion(entry.quaternion);
         this.updateHelper(entry);
         this.applyAll();
         this.onChange?.(this.getBoxes());
       }
-      /** Set wireframe color for selected/default state */
+      /**
+       * Set wireframe color: selected → bright yellow; deselected → black so the
+       * inactive crop boxes recede (and read cleanly on light point clouds).
+       */
       _highlightHelper(id, selected) {
         if (!id) return;
         const helper = this.helpers.get(id);
         if (helper) {
           helper.material.color.setHex(
-            selected ? 16777028 : 14472518
+            selected ? 16777028 : 0
           );
         }
       }
       updateHelper(entry) {
         if (!this.helpers.has(entry.id)) {
-          const helper2 = new THREE5.Box3Helper(entry.box, new THREE5.Color(14472518));
+          const helper2 = new THREE5.Box3Helper(entry.box, new THREE5.Color(0));
           helper2.material.linewidth = 1;
           helper2.renderOrder = 3;
-          helper2.visible = entry.visible;
+          helper2.visible = entry.visible && this._outlinesVisible;
           this.sm.scene.add(helper2);
           this.helpers.set(entry.id, helper2);
         }
         const helper = this.helpers.get(entry.id);
-        if (helper) helper.rotation.z = entry.rotationZ ?? 0;
+        if (helper) helper.quaternion.copy(entry.quaternion);
         const center = new THREE5.Vector3();
         const size = new THREE5.Vector3();
         entry.box.getCenter(center);
@@ -2198,7 +2250,7 @@ var init_dist = __esm({
         if (existingFill) {
           existingFill.position.copy(center);
           existingFill.scale.copy(size);
-          existingFill.rotation.z = entry.rotationZ ?? 0;
+          existingFill.quaternion.copy(entry.quaternion);
         } else {
           const fillGeo = new THREE5.BoxGeometry(1, 1, 1);
           const fillMat = new THREE5.MeshBasicMaterial({
@@ -2211,9 +2263,9 @@ var init_dist = __esm({
           const fillMesh = new THREE5.Mesh(fillGeo, fillMat);
           fillMesh.position.copy(center);
           fillMesh.scale.copy(size);
-          fillMesh.rotation.z = entry.rotationZ ?? 0;
+          fillMesh.quaternion.copy(entry.quaternion);
           fillMesh.renderOrder = 2;
-          fillMesh.visible = entry.visible;
+          fillMesh.visible = entry.visible && this._outlinesVisible;
           this.sm.scene.add(fillMesh);
           this.fills.set(entry.id, fillMesh);
         }
@@ -2242,11 +2294,7 @@ var init_dist = __esm({
             const center = new THREE5.Vector3();
             entry.box.getSize(size);
             entry.box.getCenter(center);
-            const q = new THREE5.Quaternion().setFromAxisAngle(
-              new THREE5.Vector3(0, 0, 1),
-              entry.rotationZ ?? 0
-            );
-            const matrix = new THREE5.Matrix4().compose(center, q, size);
+            const matrix = new THREE5.Matrix4().compose(center, entry.quaternion, size);
             const inverse = matrix.clone().invert();
             return {
               box: entry.box.clone(),
@@ -3321,7 +3369,6 @@ function Viewport({ className }) {
         if (box && !box.isEmpty() && clipRef.current) {
           const entry = clipRef.current.addBox(box);
           clipRef.current.selectBox(entry.id);
-          clipRef.current.setTransformMode("scale");
           clipDraftRef.current = null;
           clipRef.current.setDraft(null);
         }
@@ -3390,8 +3437,8 @@ function Viewport({ className }) {
     showMinimap && /* @__PURE__ */ jsxs(
       "div",
       {
-        className: "absolute bottom-10 right-3 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer",
-        style: { width: minimapSize, height: minimapSize },
+        className: "absolute bottom-10 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer transition-[right] duration-200",
+        style: { width: minimapSize, height: minimapSize, right: "var(--pcv-minimap-right, 0.75rem)" },
         onClick: handleMinimapClick,
         children: [
           /* @__PURE__ */ jsx(
@@ -4034,23 +4081,28 @@ var ADVANCED_MEASURES = [
   { type: "profile", tool: "measure-profile", icon: /* @__PURE__ */ jsx(Waypoints, { size: 15 }), titleKey: "measureProfile" }
 ];
 function ToolRail() {
-  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, uiMode } = useViewer();
+  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, uiMode, selectedClipBoxId } = useViewer();
   const t = useLocale().toolRail;
   const isPro = uiMode === "professional";
   const toggle = (tool) => setActiveTool(activeTool === tool ? "none" : tool);
   const boxes = clipManager?.getBoxes() ?? [];
   const hasClipBox = boxes.length > 0;
+  const clipSelected = !!selectedClipBoxId;
+  const toggleClipBox = () => {
+    if (!clipManager || !loader) return;
+    if (!hasClipBox) {
+      if (loader.worldBox.isEmpty()) return;
+      const entry = clipManager.addDefaultBox(loader.worldBox);
+      clipManager.selectBox(entry.id);
+    } else if (clipSelected) {
+      clipManager.selectBox(null);
+    } else {
+      clipManager.selectBox(boxes[0].id);
+    }
+  };
   const clearClipBox = () => {
     clipManager?.clear();
     if (activeTool === "section-box") setActiveTool("none");
-  };
-  const addClipBox = () => {
-    if (!clipManager || !loader) return;
-    const wb = loader.worldBox;
-    if (wb.isEmpty()) return;
-    const entry = clipManager.addBox(wb.clone());
-    clipManager.selectBox(entry.id);
-    clipManager.setTransformMode("scale");
   };
   const clearMeasurements = () => {
     measurementManager?.clearAll();
@@ -4097,9 +4149,18 @@ function ToolRail() {
         RailBtn,
         {
           icon: /* @__PURE__ */ jsx(BoxSelect, { size: 15 }),
-          title: hasClipBox ? t.removeClipBox : t.drawClipBox,
-          active: hasClipBox,
-          onClick: hasClipBox ? clearClipBox : addClipBox
+          title: !hasClipBox ? t.drawClipBox : clipSelected ? "Deselect section (crop stays active)" : "Edit section",
+          active: clipSelected,
+          onClick: toggleClipBox
+        }
+      ),
+      hasClipBox && /* @__PURE__ */ jsx(
+        RailBtn,
+        {
+          icon: /* @__PURE__ */ jsx(X, { size: 13 }),
+          title: t.removeClipBox,
+          onClick: clearClipBox,
+          compact: true
         }
       )
     ] })
@@ -4118,23 +4179,9 @@ function useClipActions() {
   const clipMode = boxes.find((b) => b.visible)?.mode ?? "outside";
   const addBox = useCallback(() => {
     if (!clipManager || !loader) return;
-    const wb = loader.worldBox;
-    if (wb.isEmpty()) return;
-    const center = new THREE5.Vector3();
-    const size = new THREE5.Vector3();
-    wb.getCenter(center);
-    wb.getSize(size);
-    const halfX = size.x * 0.5;
-    const halfY = size.y * 0.5;
-    const halfZ = Math.max(0.2, Math.min(size.z / 6, 8)) * 0.5;
-    const half = new THREE5.Vector3(halfX, halfY, halfZ);
-    const box = new THREE5.Box3(
-      center.clone().sub(half),
-      center.clone().add(half)
-    );
-    const entry = clipManager.addBox(box);
+    if (loader.worldBox.isEmpty()) return;
+    const entry = clipManager.addDefaultBox(loader.worldBox);
     clipManager.selectBox(entry.id);
-    clipManager.setTransformMode("scale");
   }, [clipManager, loader]);
   const clearAll = useCallback(() => {
     clipManager?.clear();
@@ -4148,19 +4195,13 @@ function useClipActions() {
     clipManager?.setEnabled(enabled);
   }, [clipManager]);
   const isEnabled = clipManager?.isEnabled() ?? true;
+  const outlinesVisible = clipManager?.areOutlinesVisible() ?? true;
+  const setOutlinesVisible = useCallback((visible) => {
+    clipManager?.setOutlinesVisible(visible);
+  }, [clipManager]);
   const selectBox = useCallback((id) => {
     clipManager?.selectBox(id);
   }, [clipManager]);
-  const setTransformMode = useCallback((mode) => {
-    if (!clipManager) return;
-    const id = clipManager.getSelectedId();
-    if (id) {
-      clipManager.setTransformMode(mode);
-    } else if (boxes[0]) {
-      clipManager.selectBox(boxes[0].id);
-      clipManager.setTransformMode(mode);
-    }
-  }, [clipManager, boxes]);
   const removeBox = useCallback((id) => {
     clipManager?.removeBox(id);
   }, [clipManager]);
@@ -4176,12 +4217,13 @@ function useClipActions() {
     hasClipBox,
     clipMode,
     isEnabled,
+    outlinesVisible,
     addBox,
     clearAll,
     toggleMode,
     setEnabled,
+    setOutlinesVisible,
     selectBox,
-    setTransformMode,
     removeBox,
     setBoxVisible,
     setModeAll
@@ -4191,12 +4233,14 @@ function useClipActions() {
 // src/components/toolbar/clip-toolbar.tsx
 init_locale_context();
 function ClipToolbar() {
-  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, setTransformMode, isEnabled, setEnabled } = useClipActions();
+  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible } = useClipActions();
   const t = useLocale().clipToolbar;
   const [enabled, setEnabledLocal] = React25.useState(isEnabled);
+  const [outlines, setOutlinesLocal] = React25.useState(outlinesVisible);
   React25.useEffect(() => {
     setEnabledLocal(isEnabled);
-  }, [isEnabled, boxes]);
+    setOutlinesLocal(outlinesVisible);
+  }, [isEnabled, outlinesVisible, boxes]);
   if (boxes.length === 0) return null;
   const firstVisible = boxes.find((b) => b.visible);
   const isInside = (firstVisible?.mode ?? "outside") === "inside";
@@ -4248,6 +4292,25 @@ function ClipToolbar() {
           enabled ? /* @__PURE__ */ jsx(Scissors, { size: 12 }) : /* @__PURE__ */ jsx(ScissorsLineDashed, { size: 12 }),
           /* @__PURE__ */ jsx("span", { className: "flex-1 text-left", children: enabled ? "Clipping on" : "Clipping off" }),
           /* @__PURE__ */ jsx(Power, { size: 12, className: enabled ? "text-[hsl(var(--brand))]" : "text-muted-foreground" })
+        ]
+      }
+    ) }),
+    /* @__PURE__ */ jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: () => {
+          const next = !outlines;
+          setOutlinesLocal(next);
+          setOutlinesVisible(next);
+        },
+        title: outlines ? "Outlines visible" : "Outlines hidden",
+        className: cn(
+          "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
+          outlines ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+        ),
+        children: [
+          outlines ? /* @__PURE__ */ jsx(Eye, { size: 12 }) : /* @__PURE__ */ jsx(EyeOff, { size: 12 }),
+          /* @__PURE__ */ jsx("span", { className: "flex-1 text-left", children: outlines ? "Outlines on" : "Outlines off" })
         ]
       }
     ) }),
@@ -4311,47 +4374,7 @@ function ClipToolbar() {
         box.id
       );
     }) }),
-    selectedClipBoxId && /* @__PURE__ */ jsxs(Fragment, { children: [
-      /* @__PURE__ */ jsx("div", { className: "h-px bg-white/10 mx-1 mt-1.5 mb-1.5" }),
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1 px-1", children: [
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            title: t.move,
-            onClick: () => setTransformMode("translate"),
-            className: "flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
-            children: [
-              /* @__PURE__ */ jsx(Move, { size: 12 }),
-              /* @__PURE__ */ jsx("span", { className: "text-[10px]", children: t.move })
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            title: t.scale,
-            onClick: () => setTransformMode("scale"),
-            className: "flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
-            children: [
-              /* @__PURE__ */ jsx(Maximize2, { size: 12 }),
-              /* @__PURE__ */ jsx("span", { className: "text-[10px]", children: t.scale })
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            title: t.rotateZ,
-            onClick: () => setTransformMode("rotate"),
-            className: "flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
-            children: [
-              /* @__PURE__ */ jsx(RotateCw, { size: 12 }),
-              /* @__PURE__ */ jsx("span", { className: "text-[10px]", children: t.rotateZ })
-            ]
-          }
-        )
-      ] })
-    ] })
+    selectedClipBoxId && /* @__PURE__ */ jsx("p", { className: "px-2 pt-2 text-[10px] leading-snug text-muted-foreground/70", children: "Drag the arrows to move, the rings to rotate, and the coloured handles to resize." })
   ] });
 }
 
@@ -4740,9 +4763,9 @@ function ClassificationPanel() {
       if (cloud?.material) {
         const mat = cloud.material;
         if (mat.classification) {
-          const THREE4 = window.THREE;
+          const THREE3 = window.THREE;
           const hexColor = CLASS_DEFS.find((c) => c.code === code)?.color ?? "#ffffff";
-          mat.classification[code] = { visible: next[code], color: THREE4 ? new THREE4.Color(hexColor) : hexColor };
+          mat.classification[code] = { visible: next[code], color: THREE3 ? new THREE3.Color(hexColor) : hexColor };
         }
       }
       return next;
@@ -5704,60 +5727,73 @@ function WorkspaceLayout({ className }) {
   const { metadata } = useData();
   const t = useLocale().viewport;
   const isPro = uiMode === "professional";
-  return /* @__PURE__ */ jsxs("div", { className: cn("relative h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden", className), children: [
-    /* @__PURE__ */ jsx("div", { className: "absolute inset-0", children: /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsx(Viewport2, {}) }) }),
-    selectedCamera && /* @__PURE__ */ jsx(PanoViewer, {}),
-    /* @__PURE__ */ jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) }),
-    isPro && quickSettingsOpen && /* @__PURE__ */ jsx(QuickSettingsPopover, { onClose: () => setQuickSettingsOpen(false) }),
-    /* @__PURE__ */ jsx("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(
-      MainToolbar,
-      {
-        onToggleRenderSettings: isPro ? () => setRenderSettingsOpen((o) => !o) : void 0,
-        renderSettingsOpen,
-        onToggleQuickSettings: isPro ? () => setQuickSettingsOpen((o) => !o) : void 0,
-        quickSettingsOpen
-      }
-    ) }) }),
-    /* @__PURE__ */ jsx("div", { className: "absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsx(ToolRail, {}) }) }),
-    /* @__PURE__ */ jsxs(
-      "div",
-      {
-        className: cn(
-          "absolute top-16 bottom-10 right-3 z-30 w-72 xl:w-80",
-          "transition-transform duration-200",
-          sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]"
-        ),
-        style: chromeScale,
-        children: [
-          /* @__PURE__ */ jsx(
-            "button",
-            {
-              onClick: () => setSidebarOpen((o) => !o),
-              title: sidebarOpen ? "Collapse sidebar" : "Expand sidebar",
-              "aria-label": sidebarOpen ? "Collapse sidebar" : "Expand sidebar",
-              className: cn(
-                "absolute top-1/2 -translate-y-1/2 -left-5 z-40",
-                "flex items-center justify-center w-5 h-12 rounded-l-lg",
-                "backdrop-blur-xl bg-black/30 dark:bg-black/40",
-                "border border-r-0 border-white/15 dark:border-white/10",
-                "shadow-2xl shadow-black/20",
-                "text-white/60 hover:text-[hsl(var(--brand))] transition-colors"
+  return /* @__PURE__ */ jsxs(
+    "div",
+    {
+      className: cn(
+        "relative h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden",
+        // Publish the minimap's right offset so it sits just left of the sidebar
+        // when open and snaps back to the edge when closed (the minimap, inside
+        // the viewport, consumes `--pcv-minimap-right`).
+        sidebarOpen ? "[--pcv-minimap-right:19.25rem] xl:[--pcv-minimap-right:21.25rem]" : "[--pcv-minimap-right:0.75rem]",
+        className
+      ),
+      children: [
+        /* @__PURE__ */ jsx("div", { className: "absolute inset-0", children: /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsx(Viewport2, {}) }) }),
+        selectedCamera && /* @__PURE__ */ jsx(PanoViewer, {}),
+        /* @__PURE__ */ jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) }),
+        isPro && quickSettingsOpen && /* @__PURE__ */ jsx(QuickSettingsPopover, { onClose: () => setQuickSettingsOpen(false) }),
+        /* @__PURE__ */ jsx("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(
+          MainToolbar,
+          {
+            onToggleRenderSettings: isPro ? () => setRenderSettingsOpen((o) => !o) : void 0,
+            renderSettingsOpen,
+            onToggleQuickSettings: isPro ? () => setQuickSettingsOpen((o) => !o) : void 0,
+            quickSettingsOpen
+          }
+        ) }) }),
+        /* @__PURE__ */ jsx("div", { className: "absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsx(ToolRail, {}) }) }),
+        /* @__PURE__ */ jsxs(
+          "div",
+          {
+            className: cn(
+              "absolute top-16 bottom-10 right-3 z-30 w-72 xl:w-80",
+              "transition-transform duration-200",
+              sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]"
+            ),
+            style: chromeScale,
+            children: [
+              /* @__PURE__ */ jsx(
+                "button",
+                {
+                  onClick: () => setSidebarOpen((o) => !o),
+                  title: sidebarOpen ? "Collapse sidebar" : "Expand sidebar",
+                  "aria-label": sidebarOpen ? "Collapse sidebar" : "Expand sidebar",
+                  className: cn(
+                    "absolute top-1/2 -translate-y-1/2 -left-7 z-40",
+                    "flex items-center justify-center w-7 h-16 rounded-l-lg",
+                    "backdrop-blur-xl bg-black/45 dark:bg-black/55",
+                    "border border-r-0 border-white/25 dark:border-white/20",
+                    "shadow-2xl shadow-black/30",
+                    "text-white/80 hover:text-[hsl(var(--brand))] hover:bg-black/55 transition-colors"
+                  ),
+                  children: sidebarOpen ? /* @__PURE__ */ jsx(ChevronRight, { size: 18 }) : /* @__PURE__ */ jsx(ChevronLeft, { size: 18 })
+                }
               ),
-              children: sidebarOpen ? /* @__PURE__ */ jsx(ChevronRight, { size: 14 }) : /* @__PURE__ */ jsx(ChevronLeft, { size: 14 })
-            }
-          ),
-          /* @__PURE__ */ jsx(GlassCard, { className: "h-full overflow-hidden", children: /* @__PURE__ */ jsx(Sidebar, {}) })
-        ]
-      }
-    ),
-    isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsx("div", { className: "absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(ClipToolbar, {}) }) }),
-    /* @__PURE__ */ jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-white/50 select-none", children: [
-      metadata && /* @__PURE__ */ jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
-      /* @__PURE__ */ jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
-      /* @__PURE__ */ jsx("span", { children: t.statusFps(fps) }),
-      activeTool !== "none" && /* @__PURE__ */ jsx("span", { className: "text-[hsl(var(--brand))]", children: activeTool })
-    ] }) }) })
-  ] });
+              /* @__PURE__ */ jsx(GlassCard, { className: "h-full overflow-hidden", children: /* @__PURE__ */ jsx(Sidebar, {}) })
+            ]
+          }
+        ),
+        isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsx("div", { className: "absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(ClipToolbar, {}) }) }),
+        /* @__PURE__ */ jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-white/50 select-none", children: [
+          metadata && /* @__PURE__ */ jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
+          /* @__PURE__ */ jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
+          /* @__PURE__ */ jsx("span", { children: t.statusFps(fps) }),
+          activeTool !== "none" && /* @__PURE__ */ jsx("span", { className: "text-[hsl(var(--brand))]", children: activeTool })
+        ] }) }) })
+      ]
+    }
+  );
 }
 
 // src/ui/button.tsx
@@ -6625,11 +6661,9 @@ function ToolsPalette() {
   const clipMode = clipBoxEntries[0]?.mode ?? "outside";
   const addClipBox = useCallback(() => {
     if (!clipManager || !loader) return;
-    const wb = loader.worldBox;
-    if (wb.isEmpty()) return;
-    const entry = clipManager.addBox(wb.clone());
+    if (loader.worldBox.isEmpty()) return;
+    const entry = clipManager.addDefaultBox(loader.worldBox);
     clipManager.selectBox(entry.id);
-    clipManager.setTransformMode("scale");
   }, [clipManager, loader]);
   const clearClipBox = useCallback(() => {
     clipManager?.clear();
@@ -6653,22 +6687,6 @@ function ToolsPalette() {
       /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(BoxSelect, { size: 14 }), label: hasClipBox ? "Remove Clip Box" : "Add Clip Box", active: hasClipBox, onClick: hasClipBox ? clearClipBox : addClipBox }),
       hasClipBox && /* @__PURE__ */ jsxs(Fragment, { children: [
         /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(Scissors, { size: 14 }), label: `Mode: ${clipMode === "outside" ? "Keep Inside" : "Keep Outside"}`, onClick: toggleClipMode }),
-        /* @__PURE__ */ jsxs("div", { className: "flex gap-1 pl-2", children: [
-          /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(Move, { size: 12 }), label: "Move", onClick: () => {
-            const id = clipManager?.getSelectedId() ?? clipBoxEntries[0]?.id;
-            if (id) {
-              clipManager?.selectBox(id);
-              clipManager?.setTransformMode("translate");
-            }
-          } }),
-          /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(Maximize2, { size: 12 }), label: "Scale", onClick: () => {
-            const id = clipManager?.getSelectedId() ?? clipBoxEntries[0]?.id;
-            if (id) {
-              clipManager?.selectBox(id);
-              clipManager?.setTransformMode("scale");
-            }
-          } })
-        ] }),
         /* @__PURE__ */ jsx(ToolBtn, { icon: /* @__PURE__ */ jsx(RotateCcw, { size: 14 }), label: "Clear Clips", onClick: clearClipBox })
       ] })
     ] })
@@ -6961,11 +6979,9 @@ function SectionTools() {
       clipManager.clear();
       return;
     }
-    const wb = loader.worldBox;
-    if (wb.isEmpty()) return;
-    const entry = clipManager.addBox(wb.clone());
+    if (loader.worldBox.isEmpty()) return;
+    const entry = clipManager.addDefaultBox(loader.worldBox);
     clipManager.selectBox(entry.id);
-    clipManager.setTransformMode("scale");
   };
   const hasClipBox = (clipManager?.getBoxes().length ?? 0) > 0;
   return /* @__PURE__ */ jsxs(Fragment, { children: [

@@ -71,7 +71,18 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
   const isPro = uiMode === "professional";
 
   return (
-    <div className={cn("relative h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden", className)}>
+    <div
+      className={cn(
+        "relative h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden",
+        // Publish the minimap's right offset so it sits just left of the sidebar
+        // when open and snaps back to the edge when closed (the minimap, inside
+        // the viewport, consumes `--pcv-minimap-right`).
+        sidebarOpen
+          ? "[--pcv-minimap-right:19.25rem] xl:[--pcv-minimap-right:21.25rem]"
+          : "[--pcv-minimap-right:0.75rem]",
+        className,
+      )}
+    >
 
       {/* ── Viewport fills the entire area ──────────────────────────────── */}
       <div className="absolute inset-0">
@@ -129,15 +140,15 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
           title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           className={cn(
-            "absolute top-1/2 -translate-y-1/2 -left-5 z-40",
-            "flex items-center justify-center w-5 h-12 rounded-l-lg",
-            "backdrop-blur-xl bg-black/30 dark:bg-black/40",
-            "border border-r-0 border-white/15 dark:border-white/10",
-            "shadow-2xl shadow-black/20",
-            "text-white/60 hover:text-[hsl(var(--brand))] transition-colors",
+            "absolute top-1/2 -translate-y-1/2 -left-7 z-40",
+            "flex items-center justify-center w-7 h-16 rounded-l-lg",
+            "backdrop-blur-xl bg-black/45 dark:bg-black/55",
+            "border border-r-0 border-white/25 dark:border-white/20",
+            "shadow-2xl shadow-black/30",
+            "text-white/80 hover:text-[hsl(var(--brand))] hover:bg-black/55 transition-colors",
           )}
         >
-          {sidebarOpen ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          {sidebarOpen ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
 
         <GlassCard className="h-full overflow-hidden">

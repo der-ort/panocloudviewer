@@ -10,8 +10,8 @@ export interface ClipBoxEntry {
   box: THREE.Box3;
   mode: ClipMode;
   visible: boolean;
-  /** Rotation about the world Z axis, in radians. Defaults to 0. */
-  rotationZ: number;
+  /** Box orientation (full 3-axis rotation). Defaults to identity. */
+  quaternion: THREE.Quaternion;
 }
 
 let _nextId = 1;
@@ -27,12 +27,16 @@ export class ClipManager {
   private fills: Map<string, THREE.Mesh> = new Map();
   private draftHelper: THREE.Box3Helper | null = null;
   private selectedId: string | null = null;
-  private transformControls: unknown = null;
+  /** Move gizmo (translate arrows) — shown together with the rotate gizmo + face handles. */
+  private tcMove: unknown = null;
+  /** Rotate gizmo (full XYZ rings) — shown together with the move gizmo + face handles. */
+  private tcRotate: unknown = null;
   private pivot: THREE.Mesh | null = null;
   private _faceHandles: FaceHandleController | null = null;
-  private _transformMode: "translate" | "scale" | "rotate" = "translate";
   /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
   private _enabled = true;
+  /** Whether box outlines / fills / handles render at all (off = clean screenshots). */
+  private _outlinesVisible = true;
 
   onChange?: (boxes: ClipBoxEntry[]) => void;
   onSelectChange?: (id: string | null) => void;
@@ -42,46 +46,104 @@ export class ClipManager {
   }
 
   private async initTransformControls(): Promise<void> {
-    if (this.transformControls) return;
+    if (this.tcMove && this.tcRotate) return;
     const { TransformControls } = await import(
       "three/examples/jsm/controls/TransformControls.js"
     );
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement) as any;
-    tc.setSpace("world");
-    tc.setSize(0.8);
-    tc.addEventListener("change", () => this.syncFromPivot());
-    tc.addEventListener("dragging-changed", (e: { value: boolean }) => {
-      this.sm.controls.enabled = !e.value;
-    });
-    this.sm.scene.add(tc.getHelper());
-    this.transformControls = tc;
+    const makeTc = (mode: "translate" | "rotate", size: number): any => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement) as any;
+      tc.setSpace("world");
+      tc.setMode(mode);
+      tc.setSize(size);
+      tc.addEventListener("change", () => this.syncFromPivot());
+      tc.addEventListener("dragging-changed", (e: { value: boolean }) => {
+        this.sm.controls.enabled = !e.value;
+      });
+      this.sm.scene.add(tc.getHelper());
+      return tc;
+    };
+
+    // Two gizmos on the same pivot so move + rotate are usable simultaneously,
+    // alongside the face-resize handles. Rotate shows all three axes (full XYZ).
+    this.tcMove = makeTc("translate", 0.8);
+    this.tcRotate = makeTc("rotate", 1.1);
     this._raiseGizmo();
   }
 
   /**
-   * Force the TransformControls gizmo to render on top of the point cloud.
-   * The gizmo uses default materials (depthTest=true, renderOrder=0) so it is
-   * occluded by the dense cloud. Traverse the gizmo tree and disable depth
-   * testing so the arrows/rings draw through. Must be re-applied after every
-   * setMode() because TransformControls rebuilds its gizmo/picker meshes.
+   * Force the TransformControls gizmos to render on top of the point cloud.
+   * The gizmos use default materials (depthTest=true, renderOrder=0) so they are
+   * occluded by the dense cloud. Traverse each gizmo tree and disable depth
+   * testing so the arrows/rings draw through.
    */
   private _raiseGizmo(): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tc = this.transformControls as any;
-    const helper = tc?.getHelper?.();
-    if (!helper) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    helper.traverse((child: any) => {
-      if (!child.material) return;
-      const mats = Array.isArray(child.material) ? child.material : [child.material];
-      for (const m of mats) {
-        m.depthTest = false;
-        m.depthWrite = false;
-        m.transparent = true;
-      }
-      child.renderOrder = 5;
-    });
+    for (const tc of [this.tcMove, this.tcRotate] as any[]) {
+      const helper = tc?.getHelper?.();
+      if (!helper) continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      helper.traverse((child: any) => {
+        if (!child.material) return;
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        for (const m of mats) {
+          m.depthTest = false;
+          m.depthWrite = false;
+          m.transparent = true;
+        }
+        child.renderOrder = 5;
+      });
+    }
+  }
+
+  /**
+   * Build an axis-aligned box centered on the current view target, sized to sit
+   * comfortably INSIDE the viewport at the current camera distance, then clamped
+   * to the cloud bounds. This replaces the old behavior of spanning the whole
+   * world box, which routinely extended far outside the viewport (and dwarfed
+   * the resize handles). The result is always fully visible and easy to grab.
+   */
+  makeViewportBox(worldBox?: THREE.Box3): THREE.Box3 {
+    const cam = this.sm.camera as THREE.PerspectiveCamera;
+    const target = this.sm.controls.target.clone();
+
+    // Visible half-extents (world units) of the view at the target's distance.
+    const dist = cam.position.distanceTo(target) || 1;
+    const vfov = THREE.MathUtils.degToRad(cam.fov || 50);
+    const halfH = Math.tan(vfov / 2) * dist;
+    const halfW = halfH * (cam.aspect || 1);
+
+    // ~45% of the smaller visible half-extent → the box footprint fills roughly
+    // the central ~90% of the view without touching the edges.
+    let half = Math.min(halfH, halfW) * 0.45;
+    // Flatter Z slab so it stays within the view and is easy to see/grab.
+    let halfZ = half * 0.6;
+
+    if (worldBox && !worldBox.isEmpty()) {
+      const ws = new THREE.Vector3();
+      worldBox.getSize(ws);
+      half = Math.min(half, ws.x * 0.5, ws.y * 0.5);
+      halfZ = Math.min(halfZ, ws.z * 0.5);
+      target.clamp(worldBox.min, worldBox.max); // keep center inside the cloud
+    }
+
+    half = Math.max(half, 0.25);
+    halfZ = Math.max(halfZ, 0.15);
+
+    return new THREE.Box3(
+      new THREE.Vector3(target.x - half, target.y - half, target.z - halfZ),
+      new THREE.Vector3(target.x + half, target.y + half, target.z + halfZ),
+    );
+  }
+
+  /**
+   * Add a clip box sized to fit the current viewport (see {@link makeViewportBox}).
+   * Preferred over `addBox(worldBox.clone())` for the "create default box" action.
+   */
+  addDefaultBox(worldBox?: THREE.Box3, name?: string): ClipBoxEntry {
+    return this.addBox(this.makeViewportBox(worldBox), name);
   }
 
   addBox(box: THREE.Box3, name?: string): ClipBoxEntry {
@@ -92,7 +154,7 @@ export class ClipManager {
       box: box.clone(),
       mode: "outside",
       visible: true,
-      rotationZ: 0,
+      quaternion: new THREE.Quaternion(),
     };
     this.entries.push(entry);
     this.updateHelper(entry);
@@ -102,13 +164,11 @@ export class ClipManager {
   }
 
   async selectBox(id: string | null): Promise<void> {
-    // Unhighlight previous
+    // Unhighlight previous (back to the deselected/black outline)
     this._highlightHelper(this.selectedId, false);
 
-    // Detach previous pivot and face handles
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tc = this.transformControls as any;
-    if (tc) tc.detach();
+    // Detach previous pivot, gizmos, and face handles
+    this._detachGizmos();
     if (this.pivot) {
       this.sm.scene.remove(this.pivot);
       this.pivot.geometry.dispose();
@@ -125,8 +185,6 @@ export class ClipManager {
     if (!entry) return;
 
     await this.initTransformControls();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const controls = this.transformControls as any;
 
     const center = new THREE.Vector3();
     const size = new THREE.Vector3();
@@ -138,20 +196,17 @@ export class ClipManager {
     this.pivot = new THREE.Mesh(geo, mat);
     this.pivot.position.copy(center);
     this.pivot.scale.copy(size);
-    this.pivot.rotation.set(0, 0, entry.rotationZ ?? 0);
+    this.pivot.quaternion.copy(entry.quaternion);
     this.pivot.userData.clipId = id;
     this.sm.scene.add(this.pivot);
 
-    controls.attach(this.pivot);
-    controls.setMode("translate");
-
-    // Create / attach face handles
+    // Create / attach face handles (box-resize)
     if (!this._faceHandles) {
       this._faceHandles = new FaceHandleController(
         this.sm.scene, this.sm.camera, this.sm.renderer.domElement,
       );
     }
-    this._faceHandles.setRotationZ(entry.rotationZ ?? 0);
+    this._faceHandles.setQuaternion(entry.quaternion);
     this._faceHandles.attach(entry.box, () => {
       this.updateHelper(entry);
       this.applyAll();
@@ -166,16 +221,23 @@ export class ClipManager {
       }
       this.onChange?.(this.getBoxes());
     });
-    // Show/hide face handles based on current mode
-    this._applyTransformMode();
 
-    // Highlight the selected box
+    // Show all transform gizmos at once: move arrows + full XYZ rotation rings.
+    this._attachGizmos();
+
+    // Honour the global outlines toggle (handles/gizmos hidden for clean shots).
+    this._applyOutlineVisibility();
+
+    // Highlight the selected box (bright outline)
     this._highlightHelper(id, true);
   }
 
-  setTransformMode(mode: "translate" | "scale" | "rotate"): void {
-    this._transformMode = mode;
-    this._applyTransformMode();
+  /**
+   * @deprecated Transform handles (move, rotate, resize) are now shown together,
+   * so there is no single active mode. Kept as a no-op for API compatibility.
+   */
+  setTransformMode(_mode?: "translate" | "scale" | "rotate"): void {
+    /* no-op — all handles are always shown for the selected box */
   }
 
   /** Get the face handle controller (for viewport event forwarding) */
@@ -183,55 +245,30 @@ export class ClipManager {
     return this._faceHandles;
   }
 
-  private _applyTransformMode(): void {
+  /** Attach both gizmos to the current pivot (move + full-XYZ rotate). */
+  private _attachGizmos(): void {
+    if (!this.pivot) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tc = this.transformControls as any;
-    if (this._transformMode === "scale") {
-      // Scale mode → use face handles instead of TransformControls
-      if (tc) tc.detach();
-      // Re-attach face handles to the selected box
-      if (this._faceHandles && this.selectedId) {
-        const entry = this.entries.find(e => e.id === this.selectedId);
-        if (entry && !this._faceHandles.isAttached()) {
-          this._faceHandles.setRotationZ(entry.rotationZ ?? 0);
-          this._faceHandles.attach(entry.box, () => {
-            this.updateHelper(entry);
-            this.applyAll();
-            if (this.pivot) {
-              const c = new THREE.Vector3();
-              const s = new THREE.Vector3();
-              entry.box.getCenter(c);
-              entry.box.getSize(s);
-              this.pivot.position.copy(c);
-              this.pivot.scale.copy(s);
-            }
-            this.onChange?.(this.getBoxes());
-          });
-        }
-        this._faceHandles.updatePositions();
-      }
-    } else {
-      // Translate/Rotate → use TransformControls, hide face handles
-      if (tc && this.pivot) {
-        tc.attach(this.pivot);
-        tc.setMode(this._transformMode);
-        if (this._transformMode === "rotate") {
-          // Constrain rotation to a single ring about world Z.
-          tc.showX = false;
-          tc.showY = false;
-          tc.showZ = true;
-          tc.setSize(1.0);
-        } else {
-          tc.showX = true;
-          tc.showY = true;
-          tc.showZ = true;
-          tc.setSize(0.8);
-        }
-        // TransformControls rebuilds its gizmo meshes on setMode — re-raise.
-        this._raiseGizmo();
-      }
-      this._faceHandles?.detach();
+    const move = this.tcMove as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rotate = this.tcRotate as any;
+    if (move) {
+      move.attach(this.pivot);
+      move.showX = move.showY = move.showZ = true;
     }
+    if (rotate) {
+      rotate.attach(this.pivot);
+      rotate.showX = rotate.showY = rotate.showZ = true; // full 3-axis rotation
+    }
+    this._raiseGizmo();
+  }
+
+  /** Detach both gizmos. */
+  private _detachGizmos(): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (this.tcMove as any)?.detach();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (this.tcRotate as any)?.detach();
   }
 
   removeBox(id: string): void {
@@ -255,8 +292,7 @@ export class ClipManager {
     }
 
     if (this.selectedId === id) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this.transformControls as any)?.detach();
+      this._detachGizmos();
       // Hide the resize handles too, or the six face spheres linger in the
       // scene as an artifact after the box itself is gone.
       this._faceHandles?.detach();
@@ -308,14 +344,49 @@ export class ClipManager {
     return this._enabled;
   }
 
+  /**
+   * Globally show/hide ALL box outlines, fills, handles and gizmos WITHOUT
+   * affecting clipping — clipping stays active so you keep the cropped view but
+   * get a clean image (e.g. for screenshots). Per-box visibility still applies
+   * when outlines are on.
+   */
+  setOutlinesVisible(visible: boolean): void {
+    this._outlinesVisible = visible;
+    this._applyOutlineVisibility();
+  }
+
+  areOutlinesVisible(): boolean {
+    return this._outlinesVisible;
+  }
+
+  /** Apply the global outline flag (and per-box visibility) to all scene objects. */
+  private _applyOutlineVisibility(): void {
+    const show = this._outlinesVisible;
+    for (const entry of this.entries) {
+      const helper = this.helpers.get(entry.id);
+      if (helper) helper.visible = show && entry.visible;
+      const fill = this.fills.get(entry.id);
+      if (fill) fill.visible = show && entry.visible;
+    }
+    // Handles + gizmos belong to the selected box; hide them too when outlines
+    // are off, otherwise restore them for the current selection.
+    const selected = show && this.selectedId !== null;
+    if (selected) {
+      this._attachGizmos();
+    } else {
+      this._detachGizmos();
+    }
+    this._faceHandles?.setGroupVisible(selected);
+  }
+
   setBoxVisible(id: string, visible: boolean): void {
     const entry = this.entries.find(e => e.id === id);
     if (!entry) return;
     entry.visible = visible;
     const helper = this.helpers.get(id);
-    if (helper) helper.visible = visible;
+    if (helper) helper.visible = visible && this._outlinesVisible;
     const fill = this.fills.get(id);
-    if (fill) fill.visible = visible;
+    if (fill) fill.visible = visible && this._outlinesVisible;
     this.applyAll();
     this.onChange?.(this.getBoxes());
   }
@@ -356,9 +427,8 @@ export class ClipManager {
   }
 
   clear(): void {
-    // Detach controls
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this.transformControls as any)?.detach();
+    // Detach gizmos
+    this._detachGizmos();
     // Hide the resize handles so they don't linger after every box is cleared.
     this._faceHandles?.detach();
     if (this.pivot) {
@@ -397,12 +467,13 @@ export class ClipManager {
   dispose(): void {
     this.clear();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tc = this.transformControls as any;
-    if (tc) {
+    for (const tc of [this.tcMove, this.tcRotate] as any[]) {
+      if (!tc) continue;
       this.sm.scene.remove(tc.getHelper());
       tc.dispose();
-      this.transformControls = null;
     }
+    this.tcMove = null;
+    this.tcRotate = null;
     if (this._faceHandles) {
       this._faceHandles.dispose();
       this._faceHandles = null;
@@ -414,38 +485,35 @@ export class ClipManager {
     const entry = this.entries.find(e => e.id === this.selectedId);
     if (!entry) return;
 
-    if (this._transformMode === "rotate") {
-      // Rotate is constrained to the world Z axis. Extract the Z component,
-      // store it on the entry, and flatten the pivot back to Z-only so the
-      // gizmo can never tilt the box off-axis.
-      const zRot = new THREE.Euler().setFromQuaternion(this.pivot.quaternion, "ZYX").z;
-      entry.rotationZ = zRot;
-      this.pivot.rotation.set(0, 0, zRot);
-      this._faceHandles?.setRotationZ(zRot);
-    } else {
-      // Translate (TransformControls) — box center follows the pivot, size unchanged.
-      const center = this.pivot.position.clone();
-      const halfSize = new THREE.Vector3(
-        Math.abs(this.pivot.scale.x) * 0.5,
-        Math.abs(this.pivot.scale.y) * 0.5,
-        Math.abs(this.pivot.scale.z) * 0.5,
-      );
-      entry.box.min.copy(center).sub(halfSize);
-      entry.box.max.copy(center).add(halfSize);
-    }
+    // Move + rotate gizmos share the pivot: center follows its position, full
+    // orientation follows its quaternion. Size (pivot.scale) is owned by the
+    // face-resize handles and is left untouched here.
+    const center = this.pivot.position.clone();
+    const halfSize = new THREE.Vector3(
+      Math.abs(this.pivot.scale.x) * 0.5,
+      Math.abs(this.pivot.scale.y) * 0.5,
+      Math.abs(this.pivot.scale.z) * 0.5,
+    );
+    entry.box.min.copy(center).sub(halfSize);
+    entry.box.max.copy(center).add(halfSize);
+    entry.quaternion.copy(this.pivot.quaternion);
+    this._faceHandles?.setQuaternion(entry.quaternion);
 
     this.updateHelper(entry);
     this.applyAll();
     this.onChange?.(this.getBoxes());
   }
 
-  /** Set wireframe color for selected/default state */
+  /**
+   * Set wireframe color: selected → bright yellow; deselected → black so the
+   * inactive crop boxes recede (and read cleanly on light point clouds).
+   */
   private _highlightHelper(id: string | null, selected: boolean): void {
     if (!id) return;
     const helper = this.helpers.get(id);
     if (helper) {
       (helper.material as THREE.LineBasicMaterial).color.setHex(
-        selected ? 0xffff44 : 0xdcd546
+        selected ? 0xffff44 : 0x000000
       );
     }
   }
@@ -455,17 +523,18 @@ export class ClipManager {
     // Box3Helper reads entry.box.min/max directly in updateMatrixWorld so it
     // updates in-place each frame — only create it if it doesn't exist yet.
     if (!this.helpers.has(entry.id)) {
-      const helper = new THREE.Box3Helper(entry.box, new THREE.Color(0xdcd546));
+      // New boxes start as the deselected/black outline; selectBox brightens it.
+      const helper = new THREE.Box3Helper(entry.box, new THREE.Color(0x000000));
       (helper.material as THREE.LineBasicMaterial).linewidth = 1;
       helper.renderOrder = 3;
-      helper.visible = entry.visible;
+      helper.visible = entry.visible && this._outlinesVisible;
       this.sm.scene.add(helper);
       this.helpers.set(entry.id, helper);
     }
     // Box3Helper recomputes position/scale from the box each frame but leaves
-    // rotation untouched, so set rotation.z to match the oriented clip box.
+    // rotation untouched, so set the full orientation to match the clip box.
     const helper = this.helpers.get(entry.id);
-    if (helper) helper.rotation.z = entry.rotationZ ?? 0;
+    if (helper) helper.quaternion.copy(entry.quaternion);
 
     // ── Semi-transparent fill ───────────────────────────────────────────────
     const center = new THREE.Vector3();
@@ -478,7 +547,7 @@ export class ClipManager {
       // Update in-place — avoids per-frame geometry allocation during drag
       existingFill.position.copy(center);
       existingFill.scale.copy(size);
-      existingFill.rotation.z = entry.rotationZ ?? 0;
+      existingFill.quaternion.copy(entry.quaternion);
     } else {
       const fillGeo = new THREE.BoxGeometry(1, 1, 1);
       const fillMat = new THREE.MeshBasicMaterial({
@@ -491,9 +560,9 @@ export class ClipManager {
       const fillMesh = new THREE.Mesh(fillGeo, fillMat);
       fillMesh.position.copy(center);
       fillMesh.scale.copy(size);
-      fillMesh.rotation.z = entry.rotationZ ?? 0;
+      fillMesh.quaternion.copy(entry.quaternion);
       fillMesh.renderOrder = 2; // behind the wireframe (renderOrder 3)
-      fillMesh.visible = entry.visible;
+      fillMesh.visible = entry.visible && this._outlinesVisible;
       this.sm.scene.add(fillMesh);
       this.fills.set(entry.id, fillMesh);
     }
@@ -531,10 +600,7 @@ export class ClipManager {
         const center = new THREE.Vector3();
         entry.box.getSize(size);
         entry.box.getCenter(center);
-        const q = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(0, 0, 1), entry.rotationZ ?? 0,
-        );
-        const matrix = new THREE.Matrix4().compose(center, q, size);
+        const matrix = new THREE.Matrix4().compose(center, entry.quaternion, size);
         const inverse = matrix.clone().invert();
         return {
           box: entry.box.clone(),

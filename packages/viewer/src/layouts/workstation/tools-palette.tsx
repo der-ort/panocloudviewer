@@ -3,7 +3,7 @@
 import React, { useCallback } from "react";
 import {
   MapPin, Ruler, ArrowUpDown, Pentagon, Package, Triangle, Waypoints,
-  BoxSelect, Scissors, Move, Maximize2, X, RotateCcw,
+  BoxSelect, Scissors, X, RotateCcw,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
@@ -55,11 +55,9 @@ export function ToolsPalette() {
 
   const addClipBox = useCallback(() => {
     if (!clipManager || !loader) return;
-    const wb = loader.worldBox;
-    if (wb.isEmpty()) return;
-    const entry = clipManager.addBox(wb.clone());
+    if (loader.worldBox.isEmpty()) return;
+    const entry = clipManager.addDefaultBox(loader.worldBox);
     clipManager.selectBox(entry.id);
-    clipManager.setTransformMode("scale");
   }, [clipManager, loader]);
 
   const clearClipBox = useCallback(() => {
@@ -88,16 +86,6 @@ export function ToolsPalette() {
         {hasClipBox && (
           <>
             <ToolBtn icon={<Scissors size={14} />} label={`Mode: ${clipMode === "outside" ? "Keep Inside" : "Keep Outside"}`} onClick={toggleClipMode} />
-            <div className="flex gap-1 pl-2">
-              <ToolBtn icon={<Move size={12} />} label="Move" onClick={() => {
-                const id = clipManager?.getSelectedId() ?? clipBoxEntries[0]?.id;
-                if (id) { clipManager?.selectBox(id); clipManager?.setTransformMode("translate"); }
-              }} />
-              <ToolBtn icon={<Maximize2 size={12} />} label="Scale" onClick={() => {
-                const id = clipManager?.getSelectedId() ?? clipBoxEntries[0]?.id;
-                if (id) { clipManager?.selectBox(id); clipManager?.setTransformMode("scale"); }
-              }} />
-            </div>
             <ToolBtn icon={<RotateCcw size={14} />} label="Clear Clips" onClick={clearClipBox} />
           </>
         )}

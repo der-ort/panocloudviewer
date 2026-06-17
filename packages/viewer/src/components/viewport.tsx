@@ -491,7 +491,6 @@ export function Viewport({ className }: ViewportProps) {
         if (box && !box.isEmpty() && clipRef.current) {
           const entry = clipRef.current.addBox(box);
           clipRef.current.selectBox(entry.id);
-          clipRef.current.setTransformMode("scale");
           clipDraftRef.current = null;
           clipRef.current.setDraft(null);
         }
@@ -571,8 +570,8 @@ export function Viewport({ className }: ViewportProps) {
       {/* Minimap overlay */}
       {showMinimap && (
         <div
-          className="absolute bottom-10 right-3 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer"
-          style={{ width: minimapSize, height: minimapSize }}
+          className="absolute bottom-10 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer transition-[right] duration-200"
+          style={{ width: minimapSize, height: minimapSize, right: "var(--pcv-minimap-right, 0.75rem)" }}
           onClick={handleMinimapClick}
         >
           <div

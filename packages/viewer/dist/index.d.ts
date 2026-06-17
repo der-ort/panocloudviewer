@@ -497,15 +497,17 @@ declare class FaceHandleController {
     private raycaster;
     private group;
     private disposed;
-    /** Rotation of the box about the world Z axis, in radians. */
-    private _rotationZ;
+    /** Orientation of the box (full 3-axis rotation). */
+    private _quaternion;
     constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement);
     private createHandles;
     attach(box: THREE.Box3, onChange: (box: THREE.Box3) => void): void;
-    /** Set the box's rotation about the world Z axis (radians) so handles follow it. */
-    setRotationZ(r: number): void;
+    /** Set the box's orientation (full 3-axis) so handles follow it. */
+    setQuaternion(q: THREE.Quaternion): void;
     detach(): void;
     isAttached(): boolean;
+    /** Show/hide the whole handle group without detaching (keeps box binding). */
+    setGroupVisible(visible: boolean): void;
     isDragging(): boolean;
     getHandleMeshes(): THREE.Mesh[];
     /** Update handle positions and sizes to match the current box */
@@ -515,7 +517,7 @@ declare class FaceHandleController {
      * Returns true if a handle was grabbed (caller should disable orbit controls).
      */
     onPointerDown(clientX: number, clientY: number): boolean;
-    /** World-space unit vector for a box-local face axis, rotated by _rotationZ around Z. */
+    /** World-space unit vector for a box-local face axis, rotated by the box orientation. */
     private worldAxisFor;
     /** Update the box during a drag. Call on pointermove. */
     onPointerMove(clientX: number, clientY: number): void;
@@ -536,8 +538,8 @@ interface ClipBoxEntry {
     box: THREE.Box3;
     mode: ClipMode;
     visible: boolean;
-    /** Rotation about the world Z axis, in radians. Defaults to 0. */
-    rotationZ: number;
+    /** Box orientation (full 3-axis rotation). Defaults to identity. */
+    quaternion: THREE.Quaternion;
 }
 /** Manages multiple named clip boxes with TransformControls support */
 declare class ClipManager {
@@ -547,30 +549,53 @@ declare class ClipManager {
     private fills;
     private draftHelper;
     private selectedId;
-    private transformControls;
+    /** Move gizmo (translate arrows) — shown together with the rotate gizmo + face handles. */
+    private tcMove;
+    /** Rotate gizmo (full XYZ rings) — shown together with the move gizmo + face handles. */
+    private tcRotate;
     private pivot;
     private _faceHandles;
-    private _transformMode;
     /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
     private _enabled;
+    /** Whether box outlines / fills / handles render at all (off = clean screenshots). */
+    private _outlinesVisible;
     onChange?: (boxes: ClipBoxEntry[]) => void;
     onSelectChange?: (id: string | null) => void;
     constructor(sm: SceneManager);
     private initTransformControls;
     /**
-     * Force the TransformControls gizmo to render on top of the point cloud.
-     * The gizmo uses default materials (depthTest=true, renderOrder=0) so it is
-     * occluded by the dense cloud. Traverse the gizmo tree and disable depth
-     * testing so the arrows/rings draw through. Must be re-applied after every
-     * setMode() because TransformControls rebuilds its gizmo/picker meshes.
+     * Force the TransformControls gizmos to render on top of the point cloud.
+     * The gizmos use default materials (depthTest=true, renderOrder=0) so they are
+     * occluded by the dense cloud. Traverse each gizmo tree and disable depth
+     * testing so the arrows/rings draw through.
      */
     private _raiseGizmo;
+    /**
+     * Build an axis-aligned box centered on the current view target, sized to sit
+     * comfortably INSIDE the viewport at the current camera distance, then clamped
+     * to the cloud bounds. This replaces the old behavior of spanning the whole
+     * world box, which routinely extended far outside the viewport (and dwarfed
+     * the resize handles). The result is always fully visible and easy to grab.
+     */
+    makeViewportBox(worldBox?: THREE.Box3): THREE.Box3;
+    /**
+     * Add a clip box sized to fit the current viewport (see {@link makeViewportBox}).
+     * Preferred over `addBox(worldBox.clone())` for the "create default box" action.
+     */
+    addDefaultBox(worldBox?: THREE.Box3, name?: string): ClipBoxEntry;
     addBox(box: THREE.Box3, name?: string): ClipBoxEntry;
     selectBox(id: string | null): Promise<void>;
-    setTransformMode(mode: "translate" | "scale" | "rotate"): void;
+    /**
+     * @deprecated Transform handles (move, rotate, resize) are now shown together,
+     * so there is no single active mode. Kept as a no-op for API compatibility.
+     */
+    setTransformMode(_mode?: "translate" | "scale" | "rotate"): void;
     /** Get the face handle controller (for viewport event forwarding) */
     get faceHandles(): FaceHandleController | null;
-    private _applyTransformMode;
+    /** Attach both gizmos to the current pivot (move + full-XYZ rotate). */
+    private _attachGizmos;
+    /** Detach both gizmos. */
+    private _detachGizmos;
     removeBox(id: string): void;
     setBoxMode(id: string, mode: ClipMode): void;
     /**
@@ -585,6 +610,16 @@ declare class ClipManager {
      */
     setEnabled(enabled: boolean): void;
     isEnabled(): boolean;
+    /**
+     * Globally show/hide ALL box outlines, fills, handles and gizmos WITHOUT
+     * affecting clipping — clipping stays active so you keep the cropped view but
+     * get a clean image (e.g. for screenshots). Per-box visibility still applies
+     * when outlines are on.
+     */
+    setOutlinesVisible(visible: boolean): void;
+    areOutlinesVisible(): boolean;
+    /** Apply the global outline flag (and per-box visibility) to all scene objects. */
+    private _applyOutlineVisibility;
     setBoxVisible(id: string, visible: boolean): void;
     renameBox(id: string, name: string): void;
     getBoxes(): ClipBoxEntry[];
@@ -595,7 +630,10 @@ declare class ClipManager {
     clear(): void;
     dispose(): void;
     private syncFromPivot;
-    /** Set wireframe color for selected/default state */
+    /**
+     * Set wireframe color: selected → bright yellow; deselected → black so the
+     * inactive crop boxes recede (and read cleanly on light point clouds).
+     */
     private _highlightHelper;
     private updateHelper;
     private applyAll;
@@ -1379,12 +1417,13 @@ declare function useClipActions(): {
     hasClipBox: boolean;
     clipMode: ClipMode;
     isEnabled: boolean;
+    outlinesVisible: boolean;
     addBox: () => void;
     clearAll: () => void;
     toggleMode: () => void;
     setEnabled: (enabled: boolean) => void;
+    setOutlinesVisible: (visible: boolean) => void;
     selectBox: (id: string | null) => void;
-    setTransformMode: (mode: "translate" | "scale" | "rotate") => void;
     removeBox: (id: string) => void;
     setBoxVisible: (id: string, visible: boolean) => void;
     setModeAll: (mode: "outside" | "inside") => void;

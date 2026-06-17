@@ -49,8 +49,8 @@ export class FaceHandleController {
   private raycaster = new THREE.Raycaster();
   private group: THREE.Group;
   private disposed = false;
-  /** Rotation of the box about the world Z axis, in radians. */
-  private _rotationZ = 0;
+  /** Orientation of the box (full 3-axis rotation). */
+  private _quaternion = new THREE.Quaternion();
 
   constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement) {
     this.scene = scene;
@@ -72,7 +72,7 @@ export class FaceHandleController {
         const mat = new THREE.MeshBasicMaterial({
           color: AXIS_COLOR[axis],
           transparent: true,
-          opacity: 0.7,
+          opacity: 0.95,
           depthTest: false,
         });
         const mesh = new THREE.Mesh(geo, mat);
@@ -92,9 +92,9 @@ export class FaceHandleController {
     for (const h of this.handles) h.mesh.visible = true;
   }
 
-  /** Set the box's rotation about the world Z axis (radians) so handles follow it. */
-  setRotationZ(r: number): void {
-    this._rotationZ = r;
+  /** Set the box's orientation (full 3-axis) so handles follow it. */
+  setQuaternion(q: THREE.Quaternion): void {
+    this._quaternion.copy(q);
     if (this.box) this.updatePositions();
   }
 
@@ -108,6 +108,11 @@ export class FaceHandleController {
 
   isAttached(): boolean {
     return this.box !== null;
+  }
+
+  /** Show/hide the whole handle group without detaching (keeps box binding). */
+  setGroupVisible(visible: boolean): void {
+    this.group.visible = visible;
   }
 
   isDragging(): boolean {
@@ -126,12 +131,10 @@ export class FaceHandleController {
     this.box.getCenter(center);
     this.box.getSize(size);
 
-    // Handle radius: ~2% of box diagonal, clamped
+    // Handle radius: ~3% of box diagonal, clamped — large enough to read and
+    // grab clearly against the wireframe without dominating a small box.
     const diag = size.length();
-    const radius = Math.max(0.05, Math.min(diag * 0.02, 2));
-
-    const cos = Math.cos(this._rotationZ);
-    const sin = Math.sin(this._rotationZ);
+    const radius = Math.max(0.08, Math.min(diag * 0.03, 3));
 
     for (const h of this.handles) {
       // Face-center offset from the box center, in box-local (unrotated) space.
@@ -141,10 +144,9 @@ export class FaceHandleController {
       } else {
         offset[h.axis] = this.box.min[h.axis] - center[h.axis];
       }
-      // Rotate the offset around Z (Z component unchanged), then translate by center.
-      const rx = offset.x * cos - offset.y * sin;
-      const ry = offset.x * sin + offset.y * cos;
-      h.mesh.position.set(center.x + rx, center.y + ry, center.z + offset.z);
+      // Rotate the offset by the box orientation, then translate by center.
+      offset.applyQuaternion(this._quaternion);
+      h.mesh.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
       h.mesh.scale.setScalar(radius);
     }
   }
@@ -184,13 +186,14 @@ export class FaceHandleController {
     return true;
   }
 
-  /** World-space unit vector for a box-local face axis, rotated by _rotationZ around Z. */
+  /** World-space unit vector for a box-local face axis, rotated by the box orientation. */
   private worldAxisFor(axis: FaceAxis): THREE.Vector3 {
-    const cos = Math.cos(this._rotationZ);
-    const sin = Math.sin(this._rotationZ);
-    if (axis === "x") return new THREE.Vector3(cos, sin, 0);
-    if (axis === "y") return new THREE.Vector3(-sin, cos, 0);
-    return new THREE.Vector3(0, 0, 1);
+    const local = new THREE.Vector3(
+      axis === "x" ? 1 : 0,
+      axis === "y" ? 1 : 0,
+      axis === "z" ? 1 : 0,
+    );
+    return local.applyQuaternion(this._quaternion);
   }
 
   /** Update the box during a drag. Call on pointermove. */

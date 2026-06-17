@@ -67,7 +67,7 @@ const ADVANCED_MEASURES: { type: MeasurementType; tool: ActiveTool; icon: React.
 ];
 
 export function ToolRail() {
-  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, uiMode } = useViewer();
+  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, uiMode, selectedClipBoxId } = useViewer();
   const t = useLocale().toolRail;
 
   const isPro = uiMode === "professional";
@@ -76,19 +76,27 @@ export function ToolRail() {
 
   const boxes = clipManager?.getBoxes() ?? [];
   const hasClipBox = boxes.length > 0;
+  const clipSelected = !!selectedClipBoxId;
+
+  // Toggle the section box. Crucially, deselecting does NOT delete it — the crop
+  // stays active so you can keep looking inside the cloud. Removal is a separate
+  // action (the X button / the Clip panel trash).
+  const toggleClipBox = () => {
+    if (!clipManager || !loader) return;
+    if (!hasClipBox) {
+      if (loader.worldBox.isEmpty()) return;
+      const entry = clipManager.addDefaultBox(loader.worldBox);
+      clipManager.selectBox(entry.id);
+    } else if (clipSelected) {
+      clipManager.selectBox(null); // deselect — clipping remains applied
+    } else {
+      clipManager.selectBox(boxes[0].id); // re-select to edit
+    }
+  };
 
   const clearClipBox = () => {
     clipManager?.clear();
     if (activeTool === "section-box") setActiveTool("none");
-  };
-
-  const addClipBox = () => {
-    if (!clipManager || !loader) return;
-    const wb = loader.worldBox;
-    if (wb.isEmpty()) return;
-    const entry = clipManager.addBox(wb.clone());
-    clipManager.selectBox(entry.id);
-    clipManager.setTransformMode("scale");
   };
 
   const clearMeasurements = () => {
@@ -141,10 +149,18 @@ export function ToolRail() {
           <GroupLabel>{t.sectionGroup}</GroupLabel>
           <RailBtn
             icon={<BoxSelect size={15} />}
-            title={hasClipBox ? t.removeClipBox : t.drawClipBox}
-            active={hasClipBox}
-            onClick={hasClipBox ? clearClipBox : addClipBox}
+            title={!hasClipBox ? t.drawClipBox : clipSelected ? "Deselect section (crop stays active)" : "Edit section"}
+            active={clipSelected}
+            onClick={toggleClipBox}
           />
+          {hasClipBox && (
+            <RailBtn
+              icon={<X size={13} />}
+              title={t.removeClipBox}
+              onClick={clearClipBox}
+              compact
+            />
+          )}
         </>
       )}
     </div>

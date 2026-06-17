@@ -16,11 +16,9 @@ export function SectionTools() {
       clipManager.clear();
       return;
     }
-    const wb = loader.worldBox;
-    if (wb.isEmpty()) return;
-    const entry = clipManager.addBox(wb.clone());
+    if (loader.worldBox.isEmpty()) return;
+    const entry = clipManager.addDefaultBox(loader.worldBox);
     clipManager.selectBox(entry.id);
-    clipManager.setTransformMode("scale");
   };
 
   const hasClipBox = (clipManager?.getBoxes().length ?? 0) > 0;

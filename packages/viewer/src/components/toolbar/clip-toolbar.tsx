@@ -5,11 +5,8 @@ import {
   BoxSelect,
   Eye,
   EyeOff,
-  Maximize2,
-  Move,
   Plus,
   Power,
-  RotateCw,
   Scissors,
   ScissorsLineDashed,
   Trash2,
@@ -19,16 +16,18 @@ import { useClipActions } from "../../hooks/use-clip-actions";
 import { useLocale } from "../../i18n/locale-context";
 
 export function ClipToolbar() {
-  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, setTransformMode, isEnabled, setEnabled } =
+  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible } =
     useClipActions();
   const t = useLocale().clipToolbar;
 
-  // Local mirror of the manager's enabled flag so the button re-renders on click.
-  // Seeded from the manager and re-synced whenever the box list / mode changes.
+  // Local mirrors of the manager flags so the buttons re-render on click.
+  // Seeded from the manager and re-synced whenever the box list changes.
   const [enabled, setEnabledLocal] = React.useState<boolean>(isEnabled);
+  const [outlines, setOutlinesLocal] = React.useState<boolean>(outlinesVisible);
   React.useEffect(() => {
     setEnabledLocal(isEnabled);
-  }, [isEnabled, boxes]);
+    setOutlinesLocal(outlinesVisible);
+  }, [isEnabled, outlinesVisible, boxes]);
 
   if (boxes.length === 0) return null;
 
@@ -86,6 +85,28 @@ export function ClipToolbar() {
           {enabled ? <Scissors size={12} /> : <ScissorsLineDashed size={12} />}
           <span className="flex-1 text-left">{enabled ? "Clipping on" : "Clipping off"}</span>
           <Power size={12} className={enabled ? "text-[hsl(var(--brand))]" : "text-muted-foreground"} />
+        </button>
+      </div>
+
+      {/* Global outlines on/off — hides all box wireframes/handles for clean
+          screenshots WITHOUT turning clipping off. */}
+      <div className="px-1 mb-1.5">
+        <button
+          onClick={() => {
+            const next = !outlines;
+            setOutlinesLocal(next);
+            setOutlinesVisible(next);
+          }}
+          title={outlines ? "Outlines visible" : "Outlines hidden"}
+          className={cn(
+            "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
+            outlines
+              ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]"
+              : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          )}
+        >
+          {outlines ? <Eye size={12} /> : <EyeOff size={12} />}
+          <span className="flex-1 text-left">{outlines ? "Outlines on" : "Outlines off"}</span>
         </button>
       </div>
 
@@ -152,37 +173,13 @@ export function ClipToolbar() {
         })}
       </div>
 
-      {/* Transform buttons — shown only when a box is selected */}
+      {/* When a box is selected, all transform handles (move arrows, full XYZ
+          rotation rings, and face-resize handles) are shown together in the
+          viewport — no mode switching needed. */}
       {selectedClipBoxId && (
-        <>
-          <div className="h-px bg-white/10 mx-1 mt-1.5 mb-1.5" />
-          <div className="flex items-center gap-1 px-1">
-            <button
-              title={t.move}
-              onClick={() => setTransformMode("translate")}
-              className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-            >
-              <Move size={12} />
-              <span className="text-[10px]">{t.move}</span>
-            </button>
-            <button
-              title={t.scale}
-              onClick={() => setTransformMode("scale")}
-              className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-            >
-              <Maximize2 size={12} />
-              <span className="text-[10px]">{t.scale}</span>
-            </button>
-            <button
-              title={t.rotateZ}
-              onClick={() => setTransformMode("rotate")}
-              className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-            >
-              <RotateCw size={12} />
-              <span className="text-[10px]">{t.rotateZ}</span>
-            </button>
-          </div>
-        </>
+        <p className="px-2 pt-2 text-[10px] leading-snug text-muted-foreground/70">
+          Drag the arrows to move, the rings to rotate, and the coloured handles to resize.
+        </p>
       )}
     </div>
   );
