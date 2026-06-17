@@ -487,12 +487,6 @@ declare class FaceHandleController {
     private disposed;
     /** Orientation of the box (full 3-axis rotation). */
     private _quaternion;
-    /**
-     * Fired when the cursor starts / stops hovering a resize handle. The owner
-     * (ClipManager) uses this to disable the move/rotate gizmos while a sphere is
-     * hovered, so a press can't grab two overlapping handles at once.
-     */
-    onHoverChange?: (hovering: boolean) => void;
     constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement);
     private createHandles;
     attach(box: THREE.Box3, onChange: (box: THREE.Box3) => void): void;
@@ -543,12 +537,14 @@ declare class ClipManager {
     private fills;
     private draftHelper;
     private selectedId;
-    /** Move gizmo (translate arrows) — shown together with the rotate gizmo + face handles. */
+    /** Move gizmo (translate arrows) — used in "translate" transform mode. */
     private tcMove;
-    /** Rotate gizmo (full XYZ rings) — shown together with the move gizmo + face handles. */
+    /** Rotate gizmo (full XYZ rings) — used in "rotate" transform mode. */
     private tcRotate;
     private pivot;
     private _faceHandles;
+    /** Active transform mode for the selected box (move / scale / rotate). */
+    private _transformMode;
     /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
     private _enabled;
     /** Whether box outlines / fills / handles render at all (off = clean screenshots). */
@@ -579,19 +575,23 @@ declare class ClipManager {
     addDefaultBox(worldBox?: THREE.Box3, name?: string): ClipBoxEntry;
     addBox(box: THREE.Box3, name?: string): ClipBoxEntry;
     selectBox(id: string | null): Promise<void>;
-    /**
-     * @deprecated Transform handles (move, rotate, resize) are now shown together,
-     * so there is no single active mode. Kept as a no-op for API compatibility.
-     */
-    setTransformMode(_mode?: "translate" | "scale" | "rotate"): void;
+    /** Switch the active transform mode for the selected box (move/scale/rotate). */
+    setTransformMode(mode: "translate" | "scale" | "rotate"): void;
+    getTransformMode(): "translate" | "scale" | "rotate";
     /** Get the face handle controller (for viewport event forwarding) */
     get faceHandles(): FaceHandleController | null;
-    /** Attach both gizmos to the current pivot (move + full-XYZ rotate). */
-    private _attachGizmos;
+    /** Attach the face-resize handles to the selected box with the sync callback. */
+    private _attachFaceHandles;
+    /**
+     * Show only the handles for the active mode:
+     * - `scale` → 6 face-resize spheres (no gizmos),
+     * - `translate` → move arrows,
+     * - `rotate` → full XYZ rotation rings.
+     * Keeping a single set active avoids overlapping handles grabbing each other.
+     */
+    private _applyTransformMode;
     /** Detach both gizmos. */
     private _detachGizmos;
-    /** Enable/disable picking on both gizmos (never mid-drag). */
-    private _setGizmosEnabled;
     /**
      * Reset a box's orientation back to axis-aligned (identity rotation). Targets
      * the given box, or the selected one when omitted.

@@ -1661,12 +1661,6 @@ var init_dist = __esm({
       disposed = false;
       /** Orientation of the box (full 3-axis rotation). */
       _quaternion = new THREE5__namespace.Quaternion();
-      /**
-       * Fired when the cursor starts / stops hovering a resize handle. The owner
-       * (ClipManager) uses this to disable the move/rotate gizmos while a sphere is
-       * hovered, so a press can't grab two overlapping handles at once.
-       */
-      onHoverChange;
       constructor(scene, camera, domElement) {
         this.scene = scene;
         this.camera = camera;
@@ -1709,13 +1703,11 @@ var init_dist = __esm({
         if (this.box) this.updatePositions();
       }
       detach() {
-        const wasHovering = this.hoveredHandle !== null;
         this.box = null;
         this.onChange = null;
         this.drag = null;
         this.hoveredHandle = null;
         for (const h of this.handles) h.mesh.visible = false;
-        if (wasHovering) this.onHoverChange?.(false);
       }
       isAttached() {
         return this.box !== null;
@@ -1829,7 +1821,6 @@ var init_dist = __esm({
         if (this.drag || !this.box) return;
         const hit = this.hitTest(clientX, clientY);
         if (hit !== this.hoveredHandle) {
-          const wasHovering = this.hoveredHandle !== null;
           if (this.hoveredHandle) {
             this.setHandleColor(this.hoveredHandle, AXIS_COLOR[this.hoveredHandle.axis]);
           }
@@ -1837,8 +1828,6 @@ var init_dist = __esm({
           if (hit) {
             this.setHandleColor(hit, HANDLE_HOVER_COLOR);
           }
-          const nowHovering = hit !== null;
-          if (nowHovering !== wasHovering) this.onHoverChange?.(nowHovering);
         }
       }
       dispose() {
@@ -1877,12 +1866,14 @@ var init_dist = __esm({
       fills = /* @__PURE__ */ new Map();
       draftHelper = null;
       selectedId = null;
-      /** Move gizmo (translate arrows) — shown together with the rotate gizmo + face handles. */
+      /** Move gizmo (translate arrows) — used in "translate" transform mode. */
       tcMove = null;
-      /** Rotate gizmo (full XYZ rings) — shown together with the move gizmo + face handles. */
+      /** Rotate gizmo (full XYZ rings) — used in "rotate" transform mode. */
       tcRotate = null;
       pivot = null;
       _faceHandles = null;
+      /** Active transform mode for the selected box (move / scale / rotate). */
+      _transformMode = "scale";
       /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
       _enabled = true;
       /** Whether box outlines / fills / handles render at all (off = clean screenshots). */
@@ -2019,8 +2010,26 @@ var init_dist = __esm({
             this.sm.camera,
             this.sm.renderer.domElement
           );
-          this._faceHandles.onHoverChange = (hovering) => this._setGizmosEnabled(!hovering);
         }
+        this._applyTransformMode();
+        this._applyOutlineVisibility();
+        this._highlightHelper(id, true);
+      }
+      /** Switch the active transform mode for the selected box (move/scale/rotate). */
+      setTransformMode(mode) {
+        this._transformMode = mode;
+        this._applyTransformMode();
+      }
+      getTransformMode() {
+        return this._transformMode;
+      }
+      /** Get the face handle controller (for viewport event forwarding) */
+      get faceHandles() {
+        return this._faceHandles;
+      }
+      /** Attach the face-resize handles to the selected box with the sync callback. */
+      _attachFaceHandles(entry) {
+        if (!this._faceHandles) return;
         this._faceHandles.setQuaternion(entry.quaternion);
         this._faceHandles.attach(entry.box, () => {
           this.updateHelper(entry);
@@ -2035,47 +2044,49 @@ var init_dist = __esm({
           }
           this.onChange?.(this.getBoxes());
         });
-        this._attachGizmos();
-        this._applyOutlineVisibility();
-        this._highlightHelper(id, true);
       }
       /**
-       * @deprecated Transform handles (move, rotate, resize) are now shown together,
-       * so there is no single active mode. Kept as a no-op for API compatibility.
+       * Show only the handles for the active mode:
+       * - `scale` → 6 face-resize spheres (no gizmos),
+       * - `translate` → move arrows,
+       * - `rotate` → full XYZ rotation rings.
+       * Keeping a single set active avoids overlapping handles grabbing each other.
        */
-      setTransformMode(_mode) {
-      }
-      /** Get the face handle controller (for viewport event forwarding) */
-      get faceHandles() {
-        return this._faceHandles;
-      }
-      /** Attach both gizmos to the current pivot (move + full-XYZ rotate). */
-      _attachGizmos() {
-        if (!this.pivot) return;
+      _applyTransformMode() {
+        if (!this.pivot || !this.selectedId) return;
         const move = this.tcMove;
         const rotate = this.tcRotate;
-        if (move) {
-          move.attach(this.pivot);
-          move.showX = move.showY = move.showZ = true;
+        const entry = this.entries.find((e) => e.id === this.selectedId);
+        if (this._transformMode === "scale") {
+          move?.detach();
+          rotate?.detach();
+          if (entry) {
+            if (!this._faceHandles?.isAttached()) this._attachFaceHandles(entry);
+            this._faceHandles?.setGroupVisible(true);
+            this._faceHandles?.updatePositions();
+          }
+        } else if (this._transformMode === "translate") {
+          rotate?.detach();
+          this._faceHandles?.detach();
+          if (move) {
+            move.attach(this.pivot);
+            move.showX = move.showY = move.showZ = true;
+          }
+          this._raiseGizmo();
+        } else {
+          move?.detach();
+          this._faceHandles?.detach();
+          if (rotate) {
+            rotate.attach(this.pivot);
+            rotate.showX = rotate.showY = rotate.showZ = true;
+          }
+          this._raiseGizmo();
         }
-        if (rotate) {
-          rotate.attach(this.pivot);
-          rotate.showX = rotate.showY = rotate.showZ = true;
-        }
-        this._raiseGizmo();
       }
       /** Detach both gizmos. */
       _detachGizmos() {
         this.tcMove?.detach();
         this.tcRotate?.detach();
-      }
-      /** Enable/disable picking on both gizmos (never mid-drag). */
-      _setGizmosEnabled(enabled) {
-        const move = this.tcMove;
-        const rotate = this.tcRotate;
-        if (move?.dragging || rotate?.dragging) return;
-        if (move) move.enabled = enabled;
-        if (rotate) rotate.enabled = enabled;
       }
       /**
        * Reset a box's orientation back to axis-aligned (identity rotation). Targets
@@ -2181,11 +2192,11 @@ var init_dist = __esm({
         }
         const selected = show && this.selectedId !== null;
         if (selected) {
-          this._attachGizmos();
+          this._applyTransformMode();
         } else {
           this._detachGizmos();
+          this._faceHandles?.setGroupVisible(false);
         }
-        this._faceHandles?.setGroupVisible(selected);
       }
       setBoxVisible(id, visible) {
         const entry = this.entries.find((e) => e.id === id);
@@ -3028,7 +3039,7 @@ var init_en = __esm({
         delete: "Delete",
         move: "Move",
         scale: "Scale",
-        rotateZ: "Rotate (Z)"
+        rotateZ: "Rotate"
       }
     };
   }
@@ -4277,6 +4288,11 @@ function useClipActions() {
   const resetRotation = React25.useCallback((id) => {
     clipManager?.resetRotation(id);
   }, [clipManager]);
+  const setTransformMode = React25.useCallback((mode) => {
+    if (!clipManager) return;
+    if (!clipManager.getSelectedId() && boxes[0]) clipManager.selectBox(boxes[0].id);
+    clipManager.setTransformMode(mode);
+  }, [clipManager, boxes]);
   const removeBox = React25.useCallback((id) => {
     clipManager?.removeBox(id);
   }, [clipManager]);
@@ -4300,6 +4316,7 @@ function useClipActions() {
     setOutlinesVisible,
     selectBox,
     resetRotation,
+    setTransformMode,
     removeBox,
     setBoxVisible,
     setModeAll
@@ -4309,14 +4326,20 @@ function useClipActions() {
 // src/components/toolbar/clip-toolbar.tsx
 init_locale_context();
 function ClipToolbar() {
-  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible, resetRotation } = useClipActions();
+  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible, resetRotation, setTransformMode } = useClipActions();
   const t = useLocale().clipToolbar;
   const [enabled, setEnabledLocal] = React25__default.default.useState(isEnabled);
   const [outlines, setOutlinesLocal] = React25__default.default.useState(outlinesVisible);
+  const [mode, setMode] = React25__default.default.useState("scale");
   React25__default.default.useEffect(() => {
     setEnabledLocal(isEnabled);
     setOutlinesLocal(outlinesVisible);
   }, [isEnabled, outlinesVisible, boxes]);
+  const TRANSFORM_MODES = [
+    { m: "translate", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Move, { size: 12 }), label: t.move },
+    { m: "scale", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Maximize2, { size: 12 }), label: t.scale },
+    { m: "rotate", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.RotateCw, { size: 12 }), label: t.rotateZ }
+  ];
   if (boxes.length === 0) return null;
   const firstVisible = boxes.find((b) => b.visible);
   const isInside = (firstVisible?.mode ?? "outside") === "inside";
@@ -4452,19 +4475,37 @@ function ClipToolbar() {
     }) }),
     selectedClipBoxId && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       /* @__PURE__ */ jsxRuntime.jsx("div", { className: "h-px bg-white/10 mx-1 mt-1.5 mb-1.5" }),
-      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "px-1", children: /* @__PURE__ */ jsxRuntime.jsxs(
+      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "flex items-center gap-1 px-1", children: TRANSFORM_MODES.map(({ m, icon, label }) => /* @__PURE__ */ jsxRuntime.jsxs(
+        "button",
+        {
+          onClick: () => {
+            setMode(m);
+            setTransformMode(m);
+          },
+          title: label,
+          className: cn(
+            "flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-xs transition-colors border",
+            mode === m ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          ),
+          children: [
+            icon,
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-[10px]", children: label })
+          ]
+        },
+        m
+      )) }),
+      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "px-1 mt-1", children: /* @__PURE__ */ jsxRuntime.jsxs(
         "button",
         {
           onClick: () => resetRotation(),
           title: "Reset the box back to axis-aligned",
-          className: "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs border border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
+          className: "w-full flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] border border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
           children: [
             /* @__PURE__ */ jsxRuntime.jsx(lucideReact.RotateCcw, { size: 12 }),
-            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "flex-1 text-left", children: "Reset rotation" })
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: "Reset rotation" })
           ]
         }
-      ) }),
-      /* @__PURE__ */ jsxRuntime.jsx("p", { className: "px-2 pt-2 text-[10px] leading-snug text-muted-foreground/70", children: "Drag the arrows to move, the rings to rotate, and the coloured handles to resize." })
+      ) })
     ] })
   ] });
 }
@@ -7811,7 +7852,7 @@ var de = createLocale(exports.en, {
     delete: "L\xF6schen",
     move: "Verschieben",
     scale: "Skalieren",
-    rotateZ: "Drehen (Z)"
+    rotateZ: "Drehen"
   }
 });
 

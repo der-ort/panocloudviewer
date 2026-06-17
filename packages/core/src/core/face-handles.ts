@@ -52,13 +52,6 @@ export class FaceHandleController {
   /** Orientation of the box (full 3-axis rotation). */
   private _quaternion = new THREE.Quaternion();
 
-  /**
-   * Fired when the cursor starts / stops hovering a resize handle. The owner
-   * (ClipManager) uses this to disable the move/rotate gizmos while a sphere is
-   * hovered, so a press can't grab two overlapping handles at once.
-   */
-  onHoverChange?: (hovering: boolean) => void;
-
   constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement) {
     this.scene = scene;
     this.camera = camera;
@@ -106,13 +99,11 @@ export class FaceHandleController {
   }
 
   detach(): void {
-    const wasHovering = this.hoveredHandle !== null;
     this.box = null;
     this.onChange = null;
     this.drag = null;
     this.hoveredHandle = null;
     for (const h of this.handles) h.mesh.visible = false;
-    if (wasHovering) this.onHoverChange?.(false);
   }
 
   isAttached(): boolean {
@@ -263,7 +254,6 @@ export class FaceHandleController {
 
     const hit = this.hitTest(clientX, clientY);
     if (hit !== this.hoveredHandle) {
-      const wasHovering = this.hoveredHandle !== null;
       if (this.hoveredHandle) {
         this.setHandleColor(this.hoveredHandle, AXIS_COLOR[this.hoveredHandle.axis]);
       }
@@ -271,8 +261,6 @@ export class FaceHandleController {
       if (hit) {
         this.setHandleColor(hit, HANDLE_HOVER_COLOR);
       }
-      const nowHovering = hit !== null;
-      if (nowHovering !== wasHovering) this.onHoverChange?.(nowHovering);
     }
   }
 

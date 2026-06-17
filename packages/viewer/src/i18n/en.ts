@@ -226,6 +226,6 @@ export const en: ViewerLocale = {
     delete: "Delete",
     move: "Move",
     scale: "Scale",
-    rotateZ: "Rotate (Z)",
+    rotateZ: "Rotate",
   },
 };

@@ -227,6 +227,6 @@ export const de = createLocale(en, {
     delete: "Löschen",
     move: "Verschieben",
     scale: "Skalieren",
-    rotateZ: "Drehen (Z)",
+    rotateZ: "Drehen",
   },
 });

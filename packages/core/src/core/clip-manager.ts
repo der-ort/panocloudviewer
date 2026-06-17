@@ -27,12 +27,14 @@ export class ClipManager {
   private fills: Map<string, THREE.Mesh> = new Map();
   private draftHelper: THREE.Box3Helper | null = null;
   private selectedId: string | null = null;
-  /** Move gizmo (translate arrows) — shown together with the rotate gizmo + face handles. */
+  /** Move gizmo (translate arrows) — used in "translate" transform mode. */
   private tcMove: unknown = null;
-  /** Rotate gizmo (full XYZ rings) — shown together with the move gizmo + face handles. */
+  /** Rotate gizmo (full XYZ rings) — used in "rotate" transform mode. */
   private tcRotate: unknown = null;
   private pivot: THREE.Mesh | null = null;
   private _faceHandles: FaceHandleController | null = null;
+  /** Active transform mode for the selected box (move / scale / rotate). */
+  private _transformMode: "translate" | "scale" | "rotate" = "scale";
   /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
   private _enabled = true;
   /** Whether box outlines / fills / handles render at all (off = clean screenshots). */
@@ -200,15 +202,42 @@ export class ClipManager {
     this.pivot.userData.clipId = id;
     this.sm.scene.add(this.pivot);
 
-    // Create / attach face handles (box-resize)
+    // Create the face-handle controller (box-resize) once; mode decides which
+    // handle set is actually shown.
     if (!this._faceHandles) {
       this._faceHandles = new FaceHandleController(
         this.sm.scene, this.sm.camera, this.sm.renderer.domElement,
       );
-      // While a resize sphere is hovered, disable the move/rotate gizmos so a
-      // press can't grab two overlapping handles at once.
-      this._faceHandles.onHoverChange = (hovering) => this._setGizmosEnabled(!hovering);
     }
+
+    // Show only the active transform mode's handles (move / scale / rotate).
+    this._applyTransformMode();
+
+    // Honour the global outlines toggle (handles/gizmos hidden for clean shots).
+    this._applyOutlineVisibility();
+
+    // Highlight the selected box (bright outline)
+    this._highlightHelper(id, true);
+  }
+
+  /** Switch the active transform mode for the selected box (move/scale/rotate). */
+  setTransformMode(mode: "translate" | "scale" | "rotate"): void {
+    this._transformMode = mode;
+    this._applyTransformMode();
+  }
+
+  getTransformMode(): "translate" | "scale" | "rotate" {
+    return this._transformMode;
+  }
+
+  /** Get the face handle controller (for viewport event forwarding) */
+  get faceHandles(): FaceHandleController | null {
+    return this._faceHandles;
+  }
+
+  /** Attach the face-resize handles to the selected box with the sync callback. */
+  private _attachFaceHandles(entry: ClipBoxEntry): void {
+    if (!this._faceHandles) return;
     this._faceHandles.setQuaternion(entry.quaternion);
     this._faceHandles.attach(entry.box, () => {
       this.updateHelper(entry);
@@ -224,46 +253,42 @@ export class ClipManager {
       }
       this.onChange?.(this.getBoxes());
     });
-
-    // Show all transform gizmos at once: move arrows + full XYZ rotation rings.
-    this._attachGizmos();
-
-    // Honour the global outlines toggle (handles/gizmos hidden for clean shots).
-    this._applyOutlineVisibility();
-
-    // Highlight the selected box (bright outline)
-    this._highlightHelper(id, true);
   }
 
   /**
-   * @deprecated Transform handles (move, rotate, resize) are now shown together,
-   * so there is no single active mode. Kept as a no-op for API compatibility.
+   * Show only the handles for the active mode:
+   * - `scale` → 6 face-resize spheres (no gizmos),
+   * - `translate` → move arrows,
+   * - `rotate` → full XYZ rotation rings.
+   * Keeping a single set active avoids overlapping handles grabbing each other.
    */
-  setTransformMode(_mode?: "translate" | "scale" | "rotate"): void {
-    /* no-op — all handles are always shown for the selected box */
-  }
-
-  /** Get the face handle controller (for viewport event forwarding) */
-  get faceHandles(): FaceHandleController | null {
-    return this._faceHandles;
-  }
-
-  /** Attach both gizmos to the current pivot (move + full-XYZ rotate). */
-  private _attachGizmos(): void {
-    if (!this.pivot) return;
+  private _applyTransformMode(): void {
+    if (!this.pivot || !this.selectedId) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const move = this.tcMove as any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rotate = this.tcRotate as any;
-    if (move) {
-      move.attach(this.pivot);
-      move.showX = move.showY = move.showZ = true;
+    const entry = this.entries.find(e => e.id === this.selectedId);
+
+    if (this._transformMode === "scale") {
+      move?.detach();
+      rotate?.detach();
+      if (entry) {
+        if (!this._faceHandles?.isAttached()) this._attachFaceHandles(entry);
+        this._faceHandles?.setGroupVisible(true);
+        this._faceHandles?.updatePositions();
+      }
+    } else if (this._transformMode === "translate") {
+      rotate?.detach();
+      this._faceHandles?.detach();
+      if (move) { move.attach(this.pivot); move.showX = move.showY = move.showZ = true; }
+      this._raiseGizmo();
+    } else {
+      move?.detach();
+      this._faceHandles?.detach();
+      if (rotate) { rotate.attach(this.pivot); rotate.showX = rotate.showY = rotate.showZ = true; } // full 3-axis
+      this._raiseGizmo();
     }
-    if (rotate) {
-      rotate.attach(this.pivot);
-      rotate.showX = rotate.showY = rotate.showZ = true; // full 3-axis rotation
-    }
-    this._raiseGizmo();
   }
 
   /** Detach both gizmos. */
@@ -272,18 +297,6 @@ export class ClipManager {
     (this.tcMove as any)?.detach();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (this.tcRotate as any)?.detach();
-  }
-
-  /** Enable/disable picking on both gizmos (never mid-drag). */
-  private _setGizmosEnabled(enabled: boolean): void {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const move = this.tcMove as any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rotate = this.tcRotate as any;
-    // Flipping enablement mid-drag would break an in-progress move/rotate.
-    if (move?.dragging || rotate?.dragging) return;
-    if (move) move.enabled = enabled;
-    if (rotate) rotate.enabled = enabled;
   }
 
   /**
@@ -403,14 +416,14 @@ export class ClipManager {
       if (fill) fill.visible = show && entry.visible;
     }
     // Handles + gizmos belong to the selected box; hide them too when outlines
-    // are off, otherwise restore them for the current selection.
+    // are off, otherwise restore the active mode's handles for the selection.
     const selected = show && this.selectedId !== null;
     if (selected) {
-      this._attachGizmos();
+      this._applyTransformMode();
     } else {
       this._detachGizmos();
+      this._faceHandles?.setGroupVisible(false);
     }
-    this._faceHandles?.setGroupVisible(selected);
   }
 
   setBoxVisible(id: string, visible: boolean): void {

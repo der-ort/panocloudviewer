@@ -52,6 +52,13 @@ export function useClipActions() {
     clipManager?.resetRotation(id);
   }, [clipManager]);
 
+  const setTransformMode = useCallback((mode: "translate" | "scale" | "rotate") => {
+    if (!clipManager) return;
+    // Ensure a box is selected so the mode has something to act on.
+    if (!clipManager.getSelectedId() && boxes[0]) clipManager.selectBox(boxes[0].id);
+    clipManager.setTransformMode(mode);
+  }, [clipManager, boxes]);
+
   const removeBox = useCallback((id: string) => {
     clipManager?.removeBox(id);
   }, [clipManager]);
@@ -78,6 +85,7 @@ export function useClipActions() {
     setOutlinesVisible,
     selectBox,
     resetRotation,
+    setTransformMode,
     removeBox,
     setBoxVisible,
     setModeAll,

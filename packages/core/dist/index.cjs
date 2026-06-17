@@ -1599,12 +1599,6 @@ var FaceHandleController = class {
   disposed = false;
   /** Orientation of the box (full 3-axis rotation). */
   _quaternion = new THREE5__namespace.Quaternion();
-  /**
-   * Fired when the cursor starts / stops hovering a resize handle. The owner
-   * (ClipManager) uses this to disable the move/rotate gizmos while a sphere is
-   * hovered, so a press can't grab two overlapping handles at once.
-   */
-  onHoverChange;
   constructor(scene, camera, domElement) {
     this.scene = scene;
     this.camera = camera;
@@ -1647,13 +1641,11 @@ var FaceHandleController = class {
     if (this.box) this.updatePositions();
   }
   detach() {
-    const wasHovering = this.hoveredHandle !== null;
     this.box = null;
     this.onChange = null;
     this.drag = null;
     this.hoveredHandle = null;
     for (const h of this.handles) h.mesh.visible = false;
-    if (wasHovering) this.onHoverChange?.(false);
   }
   isAttached() {
     return this.box !== null;
@@ -1767,7 +1759,6 @@ var FaceHandleController = class {
     if (this.drag || !this.box) return;
     const hit = this.hitTest(clientX, clientY);
     if (hit !== this.hoveredHandle) {
-      const wasHovering = this.hoveredHandle !== null;
       if (this.hoveredHandle) {
         this.setHandleColor(this.hoveredHandle, AXIS_COLOR[this.hoveredHandle.axis]);
       }
@@ -1775,8 +1766,6 @@ var FaceHandleController = class {
       if (hit) {
         this.setHandleColor(hit, HANDLE_HOVER_COLOR);
       }
-      const nowHovering = hit !== null;
-      if (nowHovering !== wasHovering) this.onHoverChange?.(nowHovering);
     }
   }
   dispose() {
@@ -1820,12 +1809,14 @@ var ClipManager = class {
   fills = /* @__PURE__ */ new Map();
   draftHelper = null;
   selectedId = null;
-  /** Move gizmo (translate arrows) — shown together with the rotate gizmo + face handles. */
+  /** Move gizmo (translate arrows) — used in "translate" transform mode. */
   tcMove = null;
-  /** Rotate gizmo (full XYZ rings) — shown together with the move gizmo + face handles. */
+  /** Rotate gizmo (full XYZ rings) — used in "rotate" transform mode. */
   tcRotate = null;
   pivot = null;
   _faceHandles = null;
+  /** Active transform mode for the selected box (move / scale / rotate). */
+  _transformMode = "scale";
   /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
   _enabled = true;
   /** Whether box outlines / fills / handles render at all (off = clean screenshots). */
@@ -1962,8 +1953,26 @@ var ClipManager = class {
         this.sm.camera,
         this.sm.renderer.domElement
       );
-      this._faceHandles.onHoverChange = (hovering) => this._setGizmosEnabled(!hovering);
     }
+    this._applyTransformMode();
+    this._applyOutlineVisibility();
+    this._highlightHelper(id, true);
+  }
+  /** Switch the active transform mode for the selected box (move/scale/rotate). */
+  setTransformMode(mode) {
+    this._transformMode = mode;
+    this._applyTransformMode();
+  }
+  getTransformMode() {
+    return this._transformMode;
+  }
+  /** Get the face handle controller (for viewport event forwarding) */
+  get faceHandles() {
+    return this._faceHandles;
+  }
+  /** Attach the face-resize handles to the selected box with the sync callback. */
+  _attachFaceHandles(entry) {
+    if (!this._faceHandles) return;
     this._faceHandles.setQuaternion(entry.quaternion);
     this._faceHandles.attach(entry.box, () => {
       this.updateHelper(entry);
@@ -1978,47 +1987,49 @@ var ClipManager = class {
       }
       this.onChange?.(this.getBoxes());
     });
-    this._attachGizmos();
-    this._applyOutlineVisibility();
-    this._highlightHelper(id, true);
   }
   /**
-   * @deprecated Transform handles (move, rotate, resize) are now shown together,
-   * so there is no single active mode. Kept as a no-op for API compatibility.
+   * Show only the handles for the active mode:
+   * - `scale` → 6 face-resize spheres (no gizmos),
+   * - `translate` → move arrows,
+   * - `rotate` → full XYZ rotation rings.
+   * Keeping a single set active avoids overlapping handles grabbing each other.
    */
-  setTransformMode(_mode) {
-  }
-  /** Get the face handle controller (for viewport event forwarding) */
-  get faceHandles() {
-    return this._faceHandles;
-  }
-  /** Attach both gizmos to the current pivot (move + full-XYZ rotate). */
-  _attachGizmos() {
-    if (!this.pivot) return;
+  _applyTransformMode() {
+    if (!this.pivot || !this.selectedId) return;
     const move = this.tcMove;
     const rotate = this.tcRotate;
-    if (move) {
-      move.attach(this.pivot);
-      move.showX = move.showY = move.showZ = true;
+    const entry = this.entries.find((e) => e.id === this.selectedId);
+    if (this._transformMode === "scale") {
+      move?.detach();
+      rotate?.detach();
+      if (entry) {
+        if (!this._faceHandles?.isAttached()) this._attachFaceHandles(entry);
+        this._faceHandles?.setGroupVisible(true);
+        this._faceHandles?.updatePositions();
+      }
+    } else if (this._transformMode === "translate") {
+      rotate?.detach();
+      this._faceHandles?.detach();
+      if (move) {
+        move.attach(this.pivot);
+        move.showX = move.showY = move.showZ = true;
+      }
+      this._raiseGizmo();
+    } else {
+      move?.detach();
+      this._faceHandles?.detach();
+      if (rotate) {
+        rotate.attach(this.pivot);
+        rotate.showX = rotate.showY = rotate.showZ = true;
+      }
+      this._raiseGizmo();
     }
-    if (rotate) {
-      rotate.attach(this.pivot);
-      rotate.showX = rotate.showY = rotate.showZ = true;
-    }
-    this._raiseGizmo();
   }
   /** Detach both gizmos. */
   _detachGizmos() {
     this.tcMove?.detach();
     this.tcRotate?.detach();
-  }
-  /** Enable/disable picking on both gizmos (never mid-drag). */
-  _setGizmosEnabled(enabled) {
-    const move = this.tcMove;
-    const rotate = this.tcRotate;
-    if (move?.dragging || rotate?.dragging) return;
-    if (move) move.enabled = enabled;
-    if (rotate) rotate.enabled = enabled;
   }
   /**
    * Reset a box's orientation back to axis-aligned (identity rotation). Targets
@@ -2124,11 +2135,11 @@ var ClipManager = class {
     }
     const selected = show && this.selectedId !== null;
     if (selected) {
-      this._attachGizmos();
+      this._applyTransformMode();
     } else {
       this._detachGizmos();
+      this._faceHandles?.setGroupVisible(false);
     }
-    this._faceHandles?.setGroupVisible(selected);
   }
   setBoxVisible(id, visible) {
     const entry = this.entries.find((e) => e.id === id);
