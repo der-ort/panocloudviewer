@@ -67,6 +67,7 @@ export function ScenesPanel() {
   const [flySec, setFlySec] = useState(2);
   const [staySec, setStaySec] = useState(1);
   const [easing, setEasing] = useState<Easing>("smooth");
+  const [recBg, setRecBg] = useState<"current" | "white" | "black" | "transparent">("current");
   const [loop, setLoop] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -287,6 +288,7 @@ export function ScenesPanel() {
         fps: 30,
         width: 1920,
         height: 1080,
+        background: recBg,
         onProgress: (p) => setRecPct(Math.round(p * 100)),
       });
       const url = URL.createObjectURL(blob);
@@ -405,6 +407,23 @@ export function ScenesPanel() {
                 <option value="easeInOut">Ease in-out</option>
               </select>
             </AnimRow>
+            <AnimRow label="Video bg">
+              <div className="flex gap-1 flex-1">
+                {(["current", "white", "black", "transparent"] as const).map(b => (
+                  <button key={b} onClick={() => setRecBg(b)}
+                    title={b}
+                    className={cn(
+                      "flex-1 py-0.5 rounded text-[9px] border transition-colors capitalize",
+                      recBg === b
+                        ? "border-[hsl(var(--brand))] text-[hsl(var(--brand))] bg-[hsl(var(--brand)/0.15)]"
+                        : "border-[hsl(var(--border))] text-muted-foreground hover:text-foreground",
+                    )}>
+                    {b === "transparent" ? "clear" : b}
+                  </button>
+                ))}
+              </div>
+            </AnimRow>
+
             <label className="flex items-center gap-2 text-[10px] text-muted-foreground cursor-pointer">
               <input type="checkbox" checked={loop} onChange={e => setLoop(e.target.checked)}
                 className="accent-[hsl(var(--brand))] w-3 h-3" />

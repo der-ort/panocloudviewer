@@ -1440,7 +1440,7 @@ var ExportManager = class {
       fps = 30,
       width = 1920,
       height = 1080,
-      background = "white",
+      background = "current",
       bitrate = 12e6,
       onProgress
     } = opts;
@@ -1463,14 +1463,23 @@ var ExportManager = class {
       output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
       error: (e) => console.error("[recordAnimation]", e)
     });
-    encoder.configure({ codec: "avc1.640028", width, height, bitrate, framerate: fps });
+    encoder.configure({
+      codec: "avc1.640028",
+      width,
+      height,
+      bitrate,
+      framerate: fps,
+      avc: { format: "avc" }
+    });
     const prevSize = new THREE5__namespace.Vector2();
     renderer.getSize(prevSize);
     const prevPR = renderer.getPixelRatio();
     const prevBg = scene.background;
     renderer.setPixelRatio(1);
     renderer.setSize(width, height, false);
-    scene.background = background === "white" ? new THREE5__namespace.Color(16777215) : background === "black" ? new THREE5__namespace.Color(0) : null;
+    if (background === "white") scene.background = new THREE5__namespace.Color(16777215);
+    else if (background === "black") scene.background = new THREE5__namespace.Color(0);
+    else if (background === "transparent") scene.background = null;
     const rt = new THREE5__namespace.WebGLRenderTarget(width, height, {
       format: THREE5__namespace.RGBAFormat,
       minFilter: THREE5__namespace.LinearFilter,

@@ -32,7 +32,8 @@ export interface RecordOptions {
   fps?: number;          // default 30
   width?: number;        // default 1920
   height?: number;       // default 1080
-  background?: "white" | "black" | "transparent";
+  /** "current" keeps the live scene background; otherwise overrides it. Default "current". */
+  background?: "white" | "black" | "transparent" | "current";
   bitrate?: number;      // default 12 Mbps
   onProgress?: (fraction: number) => void;
 }
@@ -55,7 +56,7 @@ export class ExportManager {
   async recordAnimation(opts: RecordOptions): Promise<Blob> {
     const {
       sampleCamera, durationSec, fps = 30,
-      width = 1920, height = 1080, background = "white",
+      width = 1920, height = 1080, background = "current",
       bitrate = 12_000_000, onProgress,
     } = opts;
 
@@ -83,7 +84,12 @@ export class ExportManager {
       output: (chunk: any, meta: any) => muxer.addVideoChunk(chunk, meta),
       error: (e: unknown) => console.error("[recordAnimation]", e),
     });
-    encoder.configure({ codec: "avc1.640028", width, height, bitrate, framerate: fps });
+    // `avc.format: "avc"` makes the encoder emit a length-prefixed stream with an
+    // avcC `decoderConfig.description` — mp4-muxer needs it (else "decoderConfig is null").
+    encoder.configure({
+      codec: "avc1.640028", width, height, bitrate, framerate: fps,
+      avc: { format: "avc" },
+    });
 
     // Save + override render state (updateStyle=false so the CSS size / ResizeObserver are untouched).
     const prevSize = new THREE.Vector2();
@@ -92,8 +98,10 @@ export class ExportManager {
     const prevBg = scene.background;
     renderer.setPixelRatio(1);
     renderer.setSize(width, height, false);
-    scene.background = background === "white" ? new THREE.Color(0xffffff)
-      : background === "black" ? new THREE.Color(0x000000) : null;
+    if (background === "white") scene.background = new THREE.Color(0xffffff);
+    else if (background === "black") scene.background = new THREE.Color(0x000000);
+    else if (background === "transparent") scene.background = null;
+    // "current" → leave scene.background untouched (matches the live view).
 
     const rt = new THREE.WebGLRenderTarget(width, height, {
       format: THREE.RGBAFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,

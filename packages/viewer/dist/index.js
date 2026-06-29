@@ -1471,7 +1471,7 @@ var init_dist = __esm({
           fps = 30,
           width = 1920,
           height = 1080,
-          background = "white",
+          background = "current",
           bitrate = 12e6,
           onProgress
         } = opts;
@@ -1494,14 +1494,23 @@ var init_dist = __esm({
           output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
           error: (e) => console.error("[recordAnimation]", e)
         });
-        encoder.configure({ codec: "avc1.640028", width, height, bitrate, framerate: fps });
+        encoder.configure({
+          codec: "avc1.640028",
+          width,
+          height,
+          bitrate,
+          framerate: fps,
+          avc: { format: "avc" }
+        });
         const prevSize = new THREE5.Vector2();
         renderer.getSize(prevSize);
         const prevPR = renderer.getPixelRatio();
         const prevBg = scene.background;
         renderer.setPixelRatio(1);
         renderer.setSize(width, height, false);
-        scene.background = background === "white" ? new THREE5.Color(16777215) : background === "black" ? new THREE5.Color(0) : null;
+        if (background === "white") scene.background = new THREE5.Color(16777215);
+        else if (background === "black") scene.background = new THREE5.Color(0);
+        else if (background === "transparent") scene.background = null;
         const rt = new THREE5.WebGLRenderTarget(width, height, {
           format: THREE5.RGBAFormat,
           minFilter: THREE5.LinearFilter,
@@ -5329,6 +5338,7 @@ function ScenesPanel() {
   const [flySec, setFlySec] = useState(2);
   const [staySec, setStaySec] = useState(1);
   const [easing, setEasing] = useState("smooth");
+  const [recBg, setRecBg] = useState("current");
   const [loop, setLoop] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -5532,6 +5542,7 @@ function ScenesPanel() {
         fps: 30,
         width: 1920,
         height: 1080,
+        background: recBg,
         onProgress: (p) => setRecPct(Math.round(p * 100))
       });
       const url = URL.createObjectURL(blob);
@@ -5672,6 +5683,19 @@ function ScenesPanel() {
             ]
           }
         ) }),
+        /* @__PURE__ */ jsx(AnimRow, { label: "Video bg", children: /* @__PURE__ */ jsx("div", { className: "flex gap-1 flex-1", children: ["current", "white", "black", "transparent"].map((b) => /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => setRecBg(b),
+            title: b,
+            className: cn(
+              "flex-1 py-0.5 rounded text-[9px] border transition-colors capitalize",
+              recBg === b ? "border-[hsl(var(--brand))] text-[hsl(var(--brand))] bg-[hsl(var(--brand)/0.15)]" : "border-[hsl(var(--border))] text-muted-foreground hover:text-foreground"
+            ),
+            children: b === "transparent" ? "clear" : b
+          },
+          b
+        )) }) }),
         /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-2 text-[10px] text-muted-foreground cursor-pointer", children: [
           /* @__PURE__ */ jsx(
             "input",
@@ -6961,7 +6985,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "81a4b0d \xB7 2026-06-29 20:52Z" ;
+var PCV_BUILD = "0c0ce91 \xB7 2026-06-29 22:32Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

@@ -468,7 +468,8 @@ interface RecordOptions {
     fps?: number;
     width?: number;
     height?: number;
-    background?: "white" | "black" | "transparent";
+    /** "current" keeps the live scene background; otherwise overrides it. Default "current". */
+    background?: "white" | "black" | "transparent" | "current";
     bitrate?: number;
     onProgress?: (fraction: number) => void;
 }
