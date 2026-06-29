@@ -153,9 +153,19 @@ export interface BasemapConfig {
   /** Highest zoom level to request (Carto raster ≈ 20). Default 20. */
   maxZoom?: number;
   /**
-   * Manual georeference for clouds without an embedded CRS. When `metadata.json`
-   * has no `projection`, supply this to place the basemap. Omit for clouds that
-   * are already georeferenced (a future auto path can derive it from the CRS).
+   * **CRS mode** — for a cloud whose rendered coordinates are a projected CRS
+   * (e.g. converted from a georeferenced LAS, so its `offset` is large). Supply
+   * the CRS as a proj4 definition string, or a shortcut `"EPSG:4839"` /
+   * `"EPSG:25832"` / `"EPSG:25833"` (common German systems are built in). The
+   * basemap is reprojected (proj4) and placed at the cloud's true coordinates —
+   * no manual lat/lon needed. Use this when NavVis/PotreeConverter dropped the
+   * CRS string (`metadata.json` `projection: ""`) but the coordinates are real.
+   */
+  crs?: string;
+  /**
+   * **Manual-pin mode** — for a cloud in LOCAL coordinates (near origin, small
+   * `offset`). Pins the cloud's local origin to a WGS84 lat/lon. Ignored when
+   * `crs` is set.
    */
   georeference?: BasemapGeoreference;
 }

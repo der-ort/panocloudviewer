@@ -170,10 +170,11 @@ export function Viewport({ className }: ViewportProps) {
         }
       }
 
-      // Build the map basemap if a (manual) georeference was supplied.
-      if (config.basemap?.georeference && !loader.worldBox.isEmpty()) {
-        basemap.build(loader.worldBox, config.basemap);
-        if (basemap.isBuilt()) setBasemapAvailable(true);
+      // Build the map basemap if a CRS (projected) or manual georeference was given.
+      if ((config.basemap?.crs || config.basemap?.georeference) && !loader.worldBox.isEmpty()) {
+        basemap.build(loader.worldBox, config.basemap).then(() => {
+          if (basemap.isBuilt()) setBasemapAvailable(true);
+        }).catch(console.error);
       }
     }).catch(console.error);
 

@@ -118,7 +118,13 @@ importers:
       potree-core:
         specifier: ^2.0.15
         version: 2.0.15(three@0.170.0)
+      proj4:
+        specifier: ^2.12.1
+        version: 2.20.9
     devDependencies:
+      '@types/proj4':
+        specifier: ^2.5.5
+        version: 2.19.0
       '@types/three':
         specifier: ^0.170.0
         version: 0.170.0
@@ -1581,6 +1587,10 @@ packages:
   '@types/plist@3.0.5':
     resolution: {integrity: sha512-E6OCaRmAe4WDmWNsL/9RMqdkkzDCY1etutkflWk4c+AcjDU07Pcz1fQwTX0TQz+Pxqn9i4L1TU3UFpjnrcDgxA==}
 
+  '@types/proj4@2.19.0':
+    resolution: {integrity: sha512-mirdnXu5sW9+IphQ4r+ZVii2JVLDbXgMp1lxqbiCppdgL22EwMwL4Dy/cyHVaJ2y/mi7LUQHghpILd3w3j2bnA==}
+    deprecated: This is a stub types definition. proj4 provides its own type definitions, so you do not need this installed.
+
   '@types/prop-types@15.7.15':
     resolution: {integrity: sha512-F6bEyamV9jKGAFBEmlQnesRPGOQqS2+Uwi0Em15xenOxHaf2hv6L8YCVn3rPdPJOiJfPiCnLIRyvwVaqMY3MIw==}
 
@@ -1626,6 +1636,7 @@ packages:
 
   '@ungap/structured-clone@1.3.0':
     resolution: {integrity: sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g==}
+    deprecated: Potential CWE-502 - Update to 1.3.1 or higher
 
   '@vitejs/plugin-vue@5.2.4':
     resolution: {integrity: sha512-7Yx/SXSOcQq5HiiV3orevHUFn+pmMB4cgbEkDYgnkUWb0WfeQ/wa2yFv6D5ICiCQOVpjA7vYDXrC7AGO8yjDHA==}
@@ -2762,6 +2773,9 @@ packages:
   meshoptimizer@0.18.1:
     resolution: {integrity: sha512-ZhoIoL7TNV4s5B6+rx5mC//fw8/POGyNxS/DZyCJeiZ12ScLfVwRE/GfsxwiTkMYYD5DmK2/JXnEVXqL4rF+Sw==}
 
+  mgrs@1.0.0:
+    resolution: {integrity: sha512-awNbTOqCxK1DBGjalK3xqWIstBZgN6fxsMSiXLs9/spqWkF2pAhb2rrYCFSsr1/tT7PhcDGjZndG8SWYn0byYA==}
+
   micromark-util-character@2.1.1:
     resolution: {integrity: sha512-wv8tdUTJ3thSFFFJKtpYKOYiGP2+v96Hvk4Tu8KpCAsTMs6yi+nVmGh1syvSCsaxz45J6Jbw+9DD6g97+NV67Q==}
 
@@ -3106,6 +3120,14 @@ packages:
   progress@2.0.3:
     resolution: {integrity: sha512-7PiHtLll5LdnKIMw100I+8xJXR5gW2QwWYkT6iJva0bXitZKa/XMrSbdmg3r2Xnaidz9Qumd0VPaMrZlF9V9sA==}
     engines: {node: '>=0.4.0'}
+
+  proj4@2.20.9:
+    resolution: {integrity: sha512-GLBGqXaTcdWnppre3o1sMmy4DcMGSGq/ng+9k2MTNddarRK6SveINqlqYzi3xEXuy06ljY1TTrC6H9C4f360IQ==}
+    peerDependencies:
+      geotiff: '*'
+    peerDependenciesMeta:
+      geotiff:
+        optional: true
 
   promise-inflight@1.0.1:
     resolution: {integrity: sha512-6zWPyEOFaQBJYcGMHBKTKJ3u6TBsnMFOIZSa6ce1e/ZrrsOlnHRHbabMjLiBYKp+n44X9eUI6VUPaukCXHuG4g==}
@@ -3695,6 +3717,9 @@ packages:
 
   wide-align@1.1.5:
     resolution: {integrity: sha512-eDMORYaPNZ4sQIuuYPDHdQvf4gyCF9rEEV/yPxGfwPkRodwEgiMUUXTx/dex+Me0wxx53S+NgUHaP7y3MGlDmg==}
+
+  wkt-parser@1.5.5:
+    resolution: {integrity: sha512-/zMYi94/7D7fxcOSlVmWn6vnOMj3Gq5d1xvVjaYOS9n6h0qOJ4I7YYVxBWYcH1vq9+suhqzXkn05Yx47zQNUIA==}
 
   wrap-ansi@7.0.0:
     resolution: {integrity: sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q==}
@@ -4973,6 +4998,12 @@ snapshots:
       '@types/node': 22.19.17
       xmlbuilder: 15.1.1
     optional: true
+
+  '@types/proj4@2.19.0':
+    dependencies:
+      proj4: 2.20.9
+    transitivePeerDependencies:
+      - geotiff
 
   '@types/prop-types@15.7.15': {}
 
@@ -6380,6 +6411,8 @@ snapshots:
 
   meshoptimizer@0.18.1: {}
 
+  mgrs@1.0.0: {}
+
   micromark-util-character@2.1.1:
     dependencies:
       micromark-util-symbol: 2.0.1
@@ -6703,6 +6736,11 @@ snapshots:
   process-nextick-args@2.0.1: {}
 
   progress@2.0.3: {}
+
+  proj4@2.20.9:
+    dependencies:
+      mgrs: 1.0.0
+      wkt-parser: 1.5.5
 
   promise-inflight@1.0.1: {}
 
@@ -7390,6 +7428,8 @@ snapshots:
   wide-align@1.1.5:
     dependencies:
       string-width: 4.2.3
+
+  wkt-parser@1.5.5: {}
 
   wrap-ansi@7.0.0:
     dependencies:

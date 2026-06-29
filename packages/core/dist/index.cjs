@@ -1681,6 +1681,27 @@ function tileYToLat(y, z) {
   const n = Math.PI - 2 * Math.PI * y / 2 ** z;
   return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
 }
+function cornersXY(b) {
+  return [
+    [b.min.x, b.min.y],
+    [b.min.x, b.max.y],
+    [b.max.x, b.min.y],
+    [b.max.x, b.max.y]
+  ];
+}
+var EPSG_DEFS = {
+  "EPSG:4326": "+proj=longlat +datum=WGS84 +no_defs",
+  // ETRS89 / LCC Germany (N-E) — what NavVis IVION exports as
+  "EPSG:4839": "+proj=lcc +lat_0=51 +lon_0=10.5 +lat_1=48.6666666666667 +lat_2=53.6666666666667 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs",
+  // ETRS89 / UTM (the modern German standard)
+  "EPSG:25832": "+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs",
+  "EPSG:25833": "+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
+};
+function resolveCrsDef(crs) {
+  const s = crs.trim();
+  if (s.includes("+proj")) return s;
+  return EPSG_DEFS[s.toUpperCase().replace(/\s+/g, "")] ?? null;
+}
 var TileBasemapManager = class {
   sm;
   group;
@@ -1706,45 +1727,88 @@ var TileBasemapManager = class {
     this.group.visible = visible;
   }
   /**
-   * Build the basemap for a cloud. Requires `cfg.georeference` (manual pin) and a
-   * non-empty world box. No-ops otherwise.
+   * Build the basemap for a cloud. Dispatches on the config:
+   * - `cfg.crs` → **projected mode** (cloud already in a projected CRS; tiles are
+   *   reprojected with proj4 to the cloud's true coordinates).
+   * - `cfg.georeference` → **manual-pin mode** (local cloud pinned to a lat/lon).
+   * No-ops otherwise.
    */
-  build(worldBox, cfg) {
+  async build(worldBox, cfg) {
     this.clear();
-    const geo = cfg?.georeference;
-    if (!geo || worldBox.isEmpty()) return;
-    const tileUrl = cfg?.tileUrl ?? DEFAULT_TILE_URL;
-    this.attribution = cfg?.attribution ?? DEFAULT_ATTRIBUTION;
-    const maxZoom = cfg?.maxZoom ?? 20;
+    this.group.rotation.set(0, 0, 0);
+    this.group.position.set(0, 0, 0);
+    if (!cfg || worldBox.isEmpty()) return;
+    this.attribution = cfg.attribution ?? DEFAULT_ATTRIBUTION;
+    if (cfg.crs) await this._buildProjected(worldBox, cfg);
+    else if (cfg.georeference) this._buildManual(worldBox, cfg);
+  }
+  /** Projected mode — reproject Carto tiles (proj4) to the cloud's CRS coords. */
+  async _buildProjected(worldBox, cfg) {
+    const def = resolveCrsDef(cfg.crs);
+    if (!def) {
+      console.warn(`[basemap] unknown crs "${cfg.crs}" \u2014 pass a proj4 string or a known EPSG code`);
+      return;
+    }
+    const mod = await import('proj4');
+    const proj4 = mod.default ?? mod;
+    const toGeo = proj4(def, "EPSG:4326");
+    const toProj = proj4("EPSG:4326", def);
+    const tileUrl = cfg.tileUrl ?? DEFAULT_TILE_URL;
+    const maxZoom = cfg.maxZoom ?? 20;
+    const groundZ = cfg.georeference?.groundZ ?? worldBox.min.z;
+    let latMin = 90, latMax = -90, lonMin = 180, lonMax = -180;
+    for (const [x, y] of cornersXY(worldBox)) {
+      const [lon, lat] = toGeo.forward([x, y]);
+      latMin = Math.min(latMin, lat);
+      latMax = Math.max(latMax, lat);
+      lonMin = Math.min(lonMin, lon);
+      lonMax = Math.max(lonMax, lon);
+    }
+    const size = new THREE5__namespace.Vector3();
+    worldBox.getSize(size);
+    const cosLat = Math.cos((latMin + latMax) / 2 * Math.PI / 180);
+    const targetTileM = Math.min(Math.max(Math.max(size.x, size.y), 20), 400);
+    let z = Math.round(Math.log2(EARTH_CIRC * cosLat / targetTileM));
+    z = Math.max(1, Math.min(maxZoom, z));
+    const xMin = lonToTileX(lonMin, z), xMax = lonToTileX(lonMax, z);
+    const yMin = latToTileY(latMax, z), yMax = latToTileY(latMin, z);
+    if ((xMax - xMin + 1) * (yMax - yMin + 1) > 64) return;
+    for (let tx = xMin; tx <= xMax; tx++) {
+      for (let ty = yMin; ty <= yMax; ty++) {
+        const nw = toProj.forward([tileXToLon(tx, z), tileYToLat(ty, z)]);
+        const se = toProj.forward([tileXToLon(tx + 1, z), tileYToLat(ty + 1, z)]);
+        const w = se[0] - nw[0];
+        const h = nw[1] - se[1];
+        if (w <= 0 || h <= 0) continue;
+        this._addTile(tileUrl, z, tx, ty, w, h, (nw[0] + se[0]) / 2, (nw[1] + se[1]) / 2, groundZ, 0);
+      }
+    }
+    this._built = this.group.children.length > 0;
+  }
+  /** Manual-pin mode — local cloud pinned to a WGS84 lat/lon (equirectangular). */
+  _buildManual(worldBox, cfg) {
+    const geo = cfg.georeference;
+    const tileUrl = cfg.tileUrl ?? DEFAULT_TILE_URL;
+    const maxZoom = cfg.maxZoom ?? 20;
     const mpu = geo.metersPerUnit ?? 1;
     const rot = (geo.rotationDeg ?? 0) * Math.PI / 180;
     const groundZ = geo.groundZ ?? worldBox.min.z;
     const cosLat = Math.cos(geo.lat * Math.PI / 180);
     const size = new THREE5__namespace.Vector3();
     worldBox.getSize(size);
-    const extentM = Math.max(size.x, size.y) * mpu;
-    const targetTileM = Math.min(Math.max(extentM, 20), 400);
+    const targetTileM = Math.min(Math.max(Math.max(size.x, size.y) * mpu, 20), 400);
     let z = Math.round(Math.log2(EARTH_CIRC * cosLat / targetTileM));
     z = Math.max(1, Math.min(maxZoom, z));
-    const toEN = (x, y) => {
-      const xm = x * mpu;
-      const ym = y * mpu;
-      return {
-        east: xm * Math.cos(rot) + ym * Math.sin(rot),
-        north: -xm * Math.sin(rot) + ym * Math.cos(rot)
-      };
-    };
+    const toEN = (x, y) => ({
+      east: x * mpu * Math.cos(rot) + y * mpu * Math.sin(rot),
+      north: -x * mpu * Math.sin(rot) + y * mpu * Math.cos(rot)
+    });
     const enToGeo = (east, north) => ({
       lat: geo.lat + north / EARTH_RADIUS * 180 / Math.PI,
       lon: geo.lon + east / (EARTH_RADIUS * cosLat) * 180 / Math.PI
     });
     let latMin = 90, latMax = -90, lonMin = 180, lonMax = -180;
-    for (const [cx, cy] of [
-      [worldBox.min.x, worldBox.min.y],
-      [worldBox.min.x, worldBox.max.y],
-      [worldBox.max.x, worldBox.min.y],
-      [worldBox.max.x, worldBox.max.y]
-    ]) {
+    for (const [cx, cy] of cornersXY(worldBox)) {
       const { east, north } = toEN(cx, cy);
       const g = enToGeo(east, north);
       latMin = Math.min(latMin, g.lat);
@@ -1752,10 +1816,8 @@ var TileBasemapManager = class {
       lonMin = Math.min(lonMin, g.lon);
       lonMax = Math.max(lonMax, g.lon);
     }
-    const xMin = lonToTileX(lonMin, z);
-    const xMax = lonToTileX(lonMax, z);
-    const yMin = latToTileY(latMax, z);
-    const yMax = latToTileY(latMin, z);
+    const xMin = lonToTileX(lonMin, z), xMax = lonToTileX(lonMax, z);
+    const yMin = latToTileY(latMax, z), yMax = latToTileY(latMin, z);
     if ((xMax - xMin + 1) * (yMax - yMin + 1) > 64) return;
     const deg2rad = Math.PI / 180;
     const geoToEnu = (lat, lon) => ({
@@ -1769,41 +1831,44 @@ var TileBasemapManager = class {
         const w = (se.east - nw.east) / mpu;
         const h = (nw.north - se.north) / mpu;
         if (w <= 0 || h <= 0) continue;
-        const cxLocal = (nw.east + se.east) / 2 / mpu;
-        const cyLocal = (nw.north + se.north) / 2 / mpu;
-        const gmat = new THREE5__namespace.PlaneGeometry(w, h);
-        const mat = new THREE5__namespace.MeshBasicMaterial({
-          color: 8421504,
-          // grey placeholder until the tile texture loads
-          depthWrite: false,
-          side: THREE5__namespace.DoubleSide
-        });
-        const mesh = new THREE5__namespace.Mesh(gmat, mat);
-        mesh.position.set(cxLocal, cyLocal, 0);
-        mesh.renderOrder = -10;
-        this.group.add(mesh);
-        this.geometries.push(gmat);
-        this.materials.push(mat);
-        const url = tileUrl.replace("{z}", String(z)).replace("{x}", String(tx)).replace("{y}", String(ty)).replace("{s}", "a").replace("{r}", "");
-        this.texLoader.load(
-          url,
-          (tex) => {
-            tex.colorSpace = THREE5__namespace.LinearSRGBColorSpace;
-            tex.minFilter = THREE5__namespace.LinearFilter;
-            mat.map = tex;
-            mat.color.setHex(16777215);
-            mat.needsUpdate = true;
-            this.textures.push(tex);
-          },
-          void 0,
-          () => {
-          }
-        );
+        this._addTile(tileUrl, z, tx, ty, w, h, (nw.east + se.east) / 2 / mpu, (nw.north + se.north) / 2 / mpu, 0, 0);
       }
     }
     this.group.rotation.set(0, 0, -rot);
     this.group.position.set(0, 0, groundZ);
     this._built = this.group.children.length > 0;
+  }
+  /** Create one tile plane (grey placeholder) and load its texture. */
+  _addTile(tileUrl, z, tx, ty, w, h, cx, cy, meshZ, rotZ) {
+    const gmat = new THREE5__namespace.PlaneGeometry(w, h);
+    const mat = new THREE5__namespace.MeshBasicMaterial({
+      color: 8421504,
+      // grey until the tile texture loads
+      depthWrite: false,
+      side: THREE5__namespace.DoubleSide
+    });
+    const mesh = new THREE5__namespace.Mesh(gmat, mat);
+    mesh.position.set(cx, cy, meshZ);
+    mesh.rotation.z = rotZ;
+    mesh.renderOrder = -10;
+    this.group.add(mesh);
+    this.geometries.push(gmat);
+    this.materials.push(mat);
+    const url = tileUrl.replace("{z}", String(z)).replace("{x}", String(tx)).replace("{y}", String(ty)).replace("{s}", "a").replace("{r}", "");
+    this.texLoader.load(
+      url,
+      (tex) => {
+        tex.colorSpace = THREE5__namespace.LinearSRGBColorSpace;
+        tex.minFilter = THREE5__namespace.LinearFilter;
+        mat.map = tex;
+        mat.color.setHex(16777215);
+        mat.needsUpdate = true;
+        this.textures.push(tex);
+      },
+      void 0,
+      () => {
+      }
+    );
   }
   clear() {
     for (const m of this.group.children.slice()) this.group.remove(m);

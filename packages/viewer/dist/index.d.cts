@@ -123,9 +123,19 @@ interface BasemapConfig {
     /** Highest zoom level to request (Carto raster ≈ 20). Default 20. */
     maxZoom?: number;
     /**
-     * Manual georeference for clouds without an embedded CRS. When `metadata.json`
-     * has no `projection`, supply this to place the basemap. Omit for clouds that
-     * are already georeferenced (a future auto path can derive it from the CRS).
+     * **CRS mode** — for a cloud whose rendered coordinates are a projected CRS
+     * (e.g. converted from a georeferenced LAS, so its `offset` is large). Supply
+     * the CRS as a proj4 definition string, or a shortcut `"EPSG:4839"` /
+     * `"EPSG:25832"` / `"EPSG:25833"` (common German systems are built in). The
+     * basemap is reprojected (proj4) and placed at the cloud's true coordinates —
+     * no manual lat/lon needed. Use this when NavVis/PotreeConverter dropped the
+     * CRS string (`metadata.json` `projection: ""`) but the coordinates are real.
+     */
+    crs?: string;
+    /**
+     * **Manual-pin mode** — for a cloud in LOCAL coordinates (near origin, small
+     * `offset`). Pins the cloud's local origin to a WGS84 lat/lon. Ignored when
+     * `crs` is set.
      */
     georeference?: BasemapGeoreference;
 }
@@ -580,10 +590,19 @@ declare class TileBasemapManager {
     isBuilt(): boolean;
     setVisible(visible: boolean): void;
     /**
-     * Build the basemap for a cloud. Requires `cfg.georeference` (manual pin) and a
-     * non-empty world box. No-ops otherwise.
+     * Build the basemap for a cloud. Dispatches on the config:
+     * - `cfg.crs` → **projected mode** (cloud already in a projected CRS; tiles are
+     *   reprojected with proj4 to the cloud's true coordinates).
+     * - `cfg.georeference` → **manual-pin mode** (local cloud pinned to a lat/lon).
+     * No-ops otherwise.
      */
-    build(worldBox: THREE.Box3, cfg: BasemapConfig | undefined): void;
+    build(worldBox: THREE.Box3, cfg: BasemapConfig | undefined): Promise<void>;
+    /** Projected mode — reproject Carto tiles (proj4) to the cloud's CRS coords. */
+    private _buildProjected;
+    /** Manual-pin mode — local cloud pinned to a WGS84 lat/lon (equirectangular). */
+    private _buildManual;
+    /** Create one tile plane (grey placeholder) and load its texture. */
+    private _addTile;
     clear(): void;
     dispose(): void;
 }

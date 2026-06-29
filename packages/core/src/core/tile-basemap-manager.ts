@@ -24,6 +24,31 @@ function tileYToLat(y: number, z: number): number {
   return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
 }
 
+/** The four XY corners of a box (Z ignored). */
+function cornersXY(b: THREE.Box3): Array<[number, number]> {
+  return [
+    [b.min.x, b.min.y], [b.min.x, b.max.y],
+    [b.max.x, b.min.y], [b.max.x, b.max.y],
+  ];
+}
+
+/** Built-in proj4 definitions for common (German) CRS used by `BasemapConfig.crs`. */
+const EPSG_DEFS: Record<string, string> = {
+  "EPSG:4326": "+proj=longlat +datum=WGS84 +no_defs",
+  // ETRS89 / LCC Germany (N-E) — what NavVis IVION exports as
+  "EPSG:4839": "+proj=lcc +lat_0=51 +lon_0=10.5 +lat_1=48.6666666666667 +lat_2=53.6666666666667 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs",
+  // ETRS89 / UTM (the modern German standard)
+  "EPSG:25832": "+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs",
+  "EPSG:25833": "+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs",
+};
+
+/** Resolve `crs` to a proj4 definition: a raw proj4 string, or a known EPSG code. */
+function resolveCrsDef(crs: string): string | null {
+  const s = crs.trim();
+  if (s.includes("+proj")) return s; // already a proj4 definition
+  return EPSG_DEFS[s.toUpperCase().replace(/\s+/g, "")] ?? null;
+}
+
 /**
  * Lays georeferenced raster map tiles (default Carto Voyager) on a ground plane
  * under the point cloud. Because most exports are NOT georeferenced, the common
@@ -64,75 +89,113 @@ export class TileBasemapManager {
   }
 
   /**
-   * Build the basemap for a cloud. Requires `cfg.georeference` (manual pin) and a
-   * non-empty world box. No-ops otherwise.
+   * Build the basemap for a cloud. Dispatches on the config:
+   * - `cfg.crs` → **projected mode** (cloud already in a projected CRS; tiles are
+   *   reprojected with proj4 to the cloud's true coordinates).
+   * - `cfg.georeference` → **manual-pin mode** (local cloud pinned to a lat/lon).
+   * No-ops otherwise.
    */
-  build(worldBox: THREE.Box3, cfg: BasemapConfig | undefined): void {
+  async build(worldBox: THREE.Box3, cfg: BasemapConfig | undefined): Promise<void> {
     this.clear();
-    const geo = cfg?.georeference;
-    if (!geo || worldBox.isEmpty()) return;
+    this.group.rotation.set(0, 0, 0);
+    this.group.position.set(0, 0, 0);
+    if (!cfg || worldBox.isEmpty()) return;
+    this.attribution = cfg.attribution ?? DEFAULT_ATTRIBUTION;
+    if (cfg.crs) await this._buildProjected(worldBox, cfg);
+    else if (cfg.georeference) this._buildManual(worldBox, cfg);
+  }
 
-    const tileUrl = cfg?.tileUrl ?? DEFAULT_TILE_URL;
-    this.attribution = cfg?.attribution ?? DEFAULT_ATTRIBUTION;
-    const maxZoom = cfg?.maxZoom ?? 20;
+  /** Projected mode — reproject Carto tiles (proj4) to the cloud's CRS coords. */
+  private async _buildProjected(worldBox: THREE.Box3, cfg: BasemapConfig): Promise<void> {
+    const def = resolveCrsDef(cfg.crs!);
+    if (!def) {
+      console.warn(`[basemap] unknown crs "${cfg.crs}" — pass a proj4 string or a known EPSG code`);
+      return;
+    }
+    const mod = await import("proj4");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const proj4: any = (mod as any).default ?? mod;
+    const toGeo = proj4(def, "EPSG:4326");  // [E,N] → [lon,lat]
+    const toProj = proj4("EPSG:4326", def); // [lon,lat] → [E,N]
+
+    const tileUrl = cfg.tileUrl ?? DEFAULT_TILE_URL;
+    const maxZoom = cfg.maxZoom ?? 20;
+    const groundZ = cfg.georeference?.groundZ ?? worldBox.min.z;
+
+    // Cloud (projected/scene) corners → geographic bbox.
+    let latMin = 90, latMax = -90, lonMin = 180, lonMax = -180;
+    for (const [x, y] of cornersXY(worldBox)) {
+      const [lon, lat] = toGeo.forward([x, y]);
+      latMin = Math.min(latMin, lat); latMax = Math.max(latMax, lat);
+      lonMin = Math.min(lonMin, lon); lonMax = Math.max(lonMax, lon);
+    }
+
+    const size = new THREE.Vector3();
+    worldBox.getSize(size);
+    const cosLat = Math.cos(((latMin + latMax) / 2) * Math.PI / 180);
+    const targetTileM = Math.min(Math.max(Math.max(size.x, size.y), 20), 400);
+    let z = Math.round(Math.log2((EARTH_CIRC * cosLat) / targetTileM));
+    z = Math.max(1, Math.min(maxZoom, z));
+
+    const xMin = lonToTileX(lonMin, z), xMax = lonToTileX(lonMax, z);
+    const yMin = latToTileY(latMax, z), yMax = latToTileY(latMin, z);
+    if ((xMax - xMin + 1) * (yMax - yMin + 1) > 64) return;
+
+    for (let tx = xMin; tx <= xMax; tx++) {
+      for (let ty = yMin; ty <= yMax; ty++) {
+        // Tile NW/SE lon/lat → projected (scene) coords.
+        const nw = toProj.forward([tileXToLon(tx, z), tileYToLat(ty, z)]);
+        const se = toProj.forward([tileXToLon(tx + 1, z), tileYToLat(ty + 1, z)]);
+        const w = se[0] - nw[0];
+        const h = nw[1] - se[1];
+        if (w <= 0 || h <= 0) continue;
+        this._addTile(tileUrl, z, tx, ty, w, h, (nw[0] + se[0]) / 2, (nw[1] + se[1]) / 2, groundZ, 0);
+      }
+    }
+    this._built = this.group.children.length > 0;
+  }
+
+  /** Manual-pin mode — local cloud pinned to a WGS84 lat/lon (equirectangular). */
+  private _buildManual(worldBox: THREE.Box3, cfg: BasemapConfig): void {
+    const geo = cfg.georeference!;
+    const tileUrl = cfg.tileUrl ?? DEFAULT_TILE_URL;
+    const maxZoom = cfg.maxZoom ?? 20;
     const mpu = geo.metersPerUnit ?? 1;
     const rot = ((geo.rotationDeg ?? 0) * Math.PI) / 180;
     const groundZ = geo.groundZ ?? worldBox.min.z;
     const cosLat = Math.cos((geo.lat * Math.PI) / 180);
 
-    // Cloud → geographic (equirectangular around the origin lat/lon).
     const size = new THREE.Vector3();
     worldBox.getSize(size);
-    const extentM = Math.max(size.x, size.y) * mpu;
-
-    // Pick a zoom whose tiles are ~the size of the scene (clamped to provider max).
-    const targetTileM = Math.min(Math.max(extentM, 20), 400);
+    const targetTileM = Math.min(Math.max(Math.max(size.x, size.y) * mpu, 20), 400);
     let z = Math.round(Math.log2((EARTH_CIRC * cosLat) / targetTileM));
     z = Math.max(1, Math.min(maxZoom, z));
 
-    // Local cloud (x,y) → ENU east/north (meters). rot = +Y heading CW from north.
-    const toEN = (x: number, y: number) => {
-      const xm = x * mpu;
-      const ym = y * mpu;
-      return {
-        east: xm * Math.cos(rot) + ym * Math.sin(rot),
-        north: -xm * Math.sin(rot) + ym * Math.cos(rot),
-      };
-    };
+    const toEN = (x: number, y: number) => ({
+      east: x * mpu * Math.cos(rot) + y * mpu * Math.sin(rot),
+      north: -x * mpu * Math.sin(rot) + y * mpu * Math.cos(rot),
+    });
     const enToGeo = (east: number, north: number) => ({
       lat: geo.lat + ((north / EARTH_RADIUS) * 180) / Math.PI,
       lon: geo.lon + ((east / (EARTH_RADIUS * cosLat)) * 180) / Math.PI,
     });
-
-    // Geographic bbox covering the cloud's footprint.
     let latMin = 90, latMax = -90, lonMin = 180, lonMax = -180;
-    for (const [cx, cy] of [
-      [worldBox.min.x, worldBox.min.y],
-      [worldBox.min.x, worldBox.max.y],
-      [worldBox.max.x, worldBox.min.y],
-      [worldBox.max.x, worldBox.max.y],
-    ]) {
+    for (const [cx, cy] of cornersXY(worldBox)) {
       const { east, north } = toEN(cx, cy);
       const g = enToGeo(east, north);
       latMin = Math.min(latMin, g.lat); latMax = Math.max(latMax, g.lat);
       lonMin = Math.min(lonMin, g.lon); lonMax = Math.max(lonMax, g.lon);
     }
 
-    const xMin = lonToTileX(lonMin, z);
-    const xMax = lonToTileX(lonMax, z);
-    const yMin = latToTileY(latMax, z); // north → smaller y
-    const yMax = latToTileY(latMin, z);
-
-    // Safety: never request an absurd number of tiles.
+    const xMin = lonToTileX(lonMin, z), xMax = lonToTileX(lonMax, z);
+    const yMin = latToTileY(latMax, z), yMax = latToTileY(latMin, z);
     if ((xMax - xMin + 1) * (yMax - yMin + 1) > 64) return;
 
-    // Build each tile as an axis-aligned plane in the ENU frame.
     const deg2rad = Math.PI / 180;
     const geoToEnu = (lat: number, lon: number) => ({
       east: (lon - geo.lon) * deg2rad * EARTH_RADIUS * cosLat,
       north: (lat - geo.lat) * deg2rad * EARTH_RADIUS,
     });
-
     for (let tx = xMin; tx <= xMax; tx++) {
       for (let ty = yMin; ty <= yMax; ty++) {
         const nw = geoToEnu(tileYToLat(ty, z), tileXToLon(tx, z));
@@ -140,50 +203,53 @@ export class TileBasemapManager {
         const w = (se.east - nw.east) / mpu;
         const h = (nw.north - se.north) / mpu;
         if (w <= 0 || h <= 0) continue;
-
-        const cxLocal = (nw.east + se.east) / 2 / mpu;
-        const cyLocal = (nw.north + se.north) / 2 / mpu;
-
-        const gmat = new THREE.PlaneGeometry(w, h);
-        const mat = new THREE.MeshBasicMaterial({
-          color: 0x808080, // grey placeholder until the tile texture loads
-          depthWrite: false,
-          side: THREE.DoubleSide,
-        });
-        const mesh = new THREE.Mesh(gmat, mat);
-        mesh.position.set(cxLocal, cyLocal, 0);
-        mesh.renderOrder = -10;
-        this.group.add(mesh);
-        this.geometries.push(gmat);
-        this.materials.push(mat);
-
-        const url = tileUrl
-          .replace("{z}", String(z))
-          .replace("{x}", String(tx))
-          .replace("{y}", String(ty))
-          .replace("{s}", "a")
-          .replace("{r}", "");
-        this.texLoader.load(
-          url,
-          (tex) => {
-            // sRGB PNG written straight through (renderer outputs LinearSRGB).
-            tex.colorSpace = THREE.LinearSRGBColorSpace;
-            tex.minFilter = THREE.LinearFilter;
-            mat.map = tex;
-            mat.color.setHex(0xffffff);
-            mat.needsUpdate = true;
-            this.textures.push(tex);
-          },
-          undefined,
-          () => { /* tile fetch failed — leave the grey placeholder */ },
-        );
+        this._addTile(tileUrl, z, tx, ty, w, h, (nw.east + se.east) / 2 / mpu, (nw.north + se.north) / 2 / mpu, 0, 0);
       }
     }
-
-    // ENU → cloud frame: rotate by the heading, then sit at groundZ.
+    // ENU → cloud frame: rotate by the heading, drop to groundZ.
     this.group.rotation.set(0, 0, -rot);
     this.group.position.set(0, 0, groundZ);
     this._built = this.group.children.length > 0;
+  }
+
+  /** Create one tile plane (grey placeholder) and load its texture. */
+  private _addTile(
+    tileUrl: string, z: number, tx: number, ty: number,
+    w: number, h: number, cx: number, cy: number, meshZ: number, rotZ: number,
+  ): void {
+    const gmat = new THREE.PlaneGeometry(w, h);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x808080, // grey until the tile texture loads
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(gmat, mat);
+    mesh.position.set(cx, cy, meshZ);
+    mesh.rotation.z = rotZ;
+    mesh.renderOrder = -10;
+    this.group.add(mesh);
+    this.geometries.push(gmat);
+    this.materials.push(mat);
+
+    const url = tileUrl
+      .replace("{z}", String(z))
+      .replace("{x}", String(tx))
+      .replace("{y}", String(ty))
+      .replace("{s}", "a")
+      .replace("{r}", "");
+    this.texLoader.load(
+      url,
+      (tex) => {
+        tex.colorSpace = THREE.LinearSRGBColorSpace; // pass-through (renderer outputs LinearSRGB)
+        tex.minFilter = THREE.LinearFilter;
+        mat.map = tex;
+        mat.color.setHex(0xffffff);
+        mat.needsUpdate = true;
+        this.textures.push(tex);
+      },
+      undefined,
+      () => { /* tile fetch failed — leave the grey placeholder */ },
+    );
   }
 
   clear(): void {
