@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Camera, Map } from "lucide-react";
+import { Camera, Map, Ruler } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { PCV_VERSION, PCV_BUILD } from "../../version";
@@ -61,6 +61,8 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
     setShowMarkers,
     showMinimap,
     setShowMinimap,
+    showMeasurements,
+    setShowMeasurements,
     colorMode,
     setColorMode,
     pointSize,
@@ -79,7 +81,7 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
         )}
       >
         <p className="text-[10px] font-mono uppercase tracking-widest text-white/40 px-1">
-          View Settings
+          Layers
         </p>
 
         <div className="space-y-0.5">
@@ -88,6 +90,12 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
             label="Panoramas"
             active={showMarkers}
             onClick={() => setShowMarkers(!showMarkers)}
+          />
+          <ToggleRow
+            icon={<Ruler size={14} />}
+            label="Measurements"
+            active={showMeasurements}
+            onClick={() => setShowMeasurements(!showMeasurements)}
           />
           <ToggleRow
             icon={<Map size={14} />}

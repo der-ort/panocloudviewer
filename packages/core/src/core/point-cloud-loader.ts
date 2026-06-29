@@ -10,6 +10,18 @@ export interface PointCloudMetadata {
   boundingBox: { min: [number, number, number]; max: [number, number, number] };
   spacing?: number;
   version?: string;
+  /** Coordinate reference system (proj4/WKT/EPSG). Empty/absent = not georeferenced. */
+  projection?: string;
+  offset?: [number, number, number];
+  scale?: [number, number, number];
+}
+
+/** Georeference status of a loaded cloud (surfaced in the cloud info / About). */
+export interface GeoInfo {
+  /** True when the cloud carries a non-empty CRS in metadata.json. */
+  georeferenced: boolean;
+  /** The raw CRS string (proj4/WKT/EPSG), or "" when absent. */
+  projection: string;
 }
 
 /** Loads Potree 2.0 point clouds (octree.bin + hierarchy.bin + metadata.json) via potree-core */
@@ -18,6 +30,8 @@ export class PointCloudLoader {
   private adapter: FileSourceAdapter;
   private currentClouds: THREE.Object3D[] = [];
   private hasRgb = false;
+  /** CRS string from metadata.json (empty = not georeferenced). */
+  private _projection = "";
   /** World-space bounding box of the loaded point cloud (available after load) */
   worldBox: THREE.Box3 = new THREE.Box3();
 
@@ -72,6 +86,8 @@ export class PointCloudLoader {
         const n = (a.name ?? "").toLowerCase();
         return n === "rgb" || n === "rgba" || n === "color";
       });
+      // Capture the CRS so consumers can tell whether the cloud is georeferenced.
+      this._projection = typeof meta?.projection === "string" ? meta.projection.trim() : "";
     } catch {
       hasRgb = false;
     }
@@ -192,6 +208,21 @@ export class PointCloudLoader {
   /** Whether the loaded cloud has RGB data */
   get hasRgbData(): boolean {
     return this.hasRgb;
+  }
+
+  /** CRS string from metadata.json ("" when not georeferenced). */
+  get projection(): string {
+    return this._projection;
+  }
+
+  /** Whether the cloud carries a non-empty CRS (eligible for a map basemap). */
+  get isGeoreferenced(): boolean {
+    return this._projection.length > 0;
+  }
+
+  /** Georeference status for the cloud info / About dialog. */
+  getGeoInfo(): GeoInfo {
+    return { georeferenced: this.isGeoreferenced, projection: this._projection };
   }
 
   /** Remove all loaded point clouds from scene */

@@ -5,7 +5,7 @@
 export { SceneManager } from "./core/scene-manager";
 export type { SceneManagerOptions } from "./core/scene-manager";
 export { PointCloudLoader } from "./core/point-cloud-loader";
-export type { ColorMode, PointCloudMetadata } from "./core/point-cloud-loader";
+export type { ColorMode, PointCloudMetadata, GeoInfo } from "./core/point-cloud-loader";
 export { CameraAnimator } from "./core/camera-animator";
 export { MarkerManager } from "./core/marker-manager";
 export { MeasurementManager } from "./core/measurement-manager";

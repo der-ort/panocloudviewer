@@ -3,6 +3,7 @@
 import React from "react";
 import { X } from "lucide-react";
 import { useLocale } from "../../i18n/locale-context";
+import { useViewer } from "../../providers/viewer-provider";
 import { PCV_VERSION, PCV_BUILD } from "../../version";
 
 interface AboutDialogProps {
@@ -11,6 +12,8 @@ interface AboutDialogProps {
 
 export function AboutDialog({ onClose }: AboutDialogProps) {
   const t = useLocale().about;
+  const { loader } = useViewer();
+  const geo = loader?.getGeoInfo();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div
@@ -39,6 +42,22 @@ export function AboutDialog({ onClose }: AboutDialogProps) {
           <p>{t.panoramasLabel}</p>
           <p>{t.uiLabel}</p>
         </div>
+
+        {/* Georeference status — whether the loaded cloud has a CRS (and can show
+            a map basemap). */}
+        {geo && (
+          <div className="text-xs text-muted-foreground border-t border-[hsl(var(--border))] pt-3 mt-3">
+            <p>
+              <span className="text-foreground">Georeference:</span>{" "}
+              {geo.georeferenced ? "yes" : "no (local coordinates)"}
+            </p>
+            {geo.georeferenced && (
+              <p className="font-mono text-[10px] mt-0.5 break-all" title={geo.projection}>
+                {geo.projection.length > 80 ? geo.projection.slice(0, 80) + "…" : geo.projection}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

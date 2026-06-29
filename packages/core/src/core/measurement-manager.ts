@@ -222,6 +222,11 @@ export class MeasurementManager {
     return tex;
   }
 
+  /** Show/hide ALL measurement objects (the whole group) — used by the Layers panel. */
+  setVisible(visible: boolean): void {
+    this.group.visible = visible;
+  }
+
   /** Hide the snap preview (call on mouse leave or tool deactivation) */
   clearSnap(): void {
     if (this._snapCross) {

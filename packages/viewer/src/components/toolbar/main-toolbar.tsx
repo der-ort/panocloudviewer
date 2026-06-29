@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Sun, Moon, Map, Layers, Sliders, Settings } from "lucide-react";
+import { Sun, Moon, Layers, Sliders, Settings } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useTheme } from "../../providers/theme-provider";
@@ -40,7 +40,7 @@ interface MainToolbarProps {
 }
 
 export function MainToolbar({ onOpenCloudSelector, onToggleRenderSettings, onToggleQuickSettings, renderSettingsOpen, quickSettingsOpen }: MainToolbarProps) {
-  const { showMinimap, setShowMinimap, uiMode } = useViewer();
+  const { uiMode } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().toolbar;
 
@@ -80,15 +80,9 @@ export function MainToolbar({ onOpenCloudSelector, onToggleRenderSettings, onTog
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Right side: toggles + theme */}
+      {/* Right side: theme + tools (view-layer toggles now live in the
+          sidebar's "Layers" tab) */}
       <ToolbarSection>
-        <ToolbarIconBtn
-          icon={<Map size={14} />}
-          label={t.minimap}
-          active={showMinimap}
-          onClick={() => setShowMinimap(!showMinimap)}
-          title={t.toggleMinimap}
-        />
         {/* Export — Professional only */}
         {isPro && <ExportTools />}
         {/* Cloud selector — Professional only */}

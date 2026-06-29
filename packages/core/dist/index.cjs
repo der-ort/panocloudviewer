@@ -293,6 +293,8 @@ var PointCloudLoader = class {
   adapter;
   currentClouds = [];
   hasRgb = false;
+  /** CRS string from metadata.json (empty = not georeferenced). */
+  _projection = "";
   /** World-space bounding box of the loaded point cloud (available after load) */
   worldBox = new THREE5__namespace.Box3();
   constructor(sceneManager, adapter) {
@@ -327,6 +329,7 @@ var PointCloudLoader = class {
         const n = (a.name ?? "").toLowerCase();
         return n === "rgb" || n === "rgba" || n === "color";
       });
+      this._projection = typeof meta?.projection === "string" ? meta.projection.trim() : "";
     } catch {
       hasRgb = false;
     }
@@ -422,6 +425,18 @@ var PointCloudLoader = class {
   /** Whether the loaded cloud has RGB data */
   get hasRgbData() {
     return this.hasRgb;
+  }
+  /** CRS string from metadata.json ("" when not georeferenced). */
+  get projection() {
+    return this._projection;
+  }
+  /** Whether the cloud carries a non-empty CRS (eligible for a map basemap). */
+  get isGeoreferenced() {
+    return this._projection.length > 0;
+  }
+  /** Georeference status for the cloud info / About dialog. */
+  getGeoInfo() {
+    return { georeferenced: this.isGeoreferenced, projection: this._projection };
   }
   /** Remove all loaded point clouds from scene */
   clear() {
@@ -1071,6 +1086,10 @@ var MeasurementManager = class {
     tex.minFilter = THREE5__namespace.LinearFilter;
     this._crossTexture = tex;
     return tex;
+  }
+  /** Show/hide ALL measurement objects (the whole group) — used by the Layers panel. */
+  setVisible(visible) {
+    this.group.visible = visible;
   }
   /** Hide the snap preview (call on mouse leave or tool deactivation) */
   clearSnap() {

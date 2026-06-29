@@ -1,27 +1,29 @@
 "use client";
 
 import React, { useState } from "react";
-import { Camera, Layers, Ruler, Tag, Bookmark } from "lucide-react";
+import { Camera, Layers, Ruler, Tag, Bookmark, Box } from "lucide-react";
 import { useLocale } from "../../i18n/locale-context";
 import { useViewer } from "../../providers/viewer-provider";
+import { LayersPanel } from "./layers-panel";
 import { PanoPanel } from "./pano-panel";
 import { ScenePanel } from "./scene-panel";
 import { MeasurementsPanel } from "./measurements-panel";
 import { ClassificationPanel } from "./classification-panel";
 import { ScenesPanel } from "./scenes-panel";
 
-type Tab = "panoramas" | "scene" | "measurements" | "classification" | "scenes";
+type Tab = "layers" | "panoramas" | "scene" | "measurements" | "classification" | "scenes";
 
 export function Sidebar() {
-  const [tab, setTab] = useState<Tab>("panoramas");
+  const [tab, setTab] = useState<Tab>("layers");
   const t = useLocale().sidebar;
   const { uiMode } = useViewer();
 
   const isPro = uiMode === "professional";
 
   const ALL_TABS: { id: Tab; icon: React.ReactNode; label: string; proOnly?: boolean }[] = [
+    { id: "layers",         icon: <Layers size={14} />,   label: t.tabLayers },
     { id: "panoramas",      icon: <Camera size={14} />,   label: t.tabPanoramas },
-    { id: "scene",          icon: <Layers size={14} />,   label: t.tabScene },
+    { id: "scene",          icon: <Box size={14} />,      label: t.tabScene },
     { id: "measurements",   icon: <Ruler size={14} />,    label: t.tabMeasurements },
     { id: "classification", icon: <Tag size={14} />,      label: t.tabClassification, proOnly: true },
     { id: "scenes",         icon: <Bookmark size={14} />, label: t.tabScenes,         proOnly: true },
@@ -55,6 +57,7 @@ export function Sidebar() {
 
       {/* Panel content */}
       <div className="flex-1 overflow-hidden">
+        {activeTab === "layers"         && <LayersPanel />}
         {activeTab === "panoramas"      && <PanoPanel />}
         {activeTab === "scene"          && <ScenePanel />}
         {activeTab === "measurements"   && <MeasurementsPanel />}

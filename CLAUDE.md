@@ -36,7 +36,7 @@ packages/viewer/        → React UI library
   src/
     components/         → React UI components
       toolbar/          → MainToolbar, ViewControls, DisplayControls, MeasureTools, SectionTools, ExportTools, ToolRail
-      sidebar/          → Sidebar, PanoPanel, ScenePanel, MeasurementsPanel, ClassificationPanel, ScenesPanel
+      sidebar/          → Sidebar, LayersPanel, PanoPanel, ScenePanel, MeasurementsPanel, ClassificationPanel, ScenesPanel
       overlays/         → PanoViewer (+ pano-engines/), AboutDialog, RenderingSettings, DisplaySettingsDialog
       pano-cloud-viewer.tsx  → Root drop-in component
       viewport.tsx           → Three.js wiring component
@@ -348,6 +348,12 @@ potree-core's visibility traversal calls `shouldClip(node)` and **skips octree n
 
 ### Picking magnifier is a 2D loupe (not a re-render)
 While a point-snapping measurement tool is active, the Viewport shows a small **loupe** that follows the cursor and magnifies the area around the snapped point for precise picking. It is a plain 2D `<canvas>` that `drawImage`s a small region of the **already-rendered** WebGL canvas (centered on the snap point's projected pixel) scaled up — so it shows the *actual* points with no second render and no camera/uniform mismatch. This requires `preserveDrawingBuffer: true` on the renderer (set in `SceneManager`). An earlier attempt re-rendered the scene with a zoomed camera via a scissor pass, but potree's point-size uniforms are coupled to the main camera/viewport so points didn't show — the pixel-copy loupe avoids that entirely. While measuring, the OS cursor is hidden (`cursor: none`) so only the 3D snap crosshair shows (no doubled cross).
+
+### Layers panel — single place to toggle overlays
+View-layer visibility (panoramas, measurements, minimap, and the georeferenced map basemap) is consolidated into the sidebar's **"Layers"** tab (`components/sidebar/layers-panel.tsx`, the first tab) for the professional layout. The duplicate toggles were removed from the toolbar and the pro quick-settings popover to streamline. The **minimal** layout has no sidebar, so its `MinimalSettingsPopover` keeps the same layer toggles (its "Layers" section). Provider state: `showMarkers` (panoramas), `showMeasurements` (wired to `MeasurementManager.setVisible`), `showMinimap`, `showBasemap`. The **Map basemap** row is disabled unless `loader.isGeoreferenced`.
+
+### Georeference detection (basemap eligibility)
+`PointCloudLoader` reads the `projection` field from `metadata.json` and exposes `projection`, `isGeoreferenced` (non-empty CRS), and `getGeoInfo()`. The **About dialog** shows the georeference status + CRS. A georeferenced cloud (UTM/EPSG in `projection`) is eligible for the **Carto/OSM map basemap** (default Carto raster, overridable tile URL — *implementation pending*); a non-georeferenced cloud (`projection: ""`, like the bundled samples) simply never shows tiles. **The actual tile rendering (proj4 + a `TileBasemapManager`) is not built yet** — the Layers toggle + georef plumbing + About status are in place; tiles follow once validated against real georeferenced data.
 
 ### Version / build identity (`src/version.ts`)
 The viewer bakes its **version + build identity** into the bundle so a consuming app can confirm a viewer update actually shipped. `tsup.config.ts` injects two `define`s at build time — `__PCV_VERSION__` (the package version) and `__PCV_BUILD__` (`<short-git-sha> · <UTC build time>`) — which `src/version.ts` reads into the exported `PCV_VERSION`, `PCV_BUILD`, and `PCV_VERSION_STRING`. These are shown in the UI (the pro **QuickSettingsPopover** footer, the **MinimalSettingsPopover** footer, and the **AboutDialog**) and are exported from the public API so the host app can read them programmatically. Because updates ship via the **git dependency** (the package version rarely changes between commits), the **build SHA + time is the real "did it ship" signal** — bump `version` in both `package.json`s for a meaningful semver marker on releases.

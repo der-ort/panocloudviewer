@@ -96,6 +96,7 @@ export interface ViewerLocale {
     removeClipBox: string;
   };
   sidebar: {
+    tabLayers: string;
     tabPanoramas: string;
     tabScene: string;
     tabMeasurements: string;

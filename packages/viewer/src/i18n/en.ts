@@ -87,6 +87,7 @@ export const en: ViewerLocale = {
     removeClipBox: "Remove clip box",
   },
   sidebar: {
+    tabLayers: "Layers",
     tabPanoramas: "Panoramas",
     tabScene: "Scene",
     tabMeasurements: "Measurements",

@@ -267,6 +267,17 @@ interface PointCloudMetadata {
     };
     spacing?: number;
     version?: string;
+    /** Coordinate reference system (proj4/WKT/EPSG). Empty/absent = not georeferenced. */
+    projection?: string;
+    offset?: [number, number, number];
+    scale?: [number, number, number];
+}
+/** Georeference status of a loaded cloud (surfaced in the cloud info / About). */
+interface GeoInfo {
+    /** True when the cloud carries a non-empty CRS in metadata.json. */
+    georeferenced: boolean;
+    /** The raw CRS string (proj4/WKT/EPSG), or "" when absent. */
+    projection: string;
 }
 /** Loads Potree 2.0 point clouds (octree.bin + hierarchy.bin + metadata.json) via potree-core */
 declare class PointCloudLoader {
@@ -274,6 +285,8 @@ declare class PointCloudLoader {
     private adapter;
     private currentClouds;
     private hasRgb;
+    /** CRS string from metadata.json (empty = not georeferenced). */
+    private _projection;
     /** World-space bounding box of the loaded point cloud (available after load) */
     worldBox: THREE.Box3;
     constructor(sceneManager: SceneManager, adapter: FileSourceAdapter);
@@ -283,6 +296,12 @@ declare class PointCloudLoader {
     setColorMode(mode: ColorMode): Promise<void>;
     /** Whether the loaded cloud has RGB data */
     get hasRgbData(): boolean;
+    /** CRS string from metadata.json ("" when not georeferenced). */
+    get projection(): string;
+    /** Whether the cloud carries a non-empty CRS (eligible for a map basemap). */
+    get isGeoreferenced(): boolean;
+    /** Georeference status for the cloud info / About dialog. */
+    getGeoInfo(): GeoInfo;
     /** Remove all loaded point clouds from scene */
     clear(): void;
     /** Set point budget on all loaded clouds */
@@ -412,6 +431,8 @@ declare class MeasurementManager {
     updateSnap(worldPos: THREE.Vector3, color?: string): void;
     /** Build (and cache) the stylized crosshair sprite texture. */
     private _getCrossTexture;
+    /** Show/hide ALL measurement objects (the whole group) — used by the Layers panel. */
+    setVisible(visible: boolean): void;
     /** Hide the snap preview (call on mouse leave or tool deactivation) */
     clearSnap(): void;
     private _volumeDraft;
@@ -755,4 +776,4 @@ declare function formatCoord(x: number, y: number, z: number, decimals?: number)
 /** Export measurements as a CSV string */
 declare function exportMeasurementsCSV(measurements: Measurement[]): string;
 
-export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };
+export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type GeoInfo, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };

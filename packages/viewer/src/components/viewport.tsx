@@ -39,7 +39,7 @@ export function Viewport({ className }: ViewportProps) {
     setSceneManager, setLoader, setMeasurementManager, setMarkerManager,
     setCameraAnimator, setExporter, setMinimap, setClipManager,
     setFps, activeTool, pointBudget,
-    showMarkers, showMinimap, setMeasurementList, setSelectedCamera,
+    showMarkers, showMinimap, showMeasurements, setMeasurementList, setSelectedCamera,
     clipBoxEntries, setClipBoxEntries, setSelectedClipBoxId,
     navigationMode, projection, displaySettings,
   } = useViewer();
@@ -240,6 +240,11 @@ export function Viewport({ className }: ViewportProps) {
   useEffect(() => {
     markerRef.current?.setVisible(showMarkers);
   }, [showMarkers]);
+
+  // Sync measurement-layer visibility (Layers panel toggle)
+  useEffect(() => {
+    measureRef.current?.setVisible(showMeasurements);
+  }, [showMeasurements]);
 
   // Cull panorama markers that fall outside the active clip region. Re-runs on
   // every clip mutation (add/remove/move/mode/enable all refresh clipBoxEntries).

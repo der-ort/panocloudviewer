@@ -88,6 +88,7 @@ export const de = createLocale(en, {
     removeClipBox: "Ausschnittrahmen entfernen",
   },
   sidebar: {
+    tabLayers: "Ebenen",
     tabPanoramas: "Panoramen",
     tabScene: "Szene",
     tabMeasurements: "Messungen",

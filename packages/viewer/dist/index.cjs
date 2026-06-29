@@ -451,6 +451,8 @@ var init_dist = __esm({
       adapter;
       currentClouds = [];
       hasRgb = false;
+      /** CRS string from metadata.json (empty = not georeferenced). */
+      _projection = "";
       /** World-space bounding box of the loaded point cloud (available after load) */
       worldBox = new THREE5__namespace.Box3();
       constructor(sceneManager, adapter) {
@@ -485,6 +487,7 @@ var init_dist = __esm({
             const n = (a.name ?? "").toLowerCase();
             return n === "rgb" || n === "rgba" || n === "color";
           });
+          this._projection = typeof meta?.projection === "string" ? meta.projection.trim() : "";
         } catch {
           hasRgb = false;
         }
@@ -580,6 +583,18 @@ var init_dist = __esm({
       /** Whether the loaded cloud has RGB data */
       get hasRgbData() {
         return this.hasRgb;
+      }
+      /** CRS string from metadata.json ("" when not georeferenced). */
+      get projection() {
+        return this._projection;
+      }
+      /** Whether the cloud carries a non-empty CRS (eligible for a map basemap). */
+      get isGeoreferenced() {
+        return this._projection.length > 0;
+      }
+      /** Georeference status for the cloud info / About dialog. */
+      getGeoInfo() {
+        return { georeferenced: this.isGeoreferenced, projection: this._projection };
       }
       /** Remove all loaded point clouds from scene */
       clear() {
@@ -1133,6 +1148,10 @@ var init_dist = __esm({
         tex.minFilter = THREE5__namespace.LinearFilter;
         this._crossTexture = tex;
         return tex;
+      }
+      /** Show/hide ALL measurement objects (the whole group) — used by the Layers panel. */
+      setVisible(visible) {
+        this.group.visible = visible;
       }
       /** Hide the snap preview (call on mouse leave or tool deactivation) */
       clearSnap() {
@@ -2757,6 +2776,8 @@ function ViewerProvider({ config, children }) {
   const [measurementList, setMeasurementList] = React25.useState([]);
   const [showMarkers, setShowMarkers] = React25.useState(true);
   const [showMinimap, setShowMinimap] = React25.useState(config.showMinimap ?? true);
+  const [showMeasurements, setShowMeasurements] = React25.useState(true);
+  const [showBasemap, setShowBasemap] = React25.useState(false);
   const [selectedCamera, setSelectedCamera] = React25.useState(null);
   const [clipBoxEntries, setClipBoxEntries] = React25.useState([]);
   const [selectedClipBoxId, setSelectedClipBoxId] = React25.useState(null);
@@ -2816,6 +2837,10 @@ function ViewerProvider({ config, children }) {
     setShowMarkers,
     showMinimap,
     setShowMinimap,
+    showMeasurements,
+    setShowMeasurements,
+    showBasemap,
+    setShowBasemap,
     selectedCamera,
     setSelectedCamera,
     clipBoxEntries,
@@ -2989,6 +3014,7 @@ var init_en = __esm({
         removeClipBox: "Remove clip box"
       },
       sidebar: {
+        tabLayers: "Layers",
         tabPanoramas: "Panoramas",
         tabScene: "Scene",
         tabMeasurements: "Measurements",
@@ -3181,6 +3207,7 @@ function Viewport({ className }) {
     pointBudget,
     showMarkers,
     showMinimap,
+    showMeasurements,
     setMeasurementList,
     setSelectedCamera,
     clipBoxEntries,
@@ -3339,6 +3366,9 @@ function Viewport({ className }) {
   React25.useEffect(() => {
     markerRef.current?.setVisible(showMarkers);
   }, [showMarkers]);
+  React25.useEffect(() => {
+    measureRef.current?.setVisible(showMeasurements);
+  }, [showMeasurements]);
   React25.useEffect(() => {
     const mm = markerRef.current;
     const cm = clipRef.current;
@@ -4230,7 +4260,7 @@ function ToolbarSection({ label, children, className }) {
   ] });
 }
 function MainToolbar({ onOpenCloudSelector, onToggleRenderSettings, onToggleQuickSettings, renderSettingsOpen, quickSettingsOpen }) {
-  const { showMinimap, setShowMinimap, uiMode } = useViewer();
+  const { uiMode } = useViewer();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().toolbar;
   const isPro = uiMode === "professional";
@@ -4262,16 +4292,6 @@ function MainToolbar({ onOpenCloudSelector, onToggleRenderSettings, onToggleQuic
     ] }),
     /* @__PURE__ */ jsxRuntime.jsx("div", { className: "flex-1" }),
     /* @__PURE__ */ jsxRuntime.jsxs(ToolbarSection, { children: [
-      /* @__PURE__ */ jsxRuntime.jsx(
-        ToolbarIconBtn,
-        {
-          icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Map, { size: 14 }),
-          label: t.minimap,
-          active: showMinimap,
-          onClick: () => setShowMinimap(!showMinimap),
-          title: t.toggleMinimap
-        }
-      ),
       isPro && /* @__PURE__ */ jsxRuntime.jsx(ExportTools, {}),
       isPro && /* @__PURE__ */ jsxRuntime.jsx(
         ToolbarIconBtn,
@@ -4702,6 +4722,111 @@ function ClipToolbar() {
 // src/components/sidebar/sidebar.tsx
 init_locale_context();
 init_viewer_provider();
+
+// src/components/sidebar/layers-panel.tsx
+init_utils();
+init_viewer_provider();
+function LayerRow({
+  icon,
+  label,
+  active,
+  onToggle,
+  disabled,
+  hint
+}) {
+  return /* @__PURE__ */ jsxRuntime.jsxs(
+    "button",
+    {
+      onClick: disabled ? void 0 : onToggle,
+      disabled,
+      title: hint ?? label,
+      className: cn(
+        "flex items-center gap-2.5 w-full px-2 py-2 rounded-lg transition-colors text-left",
+        disabled ? "opacity-40 cursor-not-allowed" : "hover:bg-white/10"
+      ),
+      children: [
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: cn("text-white/50", active && !disabled && "text-[hsl(var(--brand))]"), children: icon }),
+        /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "flex-1 min-w-0", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "block text-xs text-white/80 truncate", children: label }),
+          hint && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "block text-[10px] text-white/35 truncate", children: hint })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx(
+          "div",
+          {
+            className: cn(
+              "w-7 h-4 rounded-full transition-colors flex items-center px-0.5 shrink-0",
+              active && !disabled ? "bg-[hsl(var(--brand)/0.6)]" : "bg-white/15"
+            ),
+            children: /* @__PURE__ */ jsxRuntime.jsx(
+              "div",
+              {
+                className: cn(
+                  "w-3 h-3 rounded-full bg-white transition-transform",
+                  active && !disabled && "translate-x-3"
+                )
+              }
+            )
+          }
+        )
+      ]
+    }
+  );
+}
+function LayersPanel() {
+  const {
+    showMarkers,
+    setShowMarkers,
+    showMeasurements,
+    setShowMeasurements,
+    showMinimap,
+    setShowMinimap,
+    showBasemap,
+    setShowBasemap,
+    loader
+  } = useViewer();
+  const georeferenced = loader?.isGeoreferenced ?? false;
+  return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "p-3 space-y-1 overflow-y-auto h-full", children: [
+    /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1 mb-1", children: "Layers" }),
+    /* @__PURE__ */ jsxRuntime.jsx(
+      LayerRow,
+      {
+        icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Camera, { size: 15 }),
+        label: "Panoramas",
+        active: showMarkers,
+        onToggle: () => setShowMarkers(!showMarkers)
+      }
+    ),
+    /* @__PURE__ */ jsxRuntime.jsx(
+      LayerRow,
+      {
+        icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Ruler, { size: 15 }),
+        label: "Measurements",
+        active: showMeasurements,
+        onToggle: () => setShowMeasurements(!showMeasurements)
+      }
+    ),
+    /* @__PURE__ */ jsxRuntime.jsx(
+      LayerRow,
+      {
+        icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Map, { size: 15 }),
+        label: "Minimap",
+        active: showMinimap,
+        onToggle: () => setShowMinimap(!showMinimap)
+      }
+    ),
+    /* @__PURE__ */ jsxRuntime.jsx(
+      LayerRow,
+      {
+        icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Globe, { size: 15 }),
+        label: "Map basemap",
+        active: showBasemap,
+        onToggle: () => setShowBasemap(!showBasemap),
+        disabled: !georeferenced,
+        hint: georeferenced ? void 0 : "Requires a georeferenced cloud"
+      }
+    )
+  ] });
+}
 
 // src/components/sidebar/pano-panel.tsx
 init_utils();
@@ -5335,13 +5460,14 @@ function ScenesPanel() {
   ] });
 }
 function Sidebar() {
-  const [tab, setTab] = React25.useState("panoramas");
+  const [tab, setTab] = React25.useState("layers");
   const t = useLocale().sidebar;
   const { uiMode } = useViewer();
   const isPro = uiMode === "professional";
   const ALL_TABS = [
+    { id: "layers", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Layers, { size: 14 }), label: t.tabLayers },
     { id: "panoramas", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Camera, { size: 14 }), label: t.tabPanoramas },
-    { id: "scene", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Layers, { size: 14 }), label: t.tabScene },
+    { id: "scene", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Box, { size: 14 }), label: t.tabScene },
     { id: "measurements", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Ruler, { size: 14 }), label: t.tabMeasurements },
     { id: "classification", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Tag, { size: 14 }), label: t.tabClassification, proOnly: true },
     { id: "scenes", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Bookmark, { size: 14 }), label: t.tabScenes, proOnly: true }
@@ -5364,6 +5490,7 @@ function Sidebar() {
       tb.id
     )) }),
     /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex-1 overflow-hidden", children: [
+      activeTab === "layers" && /* @__PURE__ */ jsxRuntime.jsx(LayersPanel, {}),
       activeTab === "panoramas" && /* @__PURE__ */ jsxRuntime.jsx(PanoPanel, {}),
       activeTab === "scene" && /* @__PURE__ */ jsxRuntime.jsx(ScenePanel, {}),
       activeTab === "measurements" && /* @__PURE__ */ jsxRuntime.jsx(MeasurementsPanel, {}),
@@ -5894,7 +6021,7 @@ init_viewer_provider();
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "035144e \xB7 2026-06-17 13:27Z" ;
+var PCV_BUILD = "2ede05e \xB7 2026-06-29 10:50Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 var COLOR_MODES2 = [
   { value: "rgb", label: "RGB" },
@@ -5902,48 +6029,8 @@ var COLOR_MODES2 = [
   { value: "intensity", label: "Intensity" },
   { value: "classification", label: "Classification" }
 ];
-function ToggleRow({
-  icon,
-  label,
-  active,
-  onClick
-}) {
-  return /* @__PURE__ */ jsxRuntime.jsxs(
-    "button",
-    {
-      onClick,
-      className: "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors",
-      children: [
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: cn("text-white/50", active && "text-[hsl(var(--brand))]"), children: icon }),
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-xs text-white/80 flex-1 text-left", children: label }),
-        /* @__PURE__ */ jsxRuntime.jsx(
-          "div",
-          {
-            className: cn(
-              "w-7 h-4 rounded-full transition-colors flex items-center px-0.5",
-              active ? "bg-[hsl(var(--brand)/0.6)]" : "bg-white/15"
-            ),
-            children: /* @__PURE__ */ jsxRuntime.jsx(
-              "div",
-              {
-                className: cn(
-                  "w-3 h-3 rounded-full bg-white transition-transform",
-                  active && "translate-x-3"
-                )
-              }
-            )
-          }
-        )
-      ]
-    }
-  );
-}
 function QuickSettingsPopover({ onClose: _onClose }) {
   const {
-    showMarkers,
-    setShowMarkers,
-    showMinimap,
-    setShowMinimap,
     colorMode,
     setColorMode,
     pointSize,
@@ -5960,27 +6047,7 @@ function QuickSettingsPopover({ onClose: _onClose }) {
         "rounded-xl shadow-2xl shadow-black/20"
       ),
       children: [
-        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "View Settings" }),
-        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "space-y-0.5", children: [
-          /* @__PURE__ */ jsxRuntime.jsx(
-            ToggleRow,
-            {
-              icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Camera, { size: 14 }),
-              label: "Panoramas",
-              active: showMarkers,
-              onClick: () => setShowMarkers(!showMarkers)
-            }
-          ),
-          /* @__PURE__ */ jsxRuntime.jsx(
-            ToggleRow,
-            {
-              icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Map, { size: 14 }),
-              label: "Minimap",
-              active: showMinimap,
-              onClick: () => setShowMinimap(!showMinimap)
-            }
-          )
-        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Display Settings" }),
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "space-y-1.5", children: [
           /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Color" }),
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "grid grid-cols-2 gap-1", children: COLOR_MODES2.map((cm) => /* @__PURE__ */ jsxRuntime.jsx(
@@ -6613,7 +6680,7 @@ var COLOR_MODES3 = [
   { value: "intensity", label: "Intensity" },
   { value: "classification", label: "Classification" }
 ];
-function ToggleRow2({
+function ToggleRow({
   icon,
   label,
   active,
@@ -6655,6 +6722,8 @@ function MinimalSettingsPopover({ onClose }) {
     setShowMarkers,
     showMinimap,
     setShowMinimap,
+    showMeasurements,
+    setShowMeasurements,
     colorMode,
     setColorMode,
     pointSize,
@@ -6671,10 +6740,10 @@ function MinimalSettingsPopover({ onClose }) {
         "rounded-xl shadow-2xl shadow-black/20"
       ),
       children: [
-        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "View Settings" }),
+        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Layers" }),
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "space-y-0.5", children: [
           /* @__PURE__ */ jsxRuntime.jsx(
-            ToggleRow2,
+            ToggleRow,
             {
               icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Camera, { size: 14 }),
               label: "Panoramas",
@@ -6683,7 +6752,16 @@ function MinimalSettingsPopover({ onClose }) {
             }
           ),
           /* @__PURE__ */ jsxRuntime.jsx(
-            ToggleRow2,
+            ToggleRow,
+            {
+              icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Ruler, { size: 14 }),
+              label: "Measurements",
+              active: showMeasurements,
+              onClick: () => setShowMeasurements(!showMeasurements)
+            }
+          ),
+          /* @__PURE__ */ jsxRuntime.jsx(
+            ToggleRow,
             {
               icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Map, { size: 14 }),
               label: "Minimap",
@@ -7135,7 +7213,7 @@ function DisplayPalette() {
 // src/layouts/workstation/view-settings-palette.tsx
 init_utils();
 init_viewer_provider();
-function ToggleRow3({ icon, label, active, onClick }) {
+function ToggleRow2({ icon, label, active, onClick }) {
   return /* @__PURE__ */ jsxRuntime.jsxs("button", { onClick, className: "flex items-center gap-2 w-full px-1 py-1 rounded text-xs hover:bg-muted/40 transition-colors", children: [
     /* @__PURE__ */ jsxRuntime.jsx("span", { className: cn("text-muted-foreground", active && "text-[hsl(var(--brand))]"), children: icon }),
     /* @__PURE__ */ jsxRuntime.jsx("span", { className: "flex-1 text-left text-muted-foreground", children: label }),
@@ -7154,8 +7232,8 @@ function ModeBtn({ icon, label, active, onClick }) {
 function ViewSettingsPalette() {
   const { showMarkers, setShowMarkers, showMinimap, setShowMinimap, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
   return /* @__PURE__ */ jsxRuntime.jsxs(FloatingPalette, { title: "View", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Eye, { size: 12 }), defaultCollapsed: true, children: [
-    /* @__PURE__ */ jsxRuntime.jsx(ToggleRow3, { icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Camera, { size: 13 }), label: "Panoramas", active: showMarkers, onClick: () => setShowMarkers(!showMarkers) }),
-    /* @__PURE__ */ jsxRuntime.jsx(ToggleRow3, { icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Map, { size: 13 }), label: "Minimap", active: showMinimap, onClick: () => setShowMinimap(!showMinimap) }),
+    /* @__PURE__ */ jsxRuntime.jsx(ToggleRow2, { icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Camera, { size: 13 }), label: "Panoramas", active: showMarkers, onClick: () => setShowMarkers(!showMarkers) }),
+    /* @__PURE__ */ jsxRuntime.jsx(ToggleRow2, { icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Map, { size: 13 }), label: "Minimap", active: showMinimap, onClick: () => setShowMinimap(!showMinimap) }),
     /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1", children: "Navigation" }),
     /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex gap-1", children: [
       /* @__PURE__ */ jsxRuntime.jsx(ModeBtn, { icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Orbit, { size: 14 }), label: "Orbit", active: navigationMode === "orbit", onClick: () => setNavigationMode("orbit") }),
@@ -7346,8 +7424,11 @@ function SectionTools() {
 
 // src/components/overlays/about-dialog.tsx
 init_locale_context();
+init_viewer_provider();
 function AboutDialog({ onClose }) {
   const t = useLocale().about;
+  const { loader } = useViewer();
+  const geo = loader?.getGeoInfo();
   return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm", onClick: onClose, children: /* @__PURE__ */ jsxRuntime.jsxs(
     "div",
     {
@@ -7373,6 +7454,14 @@ function AboutDialog({ onClose }) {
           /* @__PURE__ */ jsxRuntime.jsx("p", { children: t.engineLabel }),
           /* @__PURE__ */ jsxRuntime.jsx("p", { children: t.panoramasLabel }),
           /* @__PURE__ */ jsxRuntime.jsx("p", { children: t.uiLabel })
+        ] }),
+        geo && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "text-xs text-muted-foreground border-t border-[hsl(var(--border))] pt-3 mt-3", children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("p", { children: [
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-foreground", children: "Georeference:" }),
+            " ",
+            geo.georeferenced ? "yes" : "no (local coordinates)"
+          ] }),
+          geo.georeferenced && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "font-mono text-[10px] mt-0.5 break-all", title: geo.projection, children: geo.projection.length > 80 ? geo.projection.slice(0, 80) + "\u2026" : geo.projection })
         ] })
       ]
     }
@@ -7926,6 +8015,7 @@ var de = createLocale(exports.en, {
     removeClipBox: "Ausschnittrahmen entfernen"
   },
   sidebar: {
+    tabLayers: "Ebenen",
     tabPanoramas: "Panoramen",
     tabScene: "Szene",
     tabMeasurements: "Messungen",

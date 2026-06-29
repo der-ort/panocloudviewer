@@ -279,6 +279,17 @@ interface PointCloudMetadata {
     };
     spacing?: number;
     version?: string;
+    /** Coordinate reference system (proj4/WKT/EPSG). Empty/absent = not georeferenced. */
+    projection?: string;
+    offset?: [number, number, number];
+    scale?: [number, number, number];
+}
+/** Georeference status of a loaded cloud (surfaced in the cloud info / About). */
+interface GeoInfo {
+    /** True when the cloud carries a non-empty CRS in metadata.json. */
+    georeferenced: boolean;
+    /** The raw CRS string (proj4/WKT/EPSG), or "" when absent. */
+    projection: string;
 }
 /** Loads Potree 2.0 point clouds (octree.bin + hierarchy.bin + metadata.json) via potree-core */
 declare class PointCloudLoader {
@@ -286,6 +297,8 @@ declare class PointCloudLoader {
     private adapter;
     private currentClouds;
     private hasRgb;
+    /** CRS string from metadata.json (empty = not georeferenced). */
+    private _projection;
     /** World-space bounding box of the loaded point cloud (available after load) */
     worldBox: THREE.Box3;
     constructor(sceneManager: SceneManager, adapter: FileSourceAdapter);
@@ -295,6 +308,12 @@ declare class PointCloudLoader {
     setColorMode(mode: ColorMode): Promise<void>;
     /** Whether the loaded cloud has RGB data */
     get hasRgbData(): boolean;
+    /** CRS string from metadata.json ("" when not georeferenced). */
+    get projection(): string;
+    /** Whether the cloud carries a non-empty CRS (eligible for a map basemap). */
+    get isGeoreferenced(): boolean;
+    /** Georeference status for the cloud info / About dialog. */
+    getGeoInfo(): GeoInfo;
     /** Remove all loaded point clouds from scene */
     clear(): void;
     /** Set point budget on all loaded clouds */
@@ -424,6 +443,8 @@ declare class MeasurementManager {
     updateSnap(worldPos: THREE.Vector3, color?: string): void;
     /** Build (and cache) the stylized crosshair sprite texture. */
     private _getCrossTexture;
+    /** Show/hide ALL measurement objects (the whole group) — used by the Layers panel. */
+    setVisible(visible: boolean): void;
     /** Hide the snap preview (call on mouse leave or tool deactivation) */
     clearSnap(): void;
     private _volumeDraft;
@@ -858,6 +879,7 @@ interface ViewerLocale {
         removeClipBox: string;
     };
     sidebar: {
+        tabLayers: string;
         tabPanoramas: string;
         tabScene: string;
         tabMeasurements: string;
@@ -1268,6 +1290,10 @@ interface ViewerContextValue {
     setShowMarkers: (v: boolean) => void;
     showMinimap: boolean;
     setShowMinimap: (v: boolean) => void;
+    showMeasurements: boolean;
+    setShowMeasurements: (v: boolean) => void;
+    showBasemap: boolean;
+    setShowBasemap: (v: boolean) => void;
     selectedCamera: CameraData | null;
     setSelectedCamera: (cam: CameraData | null) => void;
     clipBoxEntries: ClipBoxEntry[];
@@ -1538,4 +1564,4 @@ declare const en: ViewerLocale;
 
 declare const de: ViewerLocale;
 
-export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type GeoInfo, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
