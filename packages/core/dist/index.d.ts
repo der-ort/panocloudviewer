@@ -459,10 +459,31 @@ declare class MeasurementManager {
     dispose(): void;
 }
 
+/** Options for {@link ExportManager.recordAnimation}. */
+interface RecordOptions {
+    /** Set the camera for absolute time `t` (seconds). Called once per frame. */
+    sampleCamera: (t: number) => void;
+    /** Total animation length in seconds. */
+    durationSec: number;
+    fps?: number;
+    width?: number;
+    height?: number;
+    background?: "white" | "black" | "transparent";
+    bitrate?: number;
+    onProgress?: (fraction: number) => void;
+}
 /** Renders orthographic views and exports them as image files */
 declare class ExportManager {
     private sceneManager;
     constructor(sceneManager: SceneManager);
+    /**
+     * Record a camera animation to an MP4 Blob by rendering **frame by frame** at a
+     * fixed resolution (default 1920×1080) and encoding with WebCodecs (exact
+     * per-frame timestamps → no stutter, high bitrate → not over-compressed).
+     * Rendering is deterministic (not real-time), so it's smooth regardless of how
+     * long each frame takes. Requires WebCodecs (Chrome/Edge).
+     */
+    recordAnimation(opts: RecordOptions): Promise<Blob>;
     /** World-space bounds of the loaded point clouds (potree octrees aren't Meshes). */
     private cloudBounds;
     /**
@@ -793,4 +814,4 @@ declare function formatCoord(x: number, y: number, z: number, decimals?: number)
 /** Export measurements as a CSV string */
 declare function exportMeasurementsCSV(measurements: Measurement[]): string;
 
-export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type GeoInfo, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };
+export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type GeoInfo, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type RecordOptions, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };

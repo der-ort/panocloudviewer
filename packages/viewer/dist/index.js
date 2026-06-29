@@ -109,6 +109,13 @@ function exportMeasurementsCSV(measurements) {
 function nextId() {
   return `m-${++_idCounter}`;
 }
+function loadMp4Muxer() {
+  if (!_muxerPromise) {
+    const runtimeImport2 = new Function("u", "return import(u)");
+    _muxerPromise = runtimeImport2("https://cdn.jsdelivr.net/npm/mp4-muxer@5/+esm");
+  }
+  return _muxerPromise;
+}
 function genId() {
   return `clip_${_nextId++}`;
 }
@@ -145,7 +152,7 @@ function createAdapter(source) {
       return new S3SourceAdapter(source.basePath);
   }
 }
-var SceneManager, PointCloudLoader, EASINGS, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, ExportManager, MinimapRenderer, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId, ClipManager, AxisWidget, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
+var SceneManager, PointCloudLoader, EASINGS, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, _muxerPromise, ExportManager, MinimapRenderer, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId, ClipManager, AxisWidget, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
 var init_dist = __esm({
   "../core/dist/index.js"() {
     SceneManager = class {
@@ -1444,10 +1451,104 @@ var init_dist = __esm({
       back: { pos: new THREE5.Vector3(0, 1, 0), up: new THREE5.Vector3(0, 0, 1) },
       custom: { pos: new THREE5.Vector3(0, 0, 1), up: new THREE5.Vector3(0, 1, 0) }
     };
+    _muxerPromise = null;
     ExportManager = class {
       sceneManager;
       constructor(sceneManager) {
         this.sceneManager = sceneManager;
+      }
+      /**
+       * Record a camera animation to an MP4 Blob by rendering **frame by frame** at a
+       * fixed resolution (default 1920×1080) and encoding with WebCodecs (exact
+       * per-frame timestamps → no stutter, high bitrate → not over-compressed).
+       * Rendering is deterministic (not real-time), so it's smooth regardless of how
+       * long each frame takes. Requires WebCodecs (Chrome/Edge).
+       */
+      async recordAnimation(opts) {
+        const {
+          sampleCamera,
+          durationSec,
+          fps = 30,
+          width = 1920,
+          height = 1080,
+          background = "white",
+          bitrate = 12e6,
+          onProgress
+        } = opts;
+        const w = window;
+        if (typeof w.VideoEncoder === "undefined" || typeof w.VideoFrame === "undefined") {
+          throw new Error("This browser doesn't support WebCodecs video recording \u2014 try Chrome or Edge.");
+        }
+        const { renderer, scene } = this.sceneManager;
+        const potree = this.sceneManager.potree;
+        const muxMod = await loadMp4Muxer();
+        const Muxer = muxMod.Muxer ?? muxMod.default?.Muxer;
+        const ArrayBufferTarget = muxMod.ArrayBufferTarget ?? muxMod.default?.ArrayBufferTarget;
+        const muxer = new Muxer({
+          target: new ArrayBufferTarget(),
+          video: { codec: "avc", width, height },
+          fastStart: "in-memory"
+        });
+        const encoder = new w.VideoEncoder({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+          error: (e) => console.error("[recordAnimation]", e)
+        });
+        encoder.configure({ codec: "avc1.640028", width, height, bitrate, framerate: fps });
+        const prevSize = new THREE5.Vector2();
+        renderer.getSize(prevSize);
+        const prevPR = renderer.getPixelRatio();
+        const prevBg = scene.background;
+        renderer.setPixelRatio(1);
+        renderer.setSize(width, height, false);
+        scene.background = background === "white" ? new THREE5.Color(16777215) : background === "black" ? new THREE5.Color(0) : null;
+        const rt = new THREE5.WebGLRenderTarget(width, height, {
+          format: THREE5.RGBAFormat,
+          minFilter: THREE5.LinearFilter,
+          magFilter: THREE5.LinearFilter
+        });
+        const c2d = document.createElement("canvas");
+        c2d.width = width;
+        c2d.height = height;
+        const ctx = c2d.getContext("2d");
+        const pixels = new Uint8Array(width * height * 4);
+        const flipped = new Uint8ClampedArray(width * height * 4);
+        const row = width * 4;
+        const frameDur = Math.round(1e6 / fps);
+        const total = Math.max(1, Math.round(durationSec * fps));
+        try {
+          for (let f = 0; f < total; f++) {
+            sampleCamera(f / fps);
+            const cam = this.sceneManager.camera;
+            if (potree && this.sceneManager.pointClouds.length > 0) {
+              potree.updatePointClouds(this.sceneManager.pointClouds, cam, renderer);
+            }
+            renderer.setRenderTarget(rt);
+            renderer.clear();
+            renderer.render(scene, cam);
+            renderer.setRenderTarget(null);
+            renderer.readRenderTargetPixels(rt, 0, 0, width, height, pixels);
+            for (let y = 0; y < height; y++) {
+              const s = (height - 1 - y) * row;
+              flipped.set(pixels.subarray(s, s + row), y * row);
+            }
+            ctx.putImageData(new ImageData(flipped, width, height), 0, 0);
+            const frame = new w.VideoFrame(c2d, { timestamp: f * frameDur, duration: frameDur });
+            encoder.encode(frame, { keyFrame: f % (fps * 2) === 0 });
+            frame.close();
+            onProgress?.((f + 1) / total);
+            if (encoder.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 0));
+          }
+          await encoder.flush();
+          muxer.finalize();
+          return new Blob([muxer.target.buffer], { type: "video/mp4" });
+        } finally {
+          renderer.setRenderTarget(null);
+          renderer.setPixelRatio(prevPR);
+          renderer.setSize(prevSize.x, prevSize.y, false);
+          scene.background = prevBg;
+          rt.dispose();
+        }
       }
       /** World-space bounds of the loaded point clouds (potree octrees aren't Meshes). */
       cloudBounds() {
@@ -5209,6 +5310,7 @@ function ScenesPanel() {
     cameraAnimator,
     clipManager,
     loader,
+    exporter,
     clipBoxEntries,
     colorMode,
     pointSize,
@@ -5229,6 +5331,8 @@ function ScenesPanel() {
   const [easing, setEasing] = useState("smooth");
   const [loop, setLoop] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recPct, setRecPct] = useState(0);
   const stopRef = useRef(false);
   const dwellTimer = useRef(null);
   useEffect(() => {
@@ -5359,39 +5463,89 @@ function ScenesPanel() {
     cameraAnimator?.cancel();
     setPlaying(false);
   };
-  const record = async () => {
-    const canvas = sceneManager?.renderer.domElement;
-    const capture = canvas?.captureStream?.bind(canvas);
-    if (!canvas || !capture || typeof MediaRecorder === "undefined" || scenes.length < 2 || playing) {
-      if (typeof MediaRecorder === "undefined") alert("Video recording isn't supported in this browser.");
-      return;
-    }
-    const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m)) ?? "video/webm";
-    const rec = new MediaRecorder(capture(30), { mimeType: mime });
-    const chunks = [];
-    rec.ondataavailable = (e) => {
-      if (e.data.size) chunks.push(e.data);
-    };
-    const stopped = new Promise((r) => {
-      rec.onstop = () => r();
+  const EASE = {
+    smooth: (t2) => 1 - Math.pow(1 - t2, 4),
+    linear: (t2) => t2,
+    easeInOut: (t2) => t2 < 0.5 ? 2 * t2 * t2 : 1 - Math.pow(-2 * t2 + 2, 2) / 2
+  };
+  const buildSampler = () => {
+    const order = scenes;
+    const fly = Math.max(flySec, 0.05);
+    const stay = staySec;
+    const ease = EASE[easing];
+    const poseOf = (s) => ({
+      pos: new THREE5.Vector3(...s.camera.position),
+      tgt: new THREE5.Vector3(...s.camera.target),
+      up: s.camera.up ? new THREE5.Vector3(...s.camera.up) : new THREE5.Vector3(0, 0, 1)
     });
-    stopRef.current = false;
-    setPlaying(true);
-    rec.start();
+    const apply = (pos, tgt, up) => {
+      if (!sceneManager) return;
+      sceneManager.camera.position.copy(pos);
+      sceneManager.camera.up.copy(up).normalize();
+      sceneManager.camera.lookAt(tgt);
+      sceneManager.camera.updateMatrixWorld();
+      sceneManager.controls.target.copy(tgt);
+    };
+    const total = stay + (fly + stay) * (order.length - 1);
+    const sample = (t2) => {
+      if (order.length === 0) return;
+      if (t2 <= stay) {
+        const p2 = poseOf(order[0]);
+        apply(p2.pos, p2.tgt, p2.up);
+        return;
+      }
+      let acc = stay;
+      for (let i = 1; i < order.length; i++) {
+        if (t2 <= acc + fly) {
+          const f = ease(Math.min(1, (t2 - acc) / fly));
+          const a = poseOf(order[i - 1]);
+          const b = poseOf(order[i]);
+          apply(
+            a.pos.clone().lerp(b.pos, f),
+            a.tgt.clone().lerp(b.tgt, f),
+            a.up.clone().lerp(b.up, f).normalize()
+          );
+          return;
+        }
+        acc += fly;
+        if (t2 <= acc + stay) {
+          const p2 = poseOf(order[i]);
+          apply(p2.pos, p2.tgt, p2.up);
+          return;
+        }
+        acc += stay;
+      }
+      const p = poseOf(order[order.length - 1]);
+      apply(p.pos, p.tgt, p.up);
+    };
+    return { sample, total };
+  };
+  const record = async () => {
+    if (!exporter || scenes.length < 2 || recording || playing) return;
+    const { sample, total } = buildSampler();
+    setRecording(true);
+    setRecPct(0);
     try {
-      await runOnce();
+      const blob = await exporter.recordAnimation({
+        sampleCamera: sample,
+        durationSec: total,
+        fps: 30,
+        width: 1920,
+        height: 1080,
+        onProgress: (p) => setRecPct(Math.round(p * 100))
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `scene_animation_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.mp4`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Recording failed.");
     } finally {
-      setPlaying(false);
+      setRecording(false);
+      setRecPct(0);
     }
-    rec.stop();
-    await stopped;
-    const blob = new Blob(chunks, { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `scene_animation_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.webm`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
   return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full overflow-y-auto text-xs", children: [
     /* @__PURE__ */ jsxs("div", { className: "p-2 border-b border-[hsl(var(--border))]", children: [
@@ -5535,7 +5689,7 @@ function ScenesPanel() {
             "button",
             {
               onClick: play,
-              disabled: scenes.length < 2,
+              disabled: scenes.length < 2 || recording,
               className: "flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] hover:bg-[hsl(var(--brand)/0.3)] disabled:opacity-40 transition-colors text-[10px]",
               children: [
                 /* @__PURE__ */ jsx(Play, { size: 12 }),
@@ -5557,17 +5711,23 @@ function ScenesPanel() {
             "button",
             {
               onClick: record,
-              disabled: playing || scenes.length < 2,
-              title: "Record a .webm video of one pass",
+              disabled: playing || recording || scenes.length < 2,
+              title: "Render a 1080p MP4 of one pass (frame by frame)",
               className: "flex items-center justify-center gap-1 px-2 py-1 rounded border border-[hsl(var(--border))] text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 transition-colors text-[10px]",
               children: [
                 /* @__PURE__ */ jsx(Film, { size: 12 }),
-                " Video"
+                " ",
+                recording ? `${recPct}%` : "Video"
               ]
             }
           )
         ] }),
-        scenes.length < 2 && /* @__PURE__ */ jsx("p", { className: "text-[9px] text-muted-foreground/70", children: "Save at least two scenes to animate." })
+        recording && /* @__PURE__ */ jsxs("p", { className: "text-[9px] text-[hsl(var(--brand))]", children: [
+          "Rendering 1080p MP4 frame by frame\u2026 ",
+          recPct,
+          "%"
+        ] }),
+        scenes.length < 2 && !recording && /* @__PURE__ */ jsx("p", { className: "text-[9px] text-muted-foreground/70", children: "Save at least two scenes to animate." })
       ] })
     ] })
   ] });
@@ -6801,7 +6961,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "824691e \xB7 2026-06-29 18:55Z" ;
+var PCV_BUILD = "81a4b0d \xB7 2026-06-29 20:52Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

@@ -1391,10 +1391,111 @@ var VIEW_DIRECTIONS = {
   back: { pos: new THREE5.Vector3(0, 1, 0), up: new THREE5.Vector3(0, 0, 1) },
   custom: { pos: new THREE5.Vector3(0, 0, 1), up: new THREE5.Vector3(0, 1, 0) }
 };
+var _muxerPromise = null;
+function loadMp4Muxer() {
+  if (!_muxerPromise) {
+    const runtimeImport = new Function("u", "return import(u)");
+    _muxerPromise = runtimeImport("https://cdn.jsdelivr.net/npm/mp4-muxer@5/+esm");
+  }
+  return _muxerPromise;
+}
 var ExportManager = class {
   sceneManager;
   constructor(sceneManager) {
     this.sceneManager = sceneManager;
+  }
+  /**
+   * Record a camera animation to an MP4 Blob by rendering **frame by frame** at a
+   * fixed resolution (default 1920×1080) and encoding with WebCodecs (exact
+   * per-frame timestamps → no stutter, high bitrate → not over-compressed).
+   * Rendering is deterministic (not real-time), so it's smooth regardless of how
+   * long each frame takes. Requires WebCodecs (Chrome/Edge).
+   */
+  async recordAnimation(opts) {
+    const {
+      sampleCamera,
+      durationSec,
+      fps = 30,
+      width = 1920,
+      height = 1080,
+      background = "white",
+      bitrate = 12e6,
+      onProgress
+    } = opts;
+    const w = window;
+    if (typeof w.VideoEncoder === "undefined" || typeof w.VideoFrame === "undefined") {
+      throw new Error("This browser doesn't support WebCodecs video recording \u2014 try Chrome or Edge.");
+    }
+    const { renderer, scene } = this.sceneManager;
+    const potree = this.sceneManager.potree;
+    const muxMod = await loadMp4Muxer();
+    const Muxer = muxMod.Muxer ?? muxMod.default?.Muxer;
+    const ArrayBufferTarget = muxMod.ArrayBufferTarget ?? muxMod.default?.ArrayBufferTarget;
+    const muxer = new Muxer({
+      target: new ArrayBufferTarget(),
+      video: { codec: "avc", width, height },
+      fastStart: "in-memory"
+    });
+    const encoder = new w.VideoEncoder({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: (e) => console.error("[recordAnimation]", e)
+    });
+    encoder.configure({ codec: "avc1.640028", width, height, bitrate, framerate: fps });
+    const prevSize = new THREE5.Vector2();
+    renderer.getSize(prevSize);
+    const prevPR = renderer.getPixelRatio();
+    const prevBg = scene.background;
+    renderer.setPixelRatio(1);
+    renderer.setSize(width, height, false);
+    scene.background = background === "white" ? new THREE5.Color(16777215) : background === "black" ? new THREE5.Color(0) : null;
+    const rt = new THREE5.WebGLRenderTarget(width, height, {
+      format: THREE5.RGBAFormat,
+      minFilter: THREE5.LinearFilter,
+      magFilter: THREE5.LinearFilter
+    });
+    const c2d = document.createElement("canvas");
+    c2d.width = width;
+    c2d.height = height;
+    const ctx = c2d.getContext("2d");
+    const pixels = new Uint8Array(width * height * 4);
+    const flipped = new Uint8ClampedArray(width * height * 4);
+    const row = width * 4;
+    const frameDur = Math.round(1e6 / fps);
+    const total = Math.max(1, Math.round(durationSec * fps));
+    try {
+      for (let f = 0; f < total; f++) {
+        sampleCamera(f / fps);
+        const cam = this.sceneManager.camera;
+        if (potree && this.sceneManager.pointClouds.length > 0) {
+          potree.updatePointClouds(this.sceneManager.pointClouds, cam, renderer);
+        }
+        renderer.setRenderTarget(rt);
+        renderer.clear();
+        renderer.render(scene, cam);
+        renderer.setRenderTarget(null);
+        renderer.readRenderTargetPixels(rt, 0, 0, width, height, pixels);
+        for (let y = 0; y < height; y++) {
+          const s = (height - 1 - y) * row;
+          flipped.set(pixels.subarray(s, s + row), y * row);
+        }
+        ctx.putImageData(new ImageData(flipped, width, height), 0, 0);
+        const frame = new w.VideoFrame(c2d, { timestamp: f * frameDur, duration: frameDur });
+        encoder.encode(frame, { keyFrame: f % (fps * 2) === 0 });
+        frame.close();
+        onProgress?.((f + 1) / total);
+        if (encoder.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 0));
+      }
+      await encoder.flush();
+      muxer.finalize();
+      return new Blob([muxer.target.buffer], { type: "video/mp4" });
+    } finally {
+      renderer.setRenderTarget(null);
+      renderer.setPixelRatio(prevPR);
+      renderer.setSize(prevSize.x, prevSize.y, false);
+      scene.background = prevBg;
+      rt.dispose();
+    }
   }
   /** World-space bounds of the loaded point clouds (potree octrees aren't Meshes). */
   cloudBounds() {

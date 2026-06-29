@@ -158,6 +158,8 @@ Manages multiple named axis-aligned clip boxes with TransformControls support.
 ### `ExportManager` (`core/export-manager.ts`)
 Renders views to image files. `view: "current"` snapshots the **live camera** (a "save current view" screenshot); `top/front/side/back` render an **orthographic** shot framed to the cloud bounds. Bounds come from `sceneManager.pointClouds` (potree octrees aren't `THREE.Mesh`, so the old `scene.traverse(Mesh)` found nothing → empty frustum → blank export). `potree.updatePointClouds(pointClouds, exportCamera, renderer)` is called before rendering so the right LOD nodes/point-sizes resolve for the export camera (potree LOD is camera-driven), then it renders to a `WebGLRenderTarget` and reads back pixels.
 
+- **`recordAnimation({ sampleCamera, durationSec, fps?, width?, height?, … })`**: records a camera animation to an **MP4 Blob, rendered frame by frame** (default 1920×1080). For each frame it calls `sampleCamera(t)` (the caller positions the camera), renders to a render target, and encodes via **WebCodecs `VideoEncoder`** (H.264, ~12 Mbps) muxed with **mp4-muxer** (lazy-loaded from CDN via the `new Function`/`import(u)` indirection — not bundled). Deterministic (not real-time) so it never stutters regardless of per-frame cost. Requires WebCodecs (Chrome/Edge) — throws otherwise. The `ScenesPanel` "Video" button uses it with a keyframe sampler over the saved scenes.
+
 - **`capture(options: ExportOptions)`**: Creates a temporary `OrthographicCamera` pointing in the requested direction, renders to a `WebGLRenderTarget` at `scale × viewport size`, reads back pixels, flips Y (WebGL is bottom-up), draws to a `<canvas>`, returns a data URL.
 - **`static download(dataUrl, filename)`**: Triggers browser download.
 - **View directions**: `top`, `front`, `side`, `back` (fixed directions), `custom` (uses top direction).
@@ -195,7 +197,7 @@ Top-down orthographic minimap with overlay, rendered in the **bottom-right** cor
 
 
 ### `PresentationManager` (`core/presentation-manager.ts`)
-Persists named viewer scenes (camera position + **up** + target + clip boxes + display settings) in `localStorage`. `ViewerScene.camera.up` is optional (older saved scenes lack it → restore defaults to `(0,0,1)`). The `ScenesPanel` also drives a **keyframe animation** that flies the camera through the saved scenes in order (configurable fly time / dwell time / easing / loop), with an optional `MediaRecorder` `.webm` capture of one pass.
+Persists named viewer scenes (camera position + **up** + target + clip boxes + display settings) in `localStorage`. `ViewerScene.camera.up` is optional (older saved scenes lack it → restore defaults to `(0,0,1)`). The `ScenesPanel` also drives a **keyframe animation** that flies the camera through the saved scenes in order (configurable fly time / dwell time / easing / loop). The **"Video"** button renders one pass to a **1080p MP4 frame-by-frame** via `ExportManager.recordAnimation` (a deterministic timeline sampler sets the camera per frame) — not the old real-time `MediaRecorder` capture, which stuttered and was low-bitrate.
 
 - **Constructor `(sourceKey)`**: Storage key is `pcv_scenes_${sourceKey}` — one list per project.
 - **`addScene(scene)` / `removeScene(id)` / `renameScene(id, name)`**: Mutate and persist. Max 50 scenes.

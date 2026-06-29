@@ -51,7 +51,7 @@ function InlineEditSceneName({ value, onSave }: { value: string; onSave: (v: str
 
 export function ScenesPanel() {
   const {
-    sceneManager, cameraAnimator, clipManager, loader,
+    sceneManager, cameraAnimator, clipManager, loader, exporter,
     clipBoxEntries, colorMode, pointSize, pointBudget,
     setColorMode, setPointSize, setPointBudget, config,
   } = useViewer();
@@ -69,6 +69,8 @@ export function ScenesPanel() {
   const [easing, setEasing] = useState<Easing>("smooth");
   const [loop, setLoop] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recPct, setRecPct] = useState(0);
   const stopRef = useRef(false);
   const dwellTimer = useRef<number | null>(null);
 
@@ -219,36 +221,86 @@ export function ScenesPanel() {
     setPlaying(false);
   };
 
-  /** Record one pass of the animation to a downloadable .webm (best-effort). */
+  // Easing curves for frame-accurate sampling (mirror CameraAnimator's).
+  const EASE: Record<Easing, (t: number) => number> = {
+    smooth: t => 1 - Math.pow(1 - t, 4),
+    linear: t => t,
+    easeInOut: t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2),
+  };
+
+  /** Build a deterministic camera path over the scenes (for frame-by-frame video). */
+  const buildSampler = () => {
+    const order = scenes;
+    const fly = Math.max(flySec, 0.05);
+    const stay = staySec;
+    const ease = EASE[easing];
+    const poseOf = (s: ViewerScene) => ({
+      pos: new THREE.Vector3(...s.camera.position),
+      tgt: new THREE.Vector3(...s.camera.target),
+      up: s.camera.up ? new THREE.Vector3(...s.camera.up) : new THREE.Vector3(0, 0, 1),
+    });
+    const apply = (pos: THREE.Vector3, tgt: THREE.Vector3, up: THREE.Vector3) => {
+      if (!sceneManager) return;
+      // Exact pose (lookAt) — no OrbitControls damping, so frames are deterministic.
+      sceneManager.camera.position.copy(pos);
+      sceneManager.camera.up.copy(up).normalize();
+      sceneManager.camera.lookAt(tgt);
+      sceneManager.camera.updateMatrixWorld();
+      sceneManager.controls.target.copy(tgt);
+    };
+    // Timeline: dwell at scene 0, then (fly → dwell) for each subsequent scene.
+    const total = stay + (fly + stay) * (order.length - 1);
+    const sample = (t: number) => {
+      if (order.length === 0) return;
+      if (t <= stay) { const p = poseOf(order[0]); apply(p.pos, p.tgt, p.up); return; }
+      let acc = stay;
+      for (let i = 1; i < order.length; i++) {
+        if (t <= acc + fly) {
+          const f = ease(Math.min(1, (t - acc) / fly));
+          const a = poseOf(order[i - 1]); const b = poseOf(order[i]);
+          apply(
+            a.pos.clone().lerp(b.pos, f),
+            a.tgt.clone().lerp(b.tgt, f),
+            a.up.clone().lerp(b.up, f).normalize(),
+          );
+          return;
+        }
+        acc += fly;
+        if (t <= acc + stay) { const p = poseOf(order[i]); apply(p.pos, p.tgt, p.up); return; }
+        acc += stay;
+      }
+      const p = poseOf(order[order.length - 1]); apply(p.pos, p.tgt, p.up);
+    };
+    return { sample, total };
+  };
+
+  /** Record the keyframe animation to a 1080p MP4, rendered frame by frame. */
   const record = async () => {
-    const canvas = sceneManager?.renderer.domElement as HTMLCanvasElement | undefined;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const capture = (canvas as any)?.captureStream?.bind(canvas);
-    if (!canvas || !capture || typeof MediaRecorder === "undefined" || scenes.length < 2 || playing) {
-      if (typeof MediaRecorder === "undefined") alert("Video recording isn't supported in this browser.");
-      return;
+    if (!exporter || scenes.length < 2 || recording || playing) return;
+    const { sample, total } = buildSampler();
+    setRecording(true);
+    setRecPct(0);
+    try {
+      const blob = await exporter.recordAnimation({
+        sampleCamera: sample,
+        durationSec: total,
+        fps: 30,
+        width: 1920,
+        height: 1080,
+        onProgress: (p) => setRecPct(Math.round(p * 100)),
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `scene_animation_${new Date().toISOString().slice(0, 10)}.mp4`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Recording failed.");
+    } finally {
+      setRecording(false);
+      setRecPct(0);
     }
-    const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
-      .find(m => MediaRecorder.isTypeSupported(m)) ?? "video/webm";
-    const rec = new MediaRecorder(capture(30) as MediaStream, { mimeType: mime });
-    const chunks: BlobPart[] = [];
-    rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-    const stopped = new Promise<void>(r => { rec.onstop = () => r(); });
-
-    stopRef.current = false;
-    setPlaying(true);
-    rec.start();
-    try { await runOnce(); } finally { setPlaying(false); }
-    rec.stop();
-    await stopped;
-
-    const blob = new Blob(chunks, { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `scene_animation_${new Date().toISOString().slice(0, 10)}.webm`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -361,7 +413,7 @@ export function ScenesPanel() {
 
             <div className="flex gap-1 pt-0.5">
               {!playing ? (
-                <button onClick={play} disabled={scenes.length < 2}
+                <button onClick={play} disabled={scenes.length < 2 || recording}
                   className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] hover:bg-[hsl(var(--brand)/0.3)] disabled:opacity-40 transition-colors text-[10px]">
                   <Play size={12} /> Play
                 </button>
@@ -371,12 +423,16 @@ export function ScenesPanel() {
                   <Square size={11} /> Stop
                 </button>
               )}
-              <button onClick={record} disabled={playing || scenes.length < 2} title="Record a .webm video of one pass"
+              <button onClick={record} disabled={playing || recording || scenes.length < 2}
+                title="Render a 1080p MP4 of one pass (frame by frame)"
                 className="flex items-center justify-center gap-1 px-2 py-1 rounded border border-[hsl(var(--border))] text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 transition-colors text-[10px]">
-                <Film size={12} /> Video
+                <Film size={12} /> {recording ? `${recPct}%` : "Video"}
               </button>
             </div>
-            {scenes.length < 2 && (
+            {recording && (
+              <p className="text-[9px] text-[hsl(var(--brand))]">Rendering 1080p MP4 frame by frame… {recPct}%</p>
+            )}
+            {scenes.length < 2 && !recording && (
               <p className="text-[9px] text-muted-foreground/70">Save at least two scenes to animate.</p>
             )}
           </div>
