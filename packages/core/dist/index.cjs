@@ -57,10 +57,7 @@ var SceneManager = class {
     this.camera.position.set(0, -50, 30);
     this.renderer = new THREE5__namespace.WebGLRenderer({
       antialias: true,
-      logarithmicDepthBuffer: true,
-      // Keep the drawing buffer so the picking magnifier (a 2D loupe) can sample
-      // the rendered canvas between frames via drawImage.
-      preserveDrawingBuffer: true
+      logarithmicDepthBuffer: true
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(w, h);
@@ -1412,36 +1409,67 @@ var ExportManager = class {
   constructor(sceneManager) {
     this.sceneManager = sceneManager;
   }
-  /** Capture an orthographic view and return as data URL */
-  async capture(options) {
-    const { view, scale, background, format, quality = 0.95 } = options;
-    const { scene, renderer } = this.sceneManager;
+  /** World-space bounds of the loaded point clouds (potree octrees aren't Meshes). */
+  cloudBounds() {
     const box = new THREE5__namespace.Box3();
-    scene.traverse((obj) => {
-      if (obj instanceof THREE5__namespace.Mesh || obj.name === "pointcloud") {
+    for (const pc of this.sceneManager.pointClouds) {
+      const g = pc.pcoGeometry;
+      const tb = g?.tightBoundingBox ?? g?.boundingBox ?? pc.boundingBox;
+      const off = g?.offset;
+      if (tb) {
+        const wb = tb.clone();
+        if (off) {
+          wb.min.add(off);
+          wb.max.add(off);
+        }
+        box.union(wb);
+      } else {
         try {
-          box.expandByObject(obj);
+          box.expandByObject(pc);
         } catch {
         }
       }
-    });
-    const size = new THREE5__namespace.Vector3();
-    const center = new THREE5__namespace.Vector3();
-    box.getSize(size);
-    box.getCenter(center);
-    const dir = VIEW_DIRECTIONS[view] ?? VIEW_DIRECTIONS.top;
+    }
+    return box;
+  }
+  /**
+   * Capture a view to an image data URL. `view: "current"` snapshots exactly what
+   * the user sees (the live camera); the other views render an orthographic shot
+   * framed to the cloud bounds.
+   */
+  async capture(options) {
+    const { view, scale, background, format, quality = 0.95 } = options;
+    const { scene, renderer } = this.sceneManager;
+    const potree = this.sceneManager.potree;
     const baseW = renderer.domElement.width;
     const baseH = renderer.domElement.height;
-    const outW = baseW * scale;
-    const outH = baseH * scale;
+    const maxDim = renderer.capabilities.maxTextureSize || 4096;
+    const outW = Math.max(1, Math.min(Math.round(baseW * scale), maxDim));
+    const outH = Math.max(1, Math.min(Math.round(baseH * scale), maxDim));
     const aspect = outW / outH;
-    const halfH = Math.max(size.x, size.y, size.z) * 0.6;
-    const halfW = halfH * aspect;
-    const orthoCamera = new THREE5__namespace.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 1e5);
-    orthoCamera.position.copy(center).addScaledVector(dir.pos, halfH * 3);
-    orthoCamera.up.copy(dir.up);
-    orthoCamera.lookAt(center);
-    orthoCamera.updateMatrixWorld();
+    let camera;
+    if (view === "current") {
+      const cam = this.sceneManager.camera.clone();
+      cam.aspect = aspect;
+      cam.updateProjectionMatrix();
+      camera = cam;
+    } else {
+      const box = this.cloudBounds();
+      const size = new THREE5__namespace.Vector3();
+      const center = new THREE5__namespace.Vector3();
+      box.getSize(size);
+      box.getCenter(center);
+      const maxExt = Math.max(size.x, size.y, size.z, 1);
+      const dir = VIEW_DIRECTIONS[view] ?? VIEW_DIRECTIONS.top;
+      const halfH = maxExt * 0.6;
+      const halfW = halfH * aspect;
+      const ortho = new THREE5__namespace.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, maxExt * 10 + 1e4);
+      ortho.position.copy(center).addScaledVector(dir.pos, maxExt * 2);
+      ortho.up.copy(dir.up);
+      ortho.lookAt(center);
+      ortho.updateMatrixWorld();
+      camera = ortho;
+    }
     const rt = new THREE5__namespace.WebGLRenderTarget(outW, outH, {
       minFilter: THREE5__namespace.LinearFilter,
       magFilter: THREE5__namespace.LinearFilter,
@@ -1451,11 +1479,13 @@ var ExportManager = class {
     if (background === "white") scene.background = new THREE5__namespace.Color(16777215);
     else if (background === "black") scene.background = new THREE5__namespace.Color(0);
     else scene.background = null;
+    if (potree && this.sceneManager.pointClouds.length > 0) {
+      potree.updatePointClouds(this.sceneManager.pointClouds, camera, renderer);
+    }
     renderer.setRenderTarget(rt);
-    renderer.setSize(outW, outH);
-    renderer.render(scene, orthoCamera);
+    renderer.clear();
+    renderer.render(scene, camera);
     renderer.setRenderTarget(null);
-    renderer.setSize(renderer.domElement.clientWidth, renderer.domElement.clientHeight);
     scene.background = prevBg;
     const pixels = new Uint8Array(outW * outH * 4);
     renderer.readRenderTargetPixels(rt, 0, 0, outW, outH, pixels);

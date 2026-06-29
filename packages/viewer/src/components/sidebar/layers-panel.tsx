@@ -4,6 +4,7 @@ import React from "react";
 import { Camera, Ruler, Map, ChevronRight, Tag } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
+import { useData } from "../../providers/data-provider";
 import { ClassificationPanel } from "./classification-panel";
 
 /** A single layer row — icon, label, and an on/off switch (or a disabled hint). */
@@ -67,6 +68,8 @@ export function LayersPanel() {
     showMeasurements, setShowMeasurements,
     showMinimap, setShowMinimap,
   } = useViewer();
+  const { cameras } = useData();
+  const hasPanoramas = cameras.length > 0;
 
   return (
     <div className="p-3 space-y-1 overflow-y-auto h-full">
@@ -74,12 +77,14 @@ export function LayersPanel() {
         Layers
       </p>
 
-      <LayerRow
-        icon={<Camera size={15} />}
-        label="Panoramas"
-        active={showMarkers}
-        onToggle={() => setShowMarkers(!showMarkers)}
-      />
+      {hasPanoramas && (
+        <LayerRow
+          icon={<Camera size={15} />}
+          label="Panoramas"
+          active={showMarkers}
+          onToggle={() => setShowMarkers(!showMarkers)}
+        />
+      )}
       <LayerRow
         icon={<Ruler size={15} />}
         label="Measurements"

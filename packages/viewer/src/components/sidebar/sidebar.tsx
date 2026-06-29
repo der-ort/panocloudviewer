@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Camera, Layers, Ruler, Bookmark, Box } from "lucide-react";
 import { useLocale } from "../../i18n/locale-context";
 import { useViewer } from "../../providers/viewer-provider";
+import { useData } from "../../providers/data-provider";
 import { LayersPanel } from "./layers-panel";
 import { PanoPanel } from "./pano-panel";
 import { ScenePanel } from "./scene-panel";
@@ -16,22 +17,26 @@ export function Sidebar() {
   const [tab, setTab] = useState<Tab>("layers");
   const t = useLocale().sidebar;
   const { uiMode } = useViewer();
+  const { cameras } = useData();
 
   const isPro = uiMode === "professional";
+  const hasPanoramas = cameras.length > 0;
 
-  const ALL_TABS: { id: Tab; icon: React.ReactNode; label: string; proOnly?: boolean }[] = [
+  const ALL_TABS: { id: Tab; icon: React.ReactNode; label: string; proOnly?: boolean; panoOnly?: boolean }[] = [
     { id: "layers",         icon: <Layers size={14} />,   label: t.tabLayers },
-    { id: "panoramas",      icon: <Camera size={14} />,   label: t.tabPanoramas },
+    { id: "panoramas",      icon: <Camera size={14} />,   label: t.tabPanoramas, panoOnly: true },
     { id: "scene",          icon: <Box size={14} />,      label: t.tabScene },
     { id: "measurements",   icon: <Ruler size={14} />,    label: t.tabMeasurements },
     { id: "scenes",         icon: <Bookmark size={14} />, label: t.tabScenes,         proOnly: true },
   ];
 
-  // In Lite mode, filter out pro-only tabs
-  const TABS = ALL_TABS.filter(entry => isPro || !entry.proOnly);
+  // Hide pro-only tabs in Lite mode, and the panoramas tab when there are none.
+  const TABS = ALL_TABS.filter(entry =>
+    (isPro || !entry.proOnly) && (!entry.panoOnly || hasPanoramas),
+  );
 
-  // If current tab is now hidden (mode switched to Lite), fall back to panoramas
-  const activeTab: Tab = TABS.some(tb => tb.id === tab) ? tab : "panoramas";
+  // If the current tab is now hidden, fall back to the first available tab.
+  const activeTab: Tab = TABS.some(tb => tb.id === tab) ? tab : "layers";
 
   return (
     <div className="flex flex-col h-full">

@@ -80,11 +80,27 @@ export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, loader]);
 
-  /** Set a material shader uniform (the real, effective path). */
+  /**
+   * Apply an RGB/intensity adjustment. potree-core's `getDefines()` reads the
+   * material PROPERTY (e.g. `mat.rgbGamma`) to decide whether to compile the
+   * adjustment into the shader (`use_rgb_gamma_contrast_brightness`); the shader
+   * then reads the matching UNIFORM. So we must set BOTH, and force a recompile
+   * (`needsUpdate`) only when this group crosses the default↔active boundary
+   * (setting it every tick would needlessly rebuild the program).
+   */
   const setUniform = (setter: (v: number) => void, name: string, value: number) => {
     setter(value);
     const m = mat();
-    if (m?.uniforms?.[name]) m.uniforms[name].value = value;
+    if (!m) return;
+    const group = name.startsWith("rgb")
+      ? ["rgbGamma", "rgbBrightness", "rgbContrast"]
+      : ["intensityGamma", "intensityBrightness", "intensityContrast"];
+    const def = (n: string) => (n.endsWith("Gamma") ? 1 : 0);
+    const isActive = () => group.some(n => (m[n] ?? def(n)) !== def(n));
+    const wasActive = isActive();
+    m[name] = value;
+    if (m.uniforms?.[name]) m.uniforms[name].value = value;
+    if (wasActive !== isActive()) m.needsUpdate = true;
   };
   const setElevation = (min: number, max: number) => {
     setHeightMin(min); setHeightMax(max);

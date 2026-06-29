@@ -15,7 +15,7 @@ export function ExportTools() {
   const t = useLocale().exportPanel;
   const pcvRoot = usePcvRoot();
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState<ExportView>("top");
+  const [view, setView] = useState<ExportView>("current");
   const [scale, setScale] = useState<1 | 2 | 4>(2);
   const [bg, setBg] = useState<"white" | "black" | "transparent">("white");
   const [fmt, setFmt] = useState<ExportFormat>("png");
@@ -63,6 +63,7 @@ export function ExportTools() {
   };
 
   const views: { value: ExportView; label: string }[] = [
+    { value: "current", label: "Current view" },
     { value: "top",   label: t.viewTop },
     { value: "front", label: t.viewFront },
     { value: "side",  label: t.viewSide },

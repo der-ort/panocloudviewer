@@ -21,11 +21,6 @@ interface ViewportProps {
   className?: string;
 }
 
-/** Picking-magnifier loupe: edge length (CSS px) and magnification factor. */
-const LOUPE_SIZE = 168;
-const LOUPE_ZOOM = 7;
-/** Gap (px) between the cursor and the loupe panel. */
-const LOUPE_OFFSET = 22;
 
 export function Viewport({ className }: ViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -62,11 +57,10 @@ export function Viewport({ className }: ViewportProps) {
   const measureRef = useRef<MeasurementManager | null>(null);
   const minimapRef = useRef<MinimapRenderer | null>(null);
   const clipRef = useRef<ClipManager | null>(null);
-  // Picking-magnifier loupe: a 2D canvas that samples the rendered scene around
-  // the snapped point and follows the cursor with a small offset.
-  const loupeCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [magnifierOn, setMagnifierOn] = React.useState(false);
-  const [loupePos, setLoupePos] = React.useState({ x: 0, y: 0 });
+  // Measurement snap throttle: pick at most once per animation frame (a GPU pick
+  // on every mousemove stalls badly on dense clouds).
+  const snapRafRef = useRef<number | null>(null);
+  const snapNdcRef = useRef<{ nx: number; ny: number } | null>(null);
   const animRef = useRef<CameraAnimator | null>(null);
   const axisRef = useRef<AxisWidget | null>(null);
 
@@ -257,10 +251,6 @@ export function Viewport({ className }: ViewportProps) {
     mm.applyClipFilter(cm ? (p) => cm.isPointVisible(p) : null);
   }, [clipBoxEntries]);
 
-  // The point-picking magnifier is shown for point-snapping measurement tools
-  // (not the drag-based volume tool).
-  const magnifierTool = activeTool.startsWith("measure-") && activeTool !== "measure-volume";
-
   // Clear snap/draft preview when switching away from a measurement tool
   useEffect(() => {
     if (!activeTool.startsWith("measure-")) {
@@ -275,9 +265,7 @@ export function Viewport({ className }: ViewportProps) {
       clipDownRef.current = null;
       clipRef.current?.setDraft(null);
     }
-    // Hide the picking loupe when leaving a point-snapping measurement tool.
-    if (!magnifierTool) setMagnifierOn(false);
-  }, [activeTool, magnifierTool]);
+  }, [activeTool]);
 
   // Sync navigation mode
   useEffect(() => {
@@ -319,39 +307,6 @@ export function Viewport({ className }: ViewportProps) {
     }
     return projectToPlaneZ(nx, ny, sm.controls.target.z);
   }, [projectToPlaneZ]);
-
-  // Draw the picking-magnifier loupe: copy a small region of the rendered canvas
-  // CENTERED ON THE SNAPPED POINT, magnified, into the loupe canvas. Sampling the
-  // real frame (preserveDrawingBuffer) guarantees the actual points are shown.
-  const drawLoupe = useCallback((hit: THREE.Vector3) => {
-    const sm = smRef.current;
-    const src = sm?.renderer.domElement;
-    const loupe = loupeCanvasRef.current;
-    if (!sm || !src || !loupe) return;
-    const ctx = loupe.getContext("2d");
-    if (!ctx) return;
-
-    // Project the snap point to canvas drawing-buffer pixels.
-    const ndc = hit.clone().project(sm.camera);
-    const bufX = (ndc.x * 0.5 + 0.5) * src.width;
-    const bufY = (1 - (ndc.y * 0.5 + 0.5)) * src.height;
-
-    // Source square (buffer px) for the magnified region.
-    const ratio = src.clientWidth > 0 ? src.width / src.clientWidth : 1;
-    const srcSize = (LOUPE_SIZE / LOUPE_ZOOM) * ratio;
-
-    ctx.imageSmoothingEnabled = false; // crisp pixels for precise targeting
-    ctx.clearRect(0, 0, LOUPE_SIZE, LOUPE_SIZE);
-    try {
-      ctx.drawImage(
-        src,
-        bufX - srcSize / 2, bufY - srcSize / 2, srcSize, srcSize,
-        0, 0, LOUPE_SIZE, LOUPE_SIZE,
-      );
-    } catch {
-      /* drawImage can throw if the source rect is fully out of range — ignore */
-    }
-  }, []);
 
   // Build a section-box draft centered at the cursor's ground point. The box is
   // kept compact (flat in Z) so all six face handles stay on screen.
@@ -498,32 +453,23 @@ export function Viewport({ className }: ViewportProps) {
       return;
     }
 
-    // Measurement snap preview — show where the point will land before clicking,
-    // and feed the picking magnifier so it zooms into the snapped area.
-    if (activeTool.startsWith("measure-") && measureRef.current) {
-      const sm = smRef.current;
-      if (!sm) return;
+    // Measurement snap preview — show where the point will land before clicking.
+    // Throttled to one GPU pick per animation frame so it stays responsive on
+    // dense clouds (mousemove can fire far faster than we can pick).
+    if (activeTool.startsWith("measure-") && smRef.current) {
       const { nx, ny } = getNDC(e);
-      const hit = pickVisiblePoint(nx, ny);
-      if (hit) {
-        measureRef.current.updateSnap(hit);
-        if (magnifierTool) {
-          // Magnify the snapped area and float the loupe near the cursor,
-          // flipping to the other side when it would run off an edge.
-          drawLoupe(hit);
-          const rect = e.currentTarget.getBoundingClientRect();
-          const cx = e.clientX - rect.left;
-          const cy = e.clientY - rect.top;
-          let px = cx + LOUPE_OFFSET;
-          let py = cy + LOUPE_OFFSET;
-          if (px + LOUPE_SIZE > rect.width) px = cx - LOUPE_OFFSET - LOUPE_SIZE;
-          if (py + LOUPE_SIZE > rect.height) py = cy - LOUPE_OFFSET - LOUPE_SIZE;
-          setLoupePos({ x: Math.max(4, px), y: Math.max(4, py) });
-          if (!magnifierOn) setMagnifierOn(true);
-        }
+      snapNdcRef.current = { nx, ny };
+      if (snapRafRef.current == null) {
+        snapRafRef.current = requestAnimationFrame(() => {
+          snapRafRef.current = null;
+          const p = snapNdcRef.current;
+          if (!p || !measureRef.current) return;
+          const hit = pickVisiblePoint(p.nx, p.ny);
+          if (hit) measureRef.current.updateSnap(hit);
+        });
       }
     }
-  }, [activeTool, pickVisiblePoint, buildClipDraftAt, magnifierTool, magnifierOn, drawLoupe]);
+  }, [activeTool, pickVisiblePoint, buildClipDraftAt]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const sm = smRef.current;
@@ -624,10 +570,9 @@ export function Viewport({ className }: ViewportProps) {
     }
   }, [activeTool, cameras, config, pickVisiblePoint, showMarkers]);
 
-  // Hide the snap crosshair + loupe when the cursor leaves the viewport.
+  // Hide the snap crosshair when the cursor leaves the viewport.
   const handleMouseLeave = useCallback(() => {
     measureRef.current?.clearSnap();
-    setMagnifierOn(false);
   }, []);
 
   // Right-click to finish measurement, cancel volume drag, or clear clip box
@@ -677,29 +622,6 @@ export function Viewport({ className }: ViewportProps) {
         }}
       />
 
-      {/* Point-picking magnifier loupe — a 2D zoom of the rendered scene around
-          the snapped point that follows the cursor with a small offset. */}
-      {magnifierOn && magnifierTool && (
-        <div
-          className="absolute rounded-lg overflow-hidden border border-white/20 shadow-xl pointer-events-none ring-1 ring-black/40 bg-[#0a0e1a]"
-          style={{ left: loupePos.x, top: loupePos.y, width: LOUPE_SIZE, height: LOUPE_SIZE }}
-        >
-          <canvas
-            ref={loupeCanvasRef}
-            width={LOUPE_SIZE}
-            height={LOUPE_SIZE}
-            className="block w-full h-full"
-          />
-          <svg width={LOUPE_SIZE} height={LOUPE_SIZE} className="absolute inset-0" viewBox="0 0 168 168">
-            <line x1="84" y1="58" x2="84" y2="78" stroke="#DCD546" strokeWidth="1.25" />
-            <line x1="84" y1="90" x2="84" y2="110" stroke="#DCD546" strokeWidth="1.25" />
-            <line x1="58" y1="84" x2="78" y2="84" stroke="#DCD546" strokeWidth="1.25" />
-            <line x1="90" y1="84" x2="110" y2="84" stroke="#DCD546" strokeWidth="1.25" />
-            <circle cx="84" cy="84" r="5" fill="none" stroke="#DCD546" strokeWidth="1" opacity="0.85" />
-          </svg>
-          <div className="absolute top-1 left-2 text-[9px] font-mono text-white/45 select-none">ZOOM</div>
-        </div>
-      )}
 
       {/* Minimap overlay */}
       {showMinimap && (

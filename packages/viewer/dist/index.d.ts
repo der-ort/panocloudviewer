@@ -73,7 +73,7 @@ interface Measurement {
     visible: boolean;
     selected: boolean;
 }
-type ExportView = "top" | "front" | "side" | "back" | "custom";
+type ExportView = "current" | "top" | "front" | "side" | "back" | "custom";
 type ExportFormat = "png" | "jpeg";
 interface ExportOptions {
     view: ExportView;
@@ -470,7 +470,13 @@ declare class MeasurementManager {
 declare class ExportManager {
     private sceneManager;
     constructor(sceneManager: SceneManager);
-    /** Capture an orthographic view and return as data URL */
+    /** World-space bounds of the loaded point clouds (potree octrees aren't Meshes). */
+    private cloudBounds;
+    /**
+     * Capture a view to an image data URL. `view: "current"` snapshots exactly what
+     * the user sees (the live camera); the other views render an orthographic shot
+     * framed to the cloud bounds.
+     */
     capture(options: ExportOptions): Promise<string>;
     /** Download a data URL as a file */
     static download(dataUrl: string, filename: string): void;

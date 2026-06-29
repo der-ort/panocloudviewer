@@ -95,7 +95,7 @@ export interface ClipSection {
 
 // ── Export ───────────────────────────────────────────────────
 
-export type ExportView = "top" | "front" | "side" | "back" | "custom";
+export type ExportView = "current" | "top" | "front" | "side" | "back" | "custom";
 export type ExportFormat = "png" | "jpeg";
 
 export interface ExportOptions {

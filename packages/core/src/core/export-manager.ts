@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { SceneManager } from "./scene-manager";
 import type { ExportOptions, ExportView } from "../types";
 
-const VIEW_DIRECTIONS: Record<ExportView, { pos: THREE.Vector3; up: THREE.Vector3 }> = {
+const VIEW_DIRECTIONS: Record<Exclude<ExportView, "current">, { pos: THREE.Vector3; up: THREE.Vector3 }> = {
   top:    { pos: new THREE.Vector3(0, 0, 1),  up: new THREE.Vector3(0, 1, 0) },
   front:  { pos: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 0, 1) },
   side:   { pos: new THREE.Vector3(1, 0, 0),  up: new THREE.Vector3(0, 0, 1) },
@@ -18,42 +18,68 @@ export class ExportManager {
     this.sceneManager = sceneManager;
   }
 
-  /** Capture an orthographic view and return as data URL */
+  /** World-space bounds of the loaded point clouds (potree octrees aren't Meshes). */
+  private cloudBounds(): THREE.Box3 {
+    const box = new THREE.Box3();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const pc of this.sceneManager.pointClouds as any[]) {
+      const g = pc.pcoGeometry;
+      const tb = g?.tightBoundingBox ?? g?.boundingBox ?? pc.boundingBox;
+      const off = g?.offset;
+      if (tb) {
+        const wb = tb.clone();
+        if (off) { wb.min.add(off); wb.max.add(off); }
+        box.union(wb);
+      } else {
+        try { box.expandByObject(pc); } catch { /* skip */ }
+      }
+    }
+    return box;
+  }
+
+  /**
+   * Capture a view to an image data URL. `view: "current"` snapshots exactly what
+   * the user sees (the live camera); the other views render an orthographic shot
+   * framed to the cloud bounds.
+   */
   async capture(options: ExportOptions): Promise<string> {
     const { view, scale, background, format, quality = 0.95 } = options;
     const { scene, renderer } = this.sceneManager;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const potree = this.sceneManager.potree as any;
 
-    // Compute scene bounds
-    const box = new THREE.Box3();
-    scene.traverse((obj) => {
-      if (obj instanceof THREE.Mesh || obj.name === "pointcloud") {
-        try { box.expandByObject(obj); } catch { /* skip */ }
-      }
-    });
-
-    const size = new THREE.Vector3();
-    const center = new THREE.Vector3();
-    box.getSize(size);
-    box.getCenter(center);
-
-    const dir = VIEW_DIRECTIONS[view] ?? VIEW_DIRECTIONS.top;
-
-    // Output size
+    // Output size (clamped — large × 4 can exceed GL limits)
     const baseW = renderer.domElement.width;
     const baseH = renderer.domElement.height;
-    const outW = baseW * scale;
-    const outH = baseH * scale;
-
-    // Orthographic camera
+    const maxDim = renderer.capabilities.maxTextureSize || 4096;
+    const outW = Math.max(1, Math.min(Math.round(baseW * scale), maxDim));
+    const outH = Math.max(1, Math.min(Math.round(baseH * scale), maxDim));
     const aspect = outW / outH;
-    const halfH = Math.max(size.x, size.y, size.z) * 0.6;
-    const halfW = halfH * aspect;
 
-    const orthoCamera = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 100000);
-    orthoCamera.position.copy(center).addScaledVector(dir.pos, halfH * 3);
-    orthoCamera.up.copy(dir.up);
-    orthoCamera.lookAt(center);
-    orthoCamera.updateMatrixWorld();
+    let camera: THREE.Camera;
+    if (view === "current") {
+      // Exactly what's on screen — clone the live camera, fix aspect.
+      const cam = this.sceneManager.camera.clone();
+      cam.aspect = aspect;
+      cam.updateProjectionMatrix();
+      camera = cam;
+    } else {
+      const box = this.cloudBounds();
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(center);
+      const maxExt = Math.max(size.x, size.y, size.z, 1);
+      const dir = VIEW_DIRECTIONS[view] ?? VIEW_DIRECTIONS.top;
+      const halfH = maxExt * 0.6;
+      const halfW = halfH * aspect;
+      const ortho = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, maxExt * 10 + 10000);
+      ortho.position.copy(center).addScaledVector(dir.pos, maxExt * 2);
+      ortho.up.copy(dir.up);
+      ortho.lookAt(center);
+      ortho.updateMatrixWorld();
+      camera = ortho;
+    }
 
     // Render target
     const rt = new THREE.WebGLRenderTarget(outW, outH, {
@@ -67,11 +93,16 @@ export class ExportManager {
     else if (background === "black") scene.background = new THREE.Color(0x000000);
     else scene.background = null;
 
+    // Resolve the right octree nodes/point sizes for THIS camera before rendering,
+    // otherwise the export is empty/wrong (potree LOD is camera-driven).
+    if (potree && this.sceneManager.pointClouds.length > 0) {
+      potree.updatePointClouds(this.sceneManager.pointClouds, camera, renderer);
+    }
+
     renderer.setRenderTarget(rt);
-    renderer.setSize(outW, outH);
-    renderer.render(scene, orthoCamera);
+    renderer.clear();
+    renderer.render(scene, camera);
     renderer.setRenderTarget(null);
-    renderer.setSize(renderer.domElement.clientWidth, renderer.domElement.clientHeight);
 
     scene.background = prevBg;
 

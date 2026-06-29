@@ -183,10 +183,7 @@ var init_dist = __esm({
         this.camera.position.set(0, -50, 30);
         this.renderer = new THREE5.WebGLRenderer({
           antialias: true,
-          logarithmicDepthBuffer: true,
-          // Keep the drawing buffer so the picking magnifier (a 2D loupe) can sample
-          // the rendered canvas between frames via drawImage.
-          preserveDrawingBuffer: true
+          logarithmicDepthBuffer: true
         });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         this.renderer.setSize(w, h);
@@ -1442,36 +1439,67 @@ var init_dist = __esm({
       constructor(sceneManager) {
         this.sceneManager = sceneManager;
       }
-      /** Capture an orthographic view and return as data URL */
-      async capture(options) {
-        const { view, scale, background, format, quality = 0.95 } = options;
-        const { scene, renderer } = this.sceneManager;
+      /** World-space bounds of the loaded point clouds (potree octrees aren't Meshes). */
+      cloudBounds() {
         const box = new THREE5.Box3();
-        scene.traverse((obj) => {
-          if (obj instanceof THREE5.Mesh || obj.name === "pointcloud") {
+        for (const pc of this.sceneManager.pointClouds) {
+          const g = pc.pcoGeometry;
+          const tb = g?.tightBoundingBox ?? g?.boundingBox ?? pc.boundingBox;
+          const off = g?.offset;
+          if (tb) {
+            const wb = tb.clone();
+            if (off) {
+              wb.min.add(off);
+              wb.max.add(off);
+            }
+            box.union(wb);
+          } else {
             try {
-              box.expandByObject(obj);
+              box.expandByObject(pc);
             } catch {
             }
           }
-        });
-        const size = new THREE5.Vector3();
-        const center = new THREE5.Vector3();
-        box.getSize(size);
-        box.getCenter(center);
-        const dir = VIEW_DIRECTIONS[view] ?? VIEW_DIRECTIONS.top;
+        }
+        return box;
+      }
+      /**
+       * Capture a view to an image data URL. `view: "current"` snapshots exactly what
+       * the user sees (the live camera); the other views render an orthographic shot
+       * framed to the cloud bounds.
+       */
+      async capture(options) {
+        const { view, scale, background, format, quality = 0.95 } = options;
+        const { scene, renderer } = this.sceneManager;
+        const potree = this.sceneManager.potree;
         const baseW = renderer.domElement.width;
         const baseH = renderer.domElement.height;
-        const outW = baseW * scale;
-        const outH = baseH * scale;
+        const maxDim = renderer.capabilities.maxTextureSize || 4096;
+        const outW = Math.max(1, Math.min(Math.round(baseW * scale), maxDim));
+        const outH = Math.max(1, Math.min(Math.round(baseH * scale), maxDim));
         const aspect = outW / outH;
-        const halfH = Math.max(size.x, size.y, size.z) * 0.6;
-        const halfW = halfH * aspect;
-        const orthoCamera = new THREE5.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 1e5);
-        orthoCamera.position.copy(center).addScaledVector(dir.pos, halfH * 3);
-        orthoCamera.up.copy(dir.up);
-        orthoCamera.lookAt(center);
-        orthoCamera.updateMatrixWorld();
+        let camera;
+        if (view === "current") {
+          const cam = this.sceneManager.camera.clone();
+          cam.aspect = aspect;
+          cam.updateProjectionMatrix();
+          camera = cam;
+        } else {
+          const box = this.cloudBounds();
+          const size = new THREE5.Vector3();
+          const center = new THREE5.Vector3();
+          box.getSize(size);
+          box.getCenter(center);
+          const maxExt = Math.max(size.x, size.y, size.z, 1);
+          const dir = VIEW_DIRECTIONS[view] ?? VIEW_DIRECTIONS.top;
+          const halfH = maxExt * 0.6;
+          const halfW = halfH * aspect;
+          const ortho = new THREE5.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, maxExt * 10 + 1e4);
+          ortho.position.copy(center).addScaledVector(dir.pos, maxExt * 2);
+          ortho.up.copy(dir.up);
+          ortho.lookAt(center);
+          ortho.updateMatrixWorld();
+          camera = ortho;
+        }
         const rt = new THREE5.WebGLRenderTarget(outW, outH, {
           minFilter: THREE5.LinearFilter,
           magFilter: THREE5.LinearFilter,
@@ -1481,11 +1509,13 @@ var init_dist = __esm({
         if (background === "white") scene.background = new THREE5.Color(16777215);
         else if (background === "black") scene.background = new THREE5.Color(0);
         else scene.background = null;
+        if (potree && this.sceneManager.pointClouds.length > 0) {
+          potree.updatePointClouds(this.sceneManager.pointClouds, camera, renderer);
+        }
         renderer.setRenderTarget(rt);
-        renderer.setSize(outW, outH);
-        renderer.render(scene, orthoCamera);
+        renderer.clear();
+        renderer.render(scene, camera);
         renderer.setRenderTarget(null);
-        renderer.setSize(renderer.domElement.clientWidth, renderer.domElement.clientHeight);
         scene.background = prevBg;
         const pixels = new Uint8Array(outW * outH * 4);
         renderer.readRenderTargetPixels(rt, 0, 0, outW, outH, pixels);
@@ -3198,9 +3228,8 @@ function Viewport({ className }) {
   const measureRef = useRef(null);
   const minimapRef = useRef(null);
   const clipRef = useRef(null);
-  const loupeCanvasRef = useRef(null);
-  const [magnifierOn, setMagnifierOn] = React26.useState(false);
-  const [loupePos, setLoupePos] = React26.useState({ x: 0, y: 0 });
+  const snapRafRef = useRef(null);
+  const snapNdcRef = useRef(null);
   const animRef = useRef(null);
   const axisRef = useRef(null);
   const clipDraftRef = useRef(null);
@@ -3340,7 +3369,6 @@ function Viewport({ className }) {
     if (!mm) return;
     mm.applyClipFilter(cm ? (p) => cm.isPointVisible(p) : null);
   }, [clipBoxEntries]);
-  const magnifierTool = activeTool.startsWith("measure-") && activeTool !== "measure-volume";
   useEffect(() => {
     if (!activeTool.startsWith("measure-")) {
       measureRef.current?.clearSnap();
@@ -3354,8 +3382,7 @@ function Viewport({ className }) {
       clipDownRef.current = null;
       clipRef.current?.setDraft(null);
     }
-    if (!magnifierTool) setMagnifierOn(false);
-  }, [activeTool, magnifierTool]);
+  }, [activeTool]);
   useEffect(() => {
     smRef.current?.setNavigationMode(navigationMode);
   }, [navigationMode]);
@@ -3384,35 +3411,6 @@ function Viewport({ className }) {
     }
     return projectToPlaneZ(nx, ny, sm.controls.target.z);
   }, [projectToPlaneZ]);
-  const drawLoupe = useCallback((hit) => {
-    const sm = smRef.current;
-    const src = sm?.renderer.domElement;
-    const loupe = loupeCanvasRef.current;
-    if (!sm || !src || !loupe) return;
-    const ctx = loupe.getContext("2d");
-    if (!ctx) return;
-    const ndc = hit.clone().project(sm.camera);
-    const bufX = (ndc.x * 0.5 + 0.5) * src.width;
-    const bufY = (1 - (ndc.y * 0.5 + 0.5)) * src.height;
-    const ratio = src.clientWidth > 0 ? src.width / src.clientWidth : 1;
-    const srcSize = LOUPE_SIZE / LOUPE_ZOOM * ratio;
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, LOUPE_SIZE, LOUPE_SIZE);
-    try {
-      ctx.drawImage(
-        src,
-        bufX - srcSize / 2,
-        bufY - srcSize / 2,
-        srcSize,
-        srcSize,
-        0,
-        0,
-        LOUPE_SIZE,
-        LOUPE_SIZE
-      );
-    } catch {
-    }
-  }, []);
   const buildClipDraftAt = useCallback((nx, ny) => {
     const sm = smRef.current;
     if (!sm) return null;
@@ -3525,28 +3523,20 @@ function Viewport({ className }) {
       clipRef.current?.setDraft(box);
       return;
     }
-    if (activeTool.startsWith("measure-") && measureRef.current) {
-      const sm = smRef.current;
-      if (!sm) return;
+    if (activeTool.startsWith("measure-") && smRef.current) {
       const { nx, ny } = getNDC(e);
-      const hit = pickVisiblePoint(nx, ny);
-      if (hit) {
-        measureRef.current.updateSnap(hit);
-        if (magnifierTool) {
-          drawLoupe(hit);
-          const rect = e.currentTarget.getBoundingClientRect();
-          const cx = e.clientX - rect.left;
-          const cy = e.clientY - rect.top;
-          let px = cx + LOUPE_OFFSET;
-          let py = cy + LOUPE_OFFSET;
-          if (px + LOUPE_SIZE > rect.width) px = cx - LOUPE_OFFSET - LOUPE_SIZE;
-          if (py + LOUPE_SIZE > rect.height) py = cy - LOUPE_OFFSET - LOUPE_SIZE;
-          setLoupePos({ x: Math.max(4, px), y: Math.max(4, py) });
-          if (!magnifierOn) setMagnifierOn(true);
-        }
+      snapNdcRef.current = { nx, ny };
+      if (snapRafRef.current == null) {
+        snapRafRef.current = requestAnimationFrame(() => {
+          snapRafRef.current = null;
+          const p = snapNdcRef.current;
+          if (!p || !measureRef.current) return;
+          const hit = pickVisiblePoint(p.nx, p.ny);
+          if (hit) measureRef.current.updateSnap(hit);
+        });
       }
     }
-  }, [activeTool, pickVisiblePoint, buildClipDraftAt, magnifierTool, magnifierOn, drawLoupe]);
+  }, [activeTool, pickVisiblePoint, buildClipDraftAt]);
   const handleMouseUp = useCallback((e) => {
     const sm = smRef.current;
     const fh = clipRef.current?.faceHandles;
@@ -3629,7 +3619,6 @@ function Viewport({ className }) {
   }, [activeTool, cameras, config, pickVisiblePoint, showMarkers]);
   const handleMouseLeave = useCallback(() => {
     measureRef.current?.clearSnap();
-    setMagnifierOn(false);
   }, []);
   const handleContextMenu = useCallback((e) => {
     e.preventDefault();
@@ -3669,32 +3658,6 @@ function Viewport({ className }) {
           // shows (no doubled cross); keep a crosshair for the section tool.
           cursor: activeTool === "section-box" ? "crosshair" : activeTool.startsWith("measure-") ? "none" : "default"
         }
-      }
-    ),
-    magnifierOn && magnifierTool && /* @__PURE__ */ jsxs(
-      "div",
-      {
-        className: "absolute rounded-lg overflow-hidden border border-white/20 shadow-xl pointer-events-none ring-1 ring-black/40 bg-[#0a0e1a]",
-        style: { left: loupePos.x, top: loupePos.y, width: LOUPE_SIZE, height: LOUPE_SIZE },
-        children: [
-          /* @__PURE__ */ jsx(
-            "canvas",
-            {
-              ref: loupeCanvasRef,
-              width: LOUPE_SIZE,
-              height: LOUPE_SIZE,
-              className: "block w-full h-full"
-            }
-          ),
-          /* @__PURE__ */ jsxs("svg", { width: LOUPE_SIZE, height: LOUPE_SIZE, className: "absolute inset-0", viewBox: "0 0 168 168", children: [
-            /* @__PURE__ */ jsx("line", { x1: "84", y1: "58", x2: "84", y2: "78", stroke: "#DCD546", strokeWidth: "1.25" }),
-            /* @__PURE__ */ jsx("line", { x1: "84", y1: "90", x2: "84", y2: "110", stroke: "#DCD546", strokeWidth: "1.25" }),
-            /* @__PURE__ */ jsx("line", { x1: "58", y1: "84", x2: "78", y2: "84", stroke: "#DCD546", strokeWidth: "1.25" }),
-            /* @__PURE__ */ jsx("line", { x1: "90", y1: "84", x2: "110", y2: "84", stroke: "#DCD546", strokeWidth: "1.25" }),
-            /* @__PURE__ */ jsx("circle", { cx: "84", cy: "84", r: "5", fill: "none", stroke: "#DCD546", strokeWidth: "1", opacity: "0.85" })
-          ] }),
-          /* @__PURE__ */ jsx("div", { className: "absolute top-1 left-2 text-[9px] font-mono text-white/45 select-none", children: "ZOOM" })
-        ]
       }
     ),
     showMinimap && /* @__PURE__ */ jsxs(
@@ -3739,7 +3702,6 @@ function Viewport({ className }) {
     ] })
   ] });
 }
-var LOUPE_SIZE, LOUPE_ZOOM, LOUPE_OFFSET;
 var init_viewport = __esm({
   "src/components/viewport.tsx"() {
     "use client";
@@ -3757,9 +3719,6 @@ var init_viewport = __esm({
     init_dist();
     init_dist();
     init_dist();
-    LOUPE_SIZE = 168;
-    LOUPE_ZOOM = 7;
-    LOUPE_OFFSET = 22;
   }
 });
 
@@ -4091,7 +4050,7 @@ function ExportTools() {
   const t = useLocale().exportPanel;
   const pcvRoot = usePcvRoot();
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState("top");
+  const [view, setView] = useState("current");
   const [scale, setScale] = useState(2);
   const [bg, setBg] = useState("white");
   const [fmt, setFmt] = useState("png");
@@ -4129,6 +4088,7 @@ function ExportTools() {
     }
   };
   const views = [
+    { value: "current", label: "Current view" },
     { value: "top", label: t.viewTop },
     { value: "front", label: t.viewFront },
     { value: "side", label: t.viewSide },
@@ -4653,10 +4613,12 @@ function ClipToolbar() {
 // src/components/sidebar/sidebar.tsx
 init_locale_context();
 init_viewer_provider();
+init_data_provider();
 
 // src/components/sidebar/layers-panel.tsx
 init_utils();
 init_viewer_provider();
+init_data_provider();
 
 // src/components/sidebar/classification-panel.tsx
 init_viewer_provider();
@@ -4779,9 +4741,11 @@ function LayersPanel() {
     showMinimap,
     setShowMinimap
   } = useViewer();
+  const { cameras } = useData();
+  const hasPanoramas = cameras.length > 0;
   return /* @__PURE__ */ jsxs("div", { className: "p-3 space-y-1 overflow-y-auto h-full", children: [
     /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1 mb-1", children: "Layers" }),
-    /* @__PURE__ */ jsx(
+    hasPanoramas && /* @__PURE__ */ jsx(
       LayerRow,
       {
         icon: /* @__PURE__ */ jsx(Camera, { size: 15 }),
@@ -5398,16 +5362,20 @@ function Sidebar() {
   const [tab, setTab] = useState("layers");
   const t = useLocale().sidebar;
   const { uiMode } = useViewer();
+  const { cameras } = useData();
   const isPro = uiMode === "professional";
+  const hasPanoramas = cameras.length > 0;
   const ALL_TABS = [
     { id: "layers", icon: /* @__PURE__ */ jsx(Layers, { size: 14 }), label: t.tabLayers },
-    { id: "panoramas", icon: /* @__PURE__ */ jsx(Camera, { size: 14 }), label: t.tabPanoramas },
+    { id: "panoramas", icon: /* @__PURE__ */ jsx(Camera, { size: 14 }), label: t.tabPanoramas, panoOnly: true },
     { id: "scene", icon: /* @__PURE__ */ jsx(Box, { size: 14 }), label: t.tabScene },
     { id: "measurements", icon: /* @__PURE__ */ jsx(Ruler, { size: 14 }), label: t.tabMeasurements },
     { id: "scenes", icon: /* @__PURE__ */ jsx(Bookmark, { size: 14 }), label: t.tabScenes, proOnly: true }
   ];
-  const TABS = ALL_TABS.filter((entry) => isPro || !entry.proOnly);
-  const activeTab = TABS.some((tb) => tb.id === tab) ? tab : "panoramas";
+  const TABS = ALL_TABS.filter(
+    (entry) => (isPro || !entry.proOnly) && (!entry.panoOnly || hasPanoramas)
+  );
+  const activeTab = TABS.some((tb) => tb.id === tab) ? tab : "layers";
   return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full", children: [
     /* @__PURE__ */ jsx("div", { className: "flex border-b border-white/10 shrink-0", children: TABS.map((tb) => /* @__PURE__ */ jsxs(
       "button",
@@ -5759,7 +5727,14 @@ function RenderingSettings({ open, onClose }) {
   const setUniform = (setter, name, value) => {
     setter(value);
     const m = mat();
-    if (m?.uniforms?.[name]) m.uniforms[name].value = value;
+    if (!m) return;
+    const group = name.startsWith("rgb") ? ["rgbGamma", "rgbBrightness", "rgbContrast"] : ["intensityGamma", "intensityBrightness", "intensityContrast"];
+    const def = (n) => n.endsWith("Gamma") ? 1 : 0;
+    const isActive = () => group.some((n) => (m[n] ?? def(n)) !== def(n));
+    const wasActive = isActive();
+    m[name] = value;
+    if (m.uniforms?.[name]) m.uniforms[name].value = value;
+    if (wasActive !== isActive()) m.needsUpdate = true;
   };
   const setElevation = (min, max) => {
     setHeightMin(min);
@@ -6606,7 +6581,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "fdf8770 \xB7 2026-06-29 18:00Z" ;
+var PCV_BUILD = "1378548 \xB7 2026-06-29 18:17Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

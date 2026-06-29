@@ -53,9 +53,6 @@ export class SceneManager {
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       logarithmicDepthBuffer: true,
-      // Keep the drawing buffer so the picking magnifier (a 2D loupe) can sample
-      // the rendered canvas between frames via drawImage.
-      preserveDrawingBuffer: true,
     });
     // Cap pixel ratio — 2x is heavy for point clouds, 1.5x is a good balance
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
