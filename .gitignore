@@ -25,3 +25,6 @@ Thumbs.db
 
 # VitePress build cache
 docs/.vitepress/cache/
+
+# Local input data (E57 scans, raw point clouds, conversion inputs) — never commit
+input_files/
