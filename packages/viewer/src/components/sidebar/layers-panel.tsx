@@ -66,10 +66,8 @@ export function LayersPanel() {
     showMeasurements, setShowMeasurements,
     showMinimap, setShowMinimap,
     showBasemap, setShowBasemap,
-    loader,
+    basemapAvailable,
   } = useViewer();
-
-  const georeferenced = loader?.isGeoreferenced ?? false;
 
   return (
     <div className="p-3 space-y-1 overflow-y-auto h-full">
@@ -100,8 +98,8 @@ export function LayersPanel() {
         label="Map basemap"
         active={showBasemap}
         onToggle={() => setShowBasemap(!showBasemap)}
-        disabled={!georeferenced}
-        hint={georeferenced ? undefined : "Requires a georeferenced cloud"}
+        disabled={!basemapAvailable}
+        hint={basemapAvailable ? undefined : "Requires a georeferenced cloud or basemap config"}
       />
     </div>
   );

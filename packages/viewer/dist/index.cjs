@@ -144,6 +144,20 @@ function exportMeasurementsCSV(measurements) {
 function nextId() {
   return `m-${++_idCounter}`;
 }
+function lonToTileX(lon, z) {
+  return Math.floor((lon + 180) / 360 * 2 ** z);
+}
+function latToTileY(lat, z) {
+  const r = lat * Math.PI / 180;
+  return Math.floor((1 - Math.asinh(Math.tan(r)) / Math.PI) / 2 * 2 ** z);
+}
+function tileXToLon(x, z) {
+  return x / 2 ** z * 360 - 180;
+}
+function tileYToLat(y, z) {
+  const n = Math.PI - 2 * Math.PI * y / 2 ** z;
+  return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+}
 function genId() {
   return `clip_${_nextId++}`;
 }
@@ -179,7 +193,7 @@ function createAdapter(source) {
       return new exports.S3SourceAdapter(source.basePath);
   }
 }
-exports.SceneManager = void 0; exports.PointCloudLoader = void 0; exports.CameraAnimator = void 0; exports.DISPLAY_PRESETS = void 0; var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE; exports.MarkerManager = void 0; var _idCounter, COLORS; exports.MeasurementManager = void 0; var VIEW_DIRECTIONS; exports.ExportManager = void 0; exports.MinimapRenderer = void 0; var AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId; exports.ClipManager = void 0; exports.AxisWidget = void 0; var MAX_SCENES, _nextId2; exports.PresentationManager = void 0; exports.S3SourceAdapter = void 0; exports.ElectronSourceAdapter = void 0;
+exports.SceneManager = void 0; exports.PointCloudLoader = void 0; exports.CameraAnimator = void 0; exports.DISPLAY_PRESETS = void 0; var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE; exports.MarkerManager = void 0; var _idCounter, COLORS; exports.MeasurementManager = void 0; var VIEW_DIRECTIONS; exports.ExportManager = void 0; exports.MinimapRenderer = void 0; var DEFAULT_TILE_URL, DEFAULT_ATTRIBUTION, EARTH_RADIUS, EARTH_CIRC; exports.TileBasemapManager = void 0; var AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId; exports.ClipManager = void 0; exports.AxisWidget = void 0; var MAX_SCENES, _nextId2; exports.PresentationManager = void 0; exports.S3SourceAdapter = void 0; exports.ElectronSourceAdapter = void 0;
 var init_dist = __esm({
   "../core/dist/index.js"() {
     exports.SceneManager = class {
@@ -1725,6 +1739,149 @@ var init_dist = __esm({
         this.container = null;
       }
     };
+    DEFAULT_TILE_URL = "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
+    DEFAULT_ATTRIBUTION = "\xA9 OpenStreetMap contributors \xA9 CARTO";
+    EARTH_RADIUS = 6378137;
+    EARTH_CIRC = 2 * Math.PI * EARTH_RADIUS;
+    exports.TileBasemapManager = class {
+      sm;
+      group;
+      texLoader = new THREE5__namespace.TextureLoader();
+      textures = [];
+      geometries = [];
+      materials = [];
+      _built = false;
+      attribution = DEFAULT_ATTRIBUTION;
+      constructor(sm) {
+        this.sm = sm;
+        this.group = new THREE5__namespace.Group();
+        this.group.name = "basemap";
+        this.group.visible = false;
+        this.group.renderOrder = -10;
+        this.sm.scene.add(this.group);
+        this.texLoader.setCrossOrigin("anonymous");
+      }
+      isBuilt() {
+        return this._built;
+      }
+      setVisible(visible) {
+        this.group.visible = visible;
+      }
+      /**
+       * Build the basemap for a cloud. Requires `cfg.georeference` (manual pin) and a
+       * non-empty world box. No-ops otherwise.
+       */
+      build(worldBox, cfg) {
+        this.clear();
+        const geo = cfg?.georeference;
+        if (!geo || worldBox.isEmpty()) return;
+        const tileUrl = cfg?.tileUrl ?? DEFAULT_TILE_URL;
+        this.attribution = cfg?.attribution ?? DEFAULT_ATTRIBUTION;
+        const maxZoom = cfg?.maxZoom ?? 20;
+        const mpu = geo.metersPerUnit ?? 1;
+        const rot = (geo.rotationDeg ?? 0) * Math.PI / 180;
+        const groundZ = geo.groundZ ?? worldBox.min.z;
+        const cosLat = Math.cos(geo.lat * Math.PI / 180);
+        const size = new THREE5__namespace.Vector3();
+        worldBox.getSize(size);
+        const extentM = Math.max(size.x, size.y) * mpu;
+        const targetTileM = Math.min(Math.max(extentM, 20), 400);
+        let z = Math.round(Math.log2(EARTH_CIRC * cosLat / targetTileM));
+        z = Math.max(1, Math.min(maxZoom, z));
+        const toEN = (x, y) => {
+          const xm = x * mpu;
+          const ym = y * mpu;
+          return {
+            east: xm * Math.cos(rot) + ym * Math.sin(rot),
+            north: -xm * Math.sin(rot) + ym * Math.cos(rot)
+          };
+        };
+        const enToGeo = (east, north) => ({
+          lat: geo.lat + north / EARTH_RADIUS * 180 / Math.PI,
+          lon: geo.lon + east / (EARTH_RADIUS * cosLat) * 180 / Math.PI
+        });
+        let latMin = 90, latMax = -90, lonMin = 180, lonMax = -180;
+        for (const [cx, cy] of [
+          [worldBox.min.x, worldBox.min.y],
+          [worldBox.min.x, worldBox.max.y],
+          [worldBox.max.x, worldBox.min.y],
+          [worldBox.max.x, worldBox.max.y]
+        ]) {
+          const { east, north } = toEN(cx, cy);
+          const g = enToGeo(east, north);
+          latMin = Math.min(latMin, g.lat);
+          latMax = Math.max(latMax, g.lat);
+          lonMin = Math.min(lonMin, g.lon);
+          lonMax = Math.max(lonMax, g.lon);
+        }
+        const xMin = lonToTileX(lonMin, z);
+        const xMax = lonToTileX(lonMax, z);
+        const yMin = latToTileY(latMax, z);
+        const yMax = latToTileY(latMin, z);
+        if ((xMax - xMin + 1) * (yMax - yMin + 1) > 64) return;
+        const deg2rad = Math.PI / 180;
+        const geoToEnu = (lat, lon) => ({
+          east: (lon - geo.lon) * deg2rad * EARTH_RADIUS * cosLat,
+          north: (lat - geo.lat) * deg2rad * EARTH_RADIUS
+        });
+        for (let tx = xMin; tx <= xMax; tx++) {
+          for (let ty = yMin; ty <= yMax; ty++) {
+            const nw = geoToEnu(tileYToLat(ty, z), tileXToLon(tx, z));
+            const se = geoToEnu(tileYToLat(ty + 1, z), tileXToLon(tx + 1, z));
+            const w = (se.east - nw.east) / mpu;
+            const h = (nw.north - se.north) / mpu;
+            if (w <= 0 || h <= 0) continue;
+            const cxLocal = (nw.east + se.east) / 2 / mpu;
+            const cyLocal = (nw.north + se.north) / 2 / mpu;
+            const gmat = new THREE5__namespace.PlaneGeometry(w, h);
+            const mat = new THREE5__namespace.MeshBasicMaterial({
+              color: 8421504,
+              // grey placeholder until the tile texture loads
+              depthWrite: false,
+              side: THREE5__namespace.DoubleSide
+            });
+            const mesh = new THREE5__namespace.Mesh(gmat, mat);
+            mesh.position.set(cxLocal, cyLocal, 0);
+            mesh.renderOrder = -10;
+            this.group.add(mesh);
+            this.geometries.push(gmat);
+            this.materials.push(mat);
+            const url = tileUrl.replace("{z}", String(z)).replace("{x}", String(tx)).replace("{y}", String(ty)).replace("{s}", "a").replace("{r}", "");
+            this.texLoader.load(
+              url,
+              (tex) => {
+                tex.colorSpace = THREE5__namespace.LinearSRGBColorSpace;
+                tex.minFilter = THREE5__namespace.LinearFilter;
+                mat.map = tex;
+                mat.color.setHex(16777215);
+                mat.needsUpdate = true;
+                this.textures.push(tex);
+              },
+              void 0,
+              () => {
+              }
+            );
+          }
+        }
+        this.group.rotation.set(0, 0, -rot);
+        this.group.position.set(0, 0, groundZ);
+        this._built = this.group.children.length > 0;
+      }
+      clear() {
+        for (const m of this.group.children.slice()) this.group.remove(m);
+        for (const t of this.textures) t.dispose();
+        for (const g of this.geometries) g.dispose();
+        for (const m of this.materials) m.dispose();
+        this.textures = [];
+        this.geometries = [];
+        this.materials = [];
+        this._built = false;
+      }
+      dispose() {
+        this.clear();
+        this.sm.scene.remove(this.group);
+      }
+    };
     AXIS_COLOR = {
       x: 15680580,
       y: 2278750,
@@ -2778,6 +2935,7 @@ function ViewerProvider({ config, children }) {
   const [showMinimap, setShowMinimap] = React25.useState(config.showMinimap ?? true);
   const [showMeasurements, setShowMeasurements] = React25.useState(true);
   const [showBasemap, setShowBasemap] = React25.useState(false);
+  const [basemapAvailable, setBasemapAvailable] = React25.useState(false);
   const [selectedCamera, setSelectedCamera] = React25.useState(null);
   const [clipBoxEntries, setClipBoxEntries] = React25.useState([]);
   const [selectedClipBoxId, setSelectedClipBoxId] = React25.useState(null);
@@ -2841,6 +2999,8 @@ function ViewerProvider({ config, children }) {
     setShowMeasurements,
     showBasemap,
     setShowBasemap,
+    basemapAvailable,
+    setBasemapAvailable,
     selectedCamera,
     setSelectedCamera,
     clipBoxEntries,
@@ -3210,6 +3370,8 @@ function Viewport({ className }) {
     showMeasurements,
     setMeasurementList,
     setSelectedCamera,
+    showBasemap,
+    setBasemapAvailable,
     clipBoxEntries,
     setClipBoxEntries,
     setSelectedClipBoxId,
@@ -3232,6 +3394,7 @@ function Viewport({ className }) {
   const markerRef = React25.useRef(null);
   const measureRef = React25.useRef(null);
   const minimapRef = React25.useRef(null);
+  const basemapRef = React25.useRef(null);
   const clipRef = React25.useRef(null);
   const loupeCanvasRef = React25.useRef(null);
   const [magnifierOn, setMagnifierOn] = React25__default.default.useState(false);
@@ -3256,6 +3419,8 @@ function Viewport({ className }) {
     const anim = new exports.CameraAnimator(sm.camera, sm.controls);
     const exporter = new exports.ExportManager(sm);
     const minimapRdr = new exports.MinimapRenderer(sm);
+    const basemap = new exports.TileBasemapManager(sm);
+    basemapRef.current = basemap;
     const clipMgr = new exports.ClipManager(sm);
     clipMgr.onChange = (boxes) => setClipBoxEntries(boxes);
     clipMgr.onSelectChange = (id) => setSelectedClipBoxId(id);
@@ -3302,6 +3467,10 @@ function Viewport({ className }) {
           minimapRdr.setBounds(worldBox);
         }
       }
+      if (config.basemap?.georeference && !loader.worldBox.isEmpty()) {
+        basemap.build(loader.worldBox, config.basemap);
+        if (basemap.isBuilt()) setBasemapAvailable(true);
+      }
     }).catch(console.error);
     return () => {
       sm.removeFrameCallback(minimapFrame);
@@ -3310,6 +3479,7 @@ function Viewport({ className }) {
       measureMgr.dispose();
       markerMgr.dispose();
       minimapRdr.dispose();
+      basemap.dispose();
       clipMgr.dispose();
       axisWidget.dispose();
       initialized.current = false;
@@ -3369,6 +3539,9 @@ function Viewport({ className }) {
   React25.useEffect(() => {
     measureRef.current?.setVisible(showMeasurements);
   }, [showMeasurements]);
+  React25.useEffect(() => {
+    basemapRef.current?.setVisible(showBasemap);
+  }, [showBasemap]);
   React25.useEffect(() => {
     const mm = markerRef.current;
     const cm = clipRef.current;
@@ -3771,7 +3944,8 @@ function Viewport({ className }) {
     metadata && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "absolute top-3 left-3 text-[10px] font-mono text-white/30 pointer-events-none", children: [
       (metadata.points / 1e6).toFixed(1),
       "M pts"
-    ] })
+    ] }),
+    showBasemap && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-1 right-2 text-[9px] text-white/50 bg-black/40 px-1.5 py-0.5 rounded pointer-events-none", children: config.basemap?.attribution ?? "\xA9 OpenStreetMap contributors \xA9 CARTO" })
   ] });
 }
 var LOUPE_SIZE, LOUPE_ZOOM, LOUPE_OFFSET;
@@ -3782,6 +3956,7 @@ var init_viewport = __esm({
     init_viewer_provider();
     init_data_provider();
     init_locale_context();
+    init_dist();
     init_dist();
     init_dist();
     init_dist();
@@ -4782,9 +4957,8 @@ function LayersPanel() {
     setShowMinimap,
     showBasemap,
     setShowBasemap,
-    loader
+    basemapAvailable
   } = useViewer();
-  const georeferenced = loader?.isGeoreferenced ?? false;
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "p-3 space-y-1 overflow-y-auto h-full", children: [
     /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1 mb-1", children: "Layers" }),
     /* @__PURE__ */ jsxRuntime.jsx(
@@ -4821,8 +4995,8 @@ function LayersPanel() {
         label: "Map basemap",
         active: showBasemap,
         onToggle: () => setShowBasemap(!showBasemap),
-        disabled: !georeferenced,
-        hint: georeferenced ? void 0 : "Requires a georeferenced cloud"
+        disabled: !basemapAvailable,
+        hint: basemapAvailable ? void 0 : "Requires a georeferenced cloud or basemap config"
       }
     )
   ] });
@@ -6021,7 +6195,7 @@ init_viewer_provider();
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "2ede05e \xB7 2026-06-29 10:50Z" ;
+var PCV_BUILD = "7fe6ac4 \xB7 2026-06-29 14:15Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 var COLOR_MODES2 = [
   { value: "rgb", label: "RGB" },
@@ -6652,9 +6826,9 @@ function PcvRoot({ className, uiScale = 1, children }) {
     }
   ) }) });
 }
-function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, uiScale = 1, children, components }) {
+function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, basemap, uiScale = 1, children, components }) {
   const adapter = createAdapter(source);
-  const config = { source, uiMode, panoEngine };
+  const config = { source, uiMode, panoEngine, basemap };
   return /* @__PURE__ */ jsxRuntime.jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsxRuntime.jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsxRuntime.jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsxRuntime.jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsxRuntime.jsx(ComponentsProvider, { components, children: /* @__PURE__ */ jsxRuntime.jsx(PcvRoot, { className, uiScale, children: children ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
     children(
       /* @__PURE__ */ jsxRuntime.jsx(React25.Suspense, { fallback: /* @__PURE__ */ jsxRuntime.jsx(ViewportFallback2, {}), children: /* @__PURE__ */ jsxRuntime.jsx(Viewport4, {}) })

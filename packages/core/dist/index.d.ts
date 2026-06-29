@@ -82,6 +82,41 @@ type UiMode = "professional" | "lite";
  * - `"pannellum"`: lightweight, mature; loaded from CDN. Optional fallback.
  */
 type PanoEngine = "pannellum" | "photo-sphere-viewer";
+/**
+ * Manual georeference for a cloud WITHOUT an embedded CRS (the common case —
+ * most E57/LAS exports drop the projection). Pins the cloud's local origin to a
+ * real-world WGS84 position so a map basemap can be placed under it.
+ */
+interface BasemapGeoreference {
+    /** WGS84 latitude (deg) of the cloud's local origin (0,0,0). */
+    lat: number;
+    /** WGS84 longitude (deg) of the cloud's local origin (0,0,0). */
+    lon: number;
+    /** Heading of the cloud's +Y axis, clockwise from geographic north (deg). Default 0. */
+    rotationDeg?: number;
+    /** Cloud units per meter (1 = the cloud is in meters). Default 1. */
+    metersPerUnit?: number;
+    /** Local Z height for the basemap plane. Default: the cloud's min Z. */
+    groundZ?: number;
+}
+/** Map basemap configuration (XYZ raster tiles under a georeferenced cloud). */
+interface BasemapConfig {
+    /**
+     * XYZ raster tile URL template. Placeholders: `{z}` `{x}` `{y}` `{s}` `{r}`.
+     * Default: Carto Voyager (commercial-friendly with attribution).
+     */
+    tileUrl?: string;
+    /** Attribution text shown while the basemap is visible. */
+    attribution?: string;
+    /** Highest zoom level to request (Carto raster ≈ 20). Default 20. */
+    maxZoom?: number;
+    /**
+     * Manual georeference for clouds without an embedded CRS. When `metadata.json`
+     * has no `projection`, supply this to place the basemap. Omit for clouds that
+     * are already georeferenced (a future auto path can derive it from the CRS).
+     */
+    georeference?: BasemapGeoreference;
+}
 interface ViewerConfig {
     source: PointCloudSource;
     theme?: Theme;
@@ -110,6 +145,11 @@ interface ViewerConfig {
      * Defaults to `"photo-sphere-viewer"`.
      */
     panoEngine?: PanoEngine;
+    /**
+     * Map basemap (XYZ raster tiles laid under a georeferenced cloud). Supply
+     * `basemap.georeference` to pin a non-georeferenced local cloud to the world.
+     */
+    basemap?: BasemapConfig;
 }
 type ActiveTool = "none" | "measure-point" | "measure-distance" | "measure-height" | "measure-area" | "measure-volume" | "measure-angle" | "measure-profile" | "section-box" | "section-plane" | "annotate";
 type NavigationMode = "orbit" | "free" | "pan";
@@ -505,6 +545,38 @@ declare class MinimapRenderer {
 }
 
 /**
+ * Lays georeferenced raster map tiles (default Carto Voyager) on a ground plane
+ * under the point cloud. Because most exports are NOT georeferenced, the common
+ * path is a **manual georeference** (`BasemapConfig.georeference`) that pins the
+ * cloud's local origin to a WGS84 lat/lon.
+ *
+ * Tiles are built in a local ENU frame (X=east, Y=north, meters / `metersPerUnit`)
+ * centered on the cloud origin; the whole group is then rotated by the cloud's
+ * heading and dropped to `groundZ`. A small-area equirectangular approximation
+ * (valid for survey-sized scenes) converts tile lon/lat corners to local meters.
+ */
+declare class TileBasemapManager {
+    private sm;
+    private group;
+    private texLoader;
+    private textures;
+    private geometries;
+    private materials;
+    private _built;
+    attribution: string;
+    constructor(sm: SceneManager);
+    isBuilt(): boolean;
+    setVisible(visible: boolean): void;
+    /**
+     * Build the basemap for a cloud. Requires `cfg.georeference` (manual pin) and a
+     * non-empty world box. No-ops otherwise.
+     */
+    build(worldBox: THREE.Box3, cfg: BasemapConfig | undefined): void;
+    clear(): void;
+    dispose(): void;
+}
+
+/**
  * Manages 6 face-center handles for interactive Box3 resizing.
  * Each handle controls one face of the box (min.x, max.x, min.y, max.y, min.z, max.z).
  */
@@ -776,4 +848,4 @@ declare function formatCoord(x: number, y: number, z: number, decimals?: number)
 /** Export measurements as a CSV string */
 declare function exportMeasurementsCSV(measurements: Measurement[]): string;
 
-export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type GeoInfo, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };
+export { type ActiveTool, AxisWidget, type BasemapConfig, type BasemapGeoreference, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type GeoInfo, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, TileBasemapManager, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };

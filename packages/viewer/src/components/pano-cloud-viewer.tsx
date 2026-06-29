@@ -9,7 +9,7 @@ import { WorkspaceLayout } from "./workspace-layout";
 import { PanoViewer } from "./overlays/pano-viewer";
 import { ComponentsProvider } from "../providers/components-provider";
 import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
-import type { PointCloudSource, UiMode, PanoEngine } from "@der-ort/pano-cloud-viewer-core";
+import type { PointCloudSource, UiMode, PanoEngine, BasemapConfig } from "@der-ort/pano-cloud-viewer-core";
 import type { ViewerLocale } from "../i18n/types";
 import { cn } from "../lib/utils";
 import type { ViewerComponents } from "../providers/components-provider";
@@ -102,6 +102,18 @@ export interface PanoCloudViewerProps {
    * <PanoCloudViewer source={source} panoEngine="pannellum" />
    */
   panoEngine?: PanoEngine;
+  /**
+   * Map basemap (XYZ raster tiles under a georeferenced cloud). Most clouds are
+   * not georeferenced, so supply `basemap.georeference` (WGS84 lat/lon of the
+   * cloud's local origin, optional rotation) to pin it to the world.
+   *
+   * @example
+   * <PanoCloudViewer
+   *   source={source}
+   *   basemap={{ georeference: { lat: 49.67119, lon: 10.07846, rotationDeg: 0 } }}
+   * />
+   */
+  basemap?: BasemapConfig;
   /**
    * Scale factor for the UI chrome (toolbars, tool-rail, sidebar, floating
    * palettes, dialogs / overlay panels, status bar). Defaults to `1`.
@@ -215,9 +227,9 @@ function PcvRoot({ className, uiScale = 1, children }: PcvRootProps) {
  * />
  * ```
  */
-export function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, uiScale = 1, children, components }: PanoCloudViewerProps) {
+export function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, basemap, uiScale = 1, children, components }: PanoCloudViewerProps) {
   const adapter = createAdapter(source);
-  const config = { source, uiMode, panoEngine };
+  const config = { source, uiMode, panoEngine, basemap };
 
   return (
     <LocaleProvider locale={locale}>

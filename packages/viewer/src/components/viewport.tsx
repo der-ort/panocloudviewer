@@ -12,6 +12,7 @@ import { MarkerManager } from "@der-ort/pano-cloud-viewer-core";
 import { CameraAnimator } from "@der-ort/pano-cloud-viewer-core";
 import { ExportManager } from "@der-ort/pano-cloud-viewer-core";
 import { MinimapRenderer } from "@der-ort/pano-cloud-viewer-core";
+import { TileBasemapManager } from "@der-ort/pano-cloud-viewer-core";
 import { ClipManager } from "@der-ort/pano-cloud-viewer-core";
 import { AxisWidget } from "@der-ort/pano-cloud-viewer-core";
 import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
@@ -40,6 +41,7 @@ export function Viewport({ className }: ViewportProps) {
     setCameraAnimator, setExporter, setMinimap, setClipManager,
     setFps, activeTool, pointBudget,
     showMarkers, showMinimap, showMeasurements, setMeasurementList, setSelectedCamera,
+    showBasemap, setBasemapAvailable,
     clipBoxEntries, setClipBoxEntries, setSelectedClipBoxId,
     navigationMode, projection, displaySettings,
   } = useViewer();
@@ -61,6 +63,7 @@ export function Viewport({ className }: ViewportProps) {
   const markerRef = useRef<MarkerManager | null>(null);
   const measureRef = useRef<MeasurementManager | null>(null);
   const minimapRef = useRef<MinimapRenderer | null>(null);
+  const basemapRef = useRef<TileBasemapManager | null>(null);
   const clipRef = useRef<ClipManager | null>(null);
   // Picking-magnifier loupe: a 2D canvas that samples the rendered scene around
   // the snapped point and follows the cursor with a small offset.
@@ -105,6 +108,8 @@ export function Viewport({ className }: ViewportProps) {
     const anim = new CameraAnimator(sm.camera, sm.controls);
     const exporter = new ExportManager(sm);
     const minimapRdr = new MinimapRenderer(sm);
+    const basemap = new TileBasemapManager(sm);
+    basemapRef.current = basemap;
 
     const clipMgr = new ClipManager(sm);
     clipMgr.onChange = (boxes) => setClipBoxEntries(boxes);
@@ -164,6 +169,12 @@ export function Viewport({ className }: ViewportProps) {
           minimapRdr.setBounds(worldBox);
         }
       }
+
+      // Build the map basemap if a (manual) georeference was supplied.
+      if (config.basemap?.georeference && !loader.worldBox.isEmpty()) {
+        basemap.build(loader.worldBox, config.basemap);
+        if (basemap.isBuilt()) setBasemapAvailable(true);
+      }
     }).catch(console.error);
 
     return () => {
@@ -173,6 +184,7 @@ export function Viewport({ className }: ViewportProps) {
       measureMgr.dispose();
       markerMgr.dispose();
       minimapRdr.dispose();
+      basemap.dispose();
       clipMgr.dispose();
       axisWidget.dispose();
       initialized.current = false;
@@ -245,6 +257,11 @@ export function Viewport({ className }: ViewportProps) {
   useEffect(() => {
     measureRef.current?.setVisible(showMeasurements);
   }, [showMeasurements]);
+
+  // Sync map-basemap visibility (Layers panel toggle)
+  useEffect(() => {
+    basemapRef.current?.setVisible(showBasemap);
+  }, [showBasemap]);
 
   // Cull panorama markers that fall outside the active clip region. Re-runs on
   // every clip mutation (add/remove/move/mode/enable all refresh clipBoxEntries).
@@ -743,6 +760,13 @@ export function Viewport({ className }: ViewportProps) {
       {metadata && (
         <div className="absolute top-3 left-3 text-[10px] font-mono text-white/30 pointer-events-none">
           {(metadata.points / 1e6).toFixed(1)}M pts
+        </div>
+      )}
+
+      {/* Map basemap attribution (required while tiles are visible) */}
+      {showBasemap && (
+        <div className="absolute bottom-1 right-2 text-[9px] text-white/50 bg-black/40 px-1.5 py-0.5 rounded pointer-events-none">
+          {config.basemap?.attribution ?? "© OpenStreetMap contributors © CARTO"}
         </div>
       )}
     </div>
