@@ -43,8 +43,7 @@ export function AboutDialog({ onClose }: AboutDialogProps) {
           <p>{t.uiLabel}</p>
         </div>
 
-        {/* Georeference status — whether the loaded cloud has a CRS (and can show
-            a map basemap). */}
+        {/* Georeference status — whether the loaded cloud carries a CRS. */}
         {geo && (
           <div className="text-xs text-muted-foreground border-t border-[hsl(var(--border))] pt-3 mt-3">
             <p>

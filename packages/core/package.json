@@ -25,11 +25,9 @@
     "three": ">=0.160.0"
   },
   "dependencies": {
-    "potree-core": "^2.0.15",
-    "proj4": "^2.12.1"
+    "potree-core": "^2.0.15"
   },
   "devDependencies": {
-    "@types/proj4": "^2.5.5",
     "@types/three": "^0.170.0",
     "three": "^0.170.0",
     "tsup": "^8.4.0",

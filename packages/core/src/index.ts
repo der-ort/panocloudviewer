@@ -11,7 +11,6 @@ export { MarkerManager } from "./core/marker-manager";
 export { MeasurementManager } from "./core/measurement-manager";
 export { ExportManager } from "./core/export-manager";
 export { MinimapRenderer } from "./core/minimap-renderer";
-export { TileBasemapManager } from "./core/tile-basemap-manager";
 export { ClipManager } from "./core/clip-manager";
 export type { ClipMode, ClipBoxEntry } from "./core/clip-manager";
 export { AxisWidget } from "./core/axis-widget";
@@ -45,8 +44,6 @@ export type {
   Theme,
   UiMode,
   PanoEngine,
-  BasemapConfig,
-  BasemapGeoreference,
 } from "./types";
 export { DISPLAY_PRESETS } from "./types";
 

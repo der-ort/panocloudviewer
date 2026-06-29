@@ -54,11 +54,6 @@ interface ViewerContextValue {
   setShowMinimap: (v: boolean) => void;
   showMeasurements: boolean;
   setShowMeasurements: (v: boolean) => void;
-  showBasemap: boolean;
-  setShowBasemap: (v: boolean) => void;
-  /** True once a basemap has been built (cloud georeferenced or manual pin). */
-  basemapAvailable: boolean;
-  setBasemapAvailable: (v: boolean) => void;
   selectedCamera: CameraData | null;
   setSelectedCamera: (cam: CameraData | null) => void;
   clipBoxEntries: ClipBoxEntry[];
@@ -116,8 +111,6 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const [showMarkers, setShowMarkers] = useState(true);
   const [showMinimap, setShowMinimap] = useState(config.showMinimap ?? true);
   const [showMeasurements, setShowMeasurements] = useState(true);
-  const [showBasemap, setShowBasemap] = useState(false);
-  const [basemapAvailable, setBasemapAvailable] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState<import("@der-ort/pano-cloud-viewer-core").CameraData | null>(null);
   const [clipBoxEntries, setClipBoxEntries] = useState<ClipBoxEntry[]>([]);
   const [selectedClipBoxId, setSelectedClipBoxId] = useState<string | null>(null);
@@ -161,8 +154,6 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
     showMarkers, setShowMarkers,
     showMinimap, setShowMinimap,
     showMeasurements, setShowMeasurements,
-    showBasemap, setShowBasemap,
-    basemapAvailable, setBasemapAvailable,
     selectedCamera, setSelectedCamera,
     clipBoxEntries, setClipBoxEntries,
     selectedClipBoxId, setSelectedClipBoxId,

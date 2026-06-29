@@ -215,7 +215,7 @@ export class PointCloudLoader {
     return this._projection;
   }
 
-  /** Whether the cloud carries a non-empty CRS (eligible for a map basemap). */
+  /** Whether the cloud carries a non-empty CRS. */
   get isGeoreferenced(): boolean {
     return this._projection.length > 0;
   }

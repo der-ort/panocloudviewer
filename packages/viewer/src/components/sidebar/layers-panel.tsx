@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Camera, Ruler, Map, Globe, ChevronRight, Tag } from "lucide-react";
+import { Camera, Ruler, Map, ChevronRight, Tag } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { ClassificationPanel } from "./classification-panel";
@@ -58,7 +58,7 @@ function LayerRow({
 
 /**
  * Layers panel — one place to toggle every overlay (panoramas, measurements,
- * minimap, map basemap). Replaces the scattered view-toggles that used to live
+ * minimap). Replaces the scattered view-toggles that used to live
  * in the toolbar and the quick-settings popovers.
  */
 export function LayersPanel() {
@@ -66,8 +66,6 @@ export function LayersPanel() {
     showMarkers, setShowMarkers,
     showMeasurements, setShowMeasurements,
     showMinimap, setShowMinimap,
-    showBasemap, setShowBasemap,
-    basemapAvailable,
   } = useViewer();
 
   return (
@@ -93,14 +91,6 @@ export function LayersPanel() {
         label="Minimap"
         active={showMinimap}
         onToggle={() => setShowMinimap(!showMinimap)}
-      />
-      <LayerRow
-        icon={<Globe size={15} />}
-        label="Map basemap"
-        active={showBasemap}
-        onToggle={() => setShowBasemap(!showBasemap)}
-        disabled={!basemapAvailable}
-        hint={basemapAvailable ? undefined : "Requires a georeferenced cloud or basemap config"}
       />
 
       {/* Classification — collapsed sub-section (was its own sidebar tab). */}

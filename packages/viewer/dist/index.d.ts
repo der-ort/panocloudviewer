@@ -94,56 +94,6 @@ type UiMode = "professional" | "lite";
  * - `"pannellum"`: lightweight, mature; loaded from CDN. Optional fallback.
  */
 type PanoEngine = "pannellum" | "photo-sphere-viewer";
-/**
- * Manual georeference for a cloud WITHOUT an embedded CRS (the common case —
- * most E57/LAS exports drop the projection). Pins the cloud's local origin to a
- * real-world WGS84 position so a map basemap can be placed under it.
- */
-interface BasemapGeoreference {
-    /** WGS84 latitude (deg) of the cloud's local origin (0,0,0). */
-    lat: number;
-    /** WGS84 longitude (deg) of the cloud's local origin (0,0,0). */
-    lon: number;
-    /** Heading of the cloud's +Y axis, clockwise from geographic north (deg). Default 0. */
-    rotationDeg?: number;
-    /** Cloud units per meter (1 = the cloud is in meters). Default 1. */
-    metersPerUnit?: number;
-    /** Local Z height for the basemap plane. Default: the cloud's min Z. */
-    groundZ?: number;
-}
-/** Map basemap configuration (XYZ raster tiles under a georeferenced cloud). */
-interface BasemapConfig {
-    /**
-     * XYZ raster tile URL template. Placeholders: `{z}` `{x}` `{y}` `{s}` `{r}`.
-     * Default: Carto Voyager (commercial-friendly with attribution).
-     */
-    tileUrl?: string;
-    /** Attribution text shown while the basemap is visible. */
-    attribution?: string;
-    /** Highest zoom level to request (Carto raster ≈ 20). Default 20. */
-    maxZoom?: number;
-    /**
-     * Extra map context to show AROUND the cloud footprint, in meters per side.
-     * Larger = more surrounding area (at a slightly lower zoom). Default 250.
-     */
-    contextMeters?: number;
-    /**
-     * **CRS mode** — for a cloud whose rendered coordinates are a projected CRS
-     * (e.g. converted from a georeferenced LAS, so its `offset` is large). Supply
-     * the CRS as a proj4 definition string, or a shortcut `"EPSG:4839"` /
-     * `"EPSG:25832"` / `"EPSG:25833"` (common German systems are built in). The
-     * basemap is reprojected (proj4) and placed at the cloud's true coordinates —
-     * no manual lat/lon needed. Use this when NavVis/PotreeConverter dropped the
-     * CRS string (`metadata.json` `projection: ""`) but the coordinates are real.
-     */
-    crs?: string;
-    /**
-     * **Manual-pin mode** — for a cloud in LOCAL coordinates (near origin, small
-     * `offset`). Pins the cloud's local origin to a WGS84 lat/lon. Ignored when
-     * `crs` is set.
-     */
-    georeference?: BasemapGeoreference;
-}
 interface ViewerConfig {
     source: PointCloudSource;
     theme?: Theme;
@@ -172,11 +122,6 @@ interface ViewerConfig {
      * Defaults to `"photo-sphere-viewer"`.
      */
     panoEngine?: PanoEngine;
-    /**
-     * Map basemap (XYZ raster tiles laid under a georeferenced cloud). Supply
-     * `basemap.georeference` to pin a non-georeferenced local cloud to the world.
-     */
-    basemap?: BasemapConfig;
 }
 type ActiveTool = "none" | "measure-point" | "measure-distance" | "measure-height" | "measure-area" | "measure-volume" | "measure-angle" | "measure-profile" | "section-box" | "section-plane" | "annotate";
 type NavigationMode = "orbit" | "free" | "pan";
@@ -365,7 +310,7 @@ declare class PointCloudLoader {
     get hasRgbData(): boolean;
     /** CRS string from metadata.json ("" when not georeferenced). */
     get projection(): string;
-    /** Whether the cloud carries a non-empty CRS (eligible for a map basemap). */
+    /** Whether the cloud carries a non-empty CRS. */
     get isGeoreferenced(): boolean;
     /** Georeference status for the cloud info / About dialog. */
     getGeoInfo(): GeoInfo;
@@ -568,47 +513,6 @@ declare class MinimapRenderer {
     canvasToWorld(cx: number, cy: number): THREE.Vector2;
     /** Handle resize (called by parent when container size changes) */
     resize(): void;
-    dispose(): void;
-}
-
-/**
- * Lays georeferenced raster map tiles (default Carto Voyager) on a ground plane
- * under the point cloud. Because most exports are NOT georeferenced, the common
- * path is a **manual georeference** (`BasemapConfig.georeference`) that pins the
- * cloud's local origin to a WGS84 lat/lon.
- *
- * Tiles are built in a local ENU frame (X=east, Y=north, meters / `metersPerUnit`)
- * centered on the cloud origin; the whole group is then rotated by the cloud's
- * heading and dropped to `groundZ`. A small-area equirectangular approximation
- * (valid for survey-sized scenes) converts tile lon/lat corners to local meters.
- */
-declare class TileBasemapManager {
-    private sm;
-    private group;
-    private texLoader;
-    private textures;
-    private geometries;
-    private materials;
-    private _built;
-    attribution: string;
-    constructor(sm: SceneManager);
-    isBuilt(): boolean;
-    setVisible(visible: boolean): void;
-    /**
-     * Build the basemap for a cloud. Dispatches on the config:
-     * - `cfg.crs` → **projected mode** (cloud already in a projected CRS; tiles are
-     *   reprojected with proj4 to the cloud's true coordinates).
-     * - `cfg.georeference` → **manual-pin mode** (local cloud pinned to a lat/lon).
-     * No-ops otherwise.
-     */
-    build(worldBox: THREE.Box3, cfg: BasemapConfig | undefined): Promise<void>;
-    /** Projected mode — reproject Carto tiles (proj4) to the cloud's CRS coords. */
-    private _buildProjected;
-    /** Manual-pin mode — local cloud pinned to a WGS84 lat/lon (equirectangular). */
-    private _buildManual;
-    /** Create one tile plane (grey placeholder) and load its texture. */
-    private _addTile;
-    clear(): void;
     dispose(): void;
 }
 
@@ -1291,18 +1195,6 @@ interface PanoCloudViewerProps {
      */
     panoEngine?: PanoEngine;
     /**
-     * Map basemap (XYZ raster tiles under a georeferenced cloud). Most clouds are
-     * not georeferenced, so supply `basemap.georeference` (WGS84 lat/lon of the
-     * cloud's local origin, optional rotation) to pin it to the world.
-     *
-     * @example
-     * <PanoCloudViewer
-     *   source={source}
-     *   basemap={{ georeference: { lat: 49.67119, lon: 10.07846, rotationDeg: 0 } }}
-     * />
-     */
-    basemap?: BasemapConfig;
-    /**
      * Scale factor for the UI chrome (toolbars, tool-rail, sidebar, floating
      * palettes, dialogs / overlay panels, status bar). Defaults to `1`.
      *
@@ -1356,7 +1248,7 @@ interface PanoCloudViewerProps {
  * />
  * ```
  */
-declare function PanoCloudViewer({ source, theme, className, locale, uiMode, panoEngine, basemap, uiScale, children, components }: PanoCloudViewerProps): react_jsx_runtime.JSX.Element;
+declare function PanoCloudViewer({ source, theme, className, locale, uiMode, panoEngine, uiScale, children, components }: PanoCloudViewerProps): react_jsx_runtime.JSX.Element;
 
 /** Package version, e.g. "0.1.0". */
 declare const PCV_VERSION: string;
@@ -1400,11 +1292,6 @@ interface ViewerContextValue {
     setShowMinimap: (v: boolean) => void;
     showMeasurements: boolean;
     setShowMeasurements: (v: boolean) => void;
-    showBasemap: boolean;
-    setShowBasemap: (v: boolean) => void;
-    /** True once a basemap has been built (cloud georeferenced or manual pin). */
-    basemapAvailable: boolean;
-    setBasemapAvailable: (v: boolean) => void;
     selectedCamera: CameraData | null;
     setSelectedCamera: (cam: CameraData | null) => void;
     clipBoxEntries: ClipBoxEntry[];
@@ -1678,4 +1565,4 @@ declare const en: ViewerLocale;
 
 declare const de: ViewerLocale;
 
-export { AboutDialog, type ActiveTool, AxisWidget, type BasemapConfig, type BasemapGeoreference, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type GeoInfo, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, TileBasemapManager, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type GeoInfo, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };

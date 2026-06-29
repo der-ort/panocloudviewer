@@ -123,58 +123,6 @@ export type UiMode = "professional" | "lite";
  */
 export type PanoEngine = "pannellum" | "photo-sphere-viewer";
 
-/**
- * Manual georeference for a cloud WITHOUT an embedded CRS (the common case —
- * most E57/LAS exports drop the projection). Pins the cloud's local origin to a
- * real-world WGS84 position so a map basemap can be placed under it.
- */
-export interface BasemapGeoreference {
-  /** WGS84 latitude (deg) of the cloud's local origin (0,0,0). */
-  lat: number;
-  /** WGS84 longitude (deg) of the cloud's local origin (0,0,0). */
-  lon: number;
-  /** Heading of the cloud's +Y axis, clockwise from geographic north (deg). Default 0. */
-  rotationDeg?: number;
-  /** Cloud units per meter (1 = the cloud is in meters). Default 1. */
-  metersPerUnit?: number;
-  /** Local Z height for the basemap plane. Default: the cloud's min Z. */
-  groundZ?: number;
-}
-
-/** Map basemap configuration (XYZ raster tiles under a georeferenced cloud). */
-export interface BasemapConfig {
-  /**
-   * XYZ raster tile URL template. Placeholders: `{z}` `{x}` `{y}` `{s}` `{r}`.
-   * Default: Carto Voyager (commercial-friendly with attribution).
-   */
-  tileUrl?: string;
-  /** Attribution text shown while the basemap is visible. */
-  attribution?: string;
-  /** Highest zoom level to request (Carto raster ≈ 20). Default 20. */
-  maxZoom?: number;
-  /**
-   * Extra map context to show AROUND the cloud footprint, in meters per side.
-   * Larger = more surrounding area (at a slightly lower zoom). Default 250.
-   */
-  contextMeters?: number;
-  /**
-   * **CRS mode** — for a cloud whose rendered coordinates are a projected CRS
-   * (e.g. converted from a georeferenced LAS, so its `offset` is large). Supply
-   * the CRS as a proj4 definition string, or a shortcut `"EPSG:4839"` /
-   * `"EPSG:25832"` / `"EPSG:25833"` (common German systems are built in). The
-   * basemap is reprojected (proj4) and placed at the cloud's true coordinates —
-   * no manual lat/lon needed. Use this when NavVis/PotreeConverter dropped the
-   * CRS string (`metadata.json` `projection: ""`) but the coordinates are real.
-   */
-  crs?: string;
-  /**
-   * **Manual-pin mode** — for a cloud in LOCAL coordinates (near origin, small
-   * `offset`). Pins the cloud's local origin to a WGS84 lat/lon. Ignored when
-   * `crs` is set.
-   */
-  georeference?: BasemapGeoreference;
-}
-
 export interface ViewerConfig {
   source: PointCloudSource;
   theme?: Theme;
@@ -203,11 +151,6 @@ export interface ViewerConfig {
    * Defaults to `"photo-sphere-viewer"`.
    */
   panoEngine?: PanoEngine;
-  /**
-   * Map basemap (XYZ raster tiles laid under a georeferenced cloud). Supply
-   * `basemap.georeference` to pin a non-georeferenced local cloud to the world.
-   */
-  basemap?: BasemapConfig;
 }
 
 // ── Viewer state (context) ───────────────────────────────────
