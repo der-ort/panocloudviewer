@@ -1,9 +1,10 @@
 "use client";
 
 import React from "react";
-import { Camera, Ruler, Map, Globe } from "lucide-react";
+import { Camera, Ruler, Map, Globe, ChevronRight, Tag } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
+import { ClassificationPanel } from "./classification-panel";
 
 /** A single layer row — icon, label, and an on/off switch (or a disabled hint). */
 function LayerRow({
@@ -101,6 +102,31 @@ export function LayersPanel() {
         disabled={!basemapAvailable}
         hint={basemapAvailable ? undefined : "Requires a georeferenced cloud or basemap config"}
       />
+
+      {/* Classification — collapsed sub-section (was its own sidebar tab). */}
+      <ClassificationSection />
+    </div>
+  );
+}
+
+/** Collapsible "Classification" block folded into the Layers panel. */
+function ClassificationSection() {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div className="mt-1 border-t border-white/10 pt-1">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2.5 w-full px-2 py-2 rounded-lg hover:bg-white/10 transition-colors text-left"
+      >
+        <span className="text-white/50"><Tag size={15} /></span>
+        <span className="flex-1 text-xs text-white/80">Classification</span>
+        <ChevronRight size={14} className={cn("text-white/40 transition-transform", open && "rotate-90")} />
+      </button>
+      {open && (
+        <div className="max-h-64 overflow-y-auto">
+          <ClassificationPanel />
+        </div>
+      )}
     </div>
   );
 }

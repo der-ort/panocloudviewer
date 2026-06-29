@@ -1,10 +1,10 @@
 import * as THREE5 from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import React25, { createContext, lazy, useContext, useState, useCallback, useEffect, useRef, useReducer, useMemo, Suspense } from 'react';
+import React26, { createContext, lazy, useContext, useState, useCallback, useEffect, useRef, useReducer, useMemo, Suspense } from 'react';
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { X, ChevronDown, ChevronUp, Check, Download, Settings, Sliders, Layers, Sun, Moon, BoxSelect, Move, Maximize2, RotateCw, Plus, Trash2, Scissors, ScissorsLineDashed, Power, Eye, EyeOff, RotateCcw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Camera, Box, Tag, ChevronRight, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Map as Map$1, Globe, Orbit, Rotate3d, Maximize, Palette, Square, Image, Circle, Minus } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Check, Download, SlidersHorizontal, BoxSelect, Move, Maximize2, RotateCw, Plus, Trash2, Scissors, ScissorsLineDashed, Power, Eye, EyeOff, RotateCcw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, Layers, Camera, Box, Sun, Moon, ChevronRight, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Map as Map$1, Globe, Orbit, Rotate3d, Maximize, Settings, Palette, Square, Image, Tag, Circle, Minus } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cva } from 'class-variance-authority';
 import * as SliderPrimitive from '@radix-ui/react-slider';
@@ -11088,8 +11088,14 @@ var init_dist = __esm({
         const tileUrl = cfg.tileUrl ?? DEFAULT_TILE_URL;
         const maxZoom = cfg.maxZoom ?? 20;
         const groundZ = cfg.georeference?.groundZ ?? worldBox.min.z;
+        const ctx = cfg.contextMeters ?? 250;
+        const padBox = worldBox.clone();
+        padBox.min.x -= ctx;
+        padBox.min.y -= ctx;
+        padBox.max.x += ctx;
+        padBox.max.y += ctx;
         let latMin = 90, latMax = -90, lonMin = 180, lonMax = -180;
-        for (const [x, y] of cornersXY(worldBox)) {
+        for (const [x, y] of cornersXY(padBox)) {
           const [lon, lat] = toGeo.forward([x, y]);
           latMin = Math.min(latMin, lat);
           latMax = Math.max(latMax, lat);
@@ -11097,14 +11103,14 @@ var init_dist = __esm({
           lonMax = Math.max(lonMax, lon);
         }
         const size = new THREE5.Vector3();
-        worldBox.getSize(size);
+        padBox.getSize(size);
         const cosLat = Math.cos((latMin + latMax) / 2 * Math.PI / 180);
-        const targetTileM = Math.min(Math.max(Math.max(size.x, size.y), 20), 400);
+        const targetTileM = Math.min(Math.max(Math.max(size.x, size.y), 20), 600);
         let z = Math.round(Math.log2(EARTH_CIRC * cosLat / targetTileM));
         z = Math.max(1, Math.min(maxZoom, z));
         const xMin = lonToTileX(lonMin, z), xMax = lonToTileX(lonMax, z);
         const yMin = latToTileY(latMax, z), yMax = latToTileY(latMin, z);
-        if ((xMax - xMin + 1) * (yMax - yMin + 1) > 64) return;
+        if ((xMax - xMin + 1) * (yMax - yMin + 1) > 200) return;
         for (let tx = xMin; tx <= xMax; tx++) {
           for (let ty = yMin; ty <= yMax; ty++) {
             const nw = toProj.forward([tileXToLon(tx, z), tileYToLat(ty, z)]);
@@ -11126,9 +11132,15 @@ var init_dist = __esm({
         const rot = (geo.rotationDeg ?? 0) * Math.PI / 180;
         const groundZ = geo.groundZ ?? worldBox.min.z;
         const cosLat = Math.cos(geo.lat * Math.PI / 180);
+        const ctx = (cfg.contextMeters ?? 250) / mpu;
+        const padBox = worldBox.clone();
+        padBox.min.x -= ctx;
+        padBox.min.y -= ctx;
+        padBox.max.x += ctx;
+        padBox.max.y += ctx;
         const size = new THREE5.Vector3();
-        worldBox.getSize(size);
-        const targetTileM = Math.min(Math.max(Math.max(size.x, size.y) * mpu, 20), 400);
+        padBox.getSize(size);
+        const targetTileM = Math.min(Math.max(Math.max(size.x, size.y) * mpu, 20), 600);
         let z = Math.round(Math.log2(EARTH_CIRC * cosLat / targetTileM));
         z = Math.max(1, Math.min(maxZoom, z));
         const toEN = (x, y) => ({
@@ -11140,7 +11152,7 @@ var init_dist = __esm({
           lon: geo.lon + east / (EARTH_RADIUS * cosLat) * 180 / Math.PI
         });
         let latMin = 90, latMax = -90, lonMin = 180, lonMax = -180;
-        for (const [cx, cy] of cornersXY(worldBox)) {
+        for (const [cx, cy] of cornersXY(padBox)) {
           const { east, north } = toEN(cx, cy);
           const g = enToGeo(east, north);
           latMin = Math.min(latMin, g.lat);
@@ -11150,7 +11162,7 @@ var init_dist = __esm({
         }
         const xMin = lonToTileX(lonMin, z), xMax = lonToTileX(lonMax, z);
         const yMin = latToTileY(latMax, z), yMax = latToTileY(latMin, z);
-        if ((xMax - xMin + 1) * (yMax - yMin + 1) > 64) return;
+        if ((xMax - xMin + 1) * (yMax - yMin + 1) > 200) return;
         const deg2rad = Math.PI / 180;
         const geoToEnu = (lat, lon) => ({
           east: (lon - geo.lon) * deg2rad * EARTH_RADIUS * cosLat,
@@ -12685,7 +12697,7 @@ function Viewport({ className }) {
   const containerRef = useRef(null);
   const minimapContainerRef = useRef(null);
   const initialized = useRef(false);
-  const [minimapSize, setMinimapSize] = React25.useState(176);
+  const [minimapSize, setMinimapSize] = React26.useState(176);
   const t = useLocale().viewport;
   const {
     config,
@@ -12732,8 +12744,8 @@ function Viewport({ className }) {
   const basemapRef = useRef(null);
   const clipRef = useRef(null);
   const loupeCanvasRef = useRef(null);
-  const [magnifierOn, setMagnifierOn] = React25.useState(false);
-  const [loupePos, setLoupePos] = React25.useState({ x: 0, y: 0 });
+  const [magnifierOn, setMagnifierOn] = React26.useState(false);
+  const [loupePos, setLoupePos] = React26.useState({ x: 0, y: 0 });
   const animRef = useRef(null);
   const axisRef = useRef(null);
   const clipDraftRef = useRef(null);
@@ -13356,7 +13368,6 @@ init_locale_context();
 // src/components/toolbar/main-toolbar.tsx
 init_utils();
 init_viewer_provider();
-init_locale_context();
 
 // src/components/toolbar/view-controls.tsx
 init_viewer_provider();
@@ -13770,10 +13781,8 @@ function ToolbarSection({ label, children, className }) {
     label && /* @__PURE__ */ jsx("span", { className: "text-[9px] text-muted-foreground/50 ml-1 hidden xl:block font-mono uppercase tracking-wider", children: label })
   ] });
 }
-function MainToolbar({ onOpenCloudSelector, onToggleRenderSettings, onToggleQuickSettings, renderSettingsOpen, quickSettingsOpen }) {
+function MainToolbar({ onToggleRenderSettings, renderSettingsOpen }) {
   const { uiMode } = useViewer();
-  const { resolvedTheme, toggleTheme } = useTheme();
-  const t = useLocale().toolbar;
   const isPro = uiMode === "professional";
   return /* @__PURE__ */ jsxs("div", { className: "flex items-center h-10 px-2 gap-0 select-none overflow-x-auto", children: [
     /* @__PURE__ */ jsxs(ToolbarSection, { label: "Views", children: [
@@ -13785,46 +13794,15 @@ function MainToolbar({ onOpenCloudSelector, onToggleRenderSettings, onToggleQuic
       isPro && /* @__PURE__ */ jsx(
         ToolbarIconBtn,
         {
-          icon: /* @__PURE__ */ jsx(Settings, { size: 14 }),
-          active: quickSettingsOpen,
-          onClick: onToggleQuickSettings,
-          title: "Quick settings"
-        }
-      ),
-      isPro && /* @__PURE__ */ jsx(
-        ToolbarIconBtn,
-        {
-          icon: /* @__PURE__ */ jsx(Sliders, { size: 14 }),
+          icon: /* @__PURE__ */ jsx(SlidersHorizontal, { size: 14 }),
           active: renderSettingsOpen,
           onClick: onToggleRenderSettings,
-          title: "Rendering settings"
+          title: "Settings"
         }
       )
     ] }),
     /* @__PURE__ */ jsx("div", { className: "flex-1" }),
-    /* @__PURE__ */ jsxs(ToolbarSection, { children: [
-      isPro && /* @__PURE__ */ jsx(ExportTools, {}),
-      isPro && /* @__PURE__ */ jsx(
-        ToolbarIconBtn,
-        {
-          icon: /* @__PURE__ */ jsx(Layers, { size: 14 }),
-          label: t.clouds,
-          active: false,
-          onClick: onOpenCloudSelector,
-          title: t.cloudSelector
-        }
-      ),
-      /* @__PURE__ */ jsx(
-        ToolbarIconBtn,
-        {
-          icon: resolvedTheme === "dark" ? /* @__PURE__ */ jsx(Sun, { size: 14 }) : /* @__PURE__ */ jsx(Moon, { size: 14 }),
-          label: t.theme,
-          active: false,
-          onClick: toggleTheme,
-          title: resolvedTheme === "dark" ? t.switchToLight : t.switchToDark
-        }
-      )
-    ] })
+    /* @__PURE__ */ jsx(ToolbarSection, { children: isPro && /* @__PURE__ */ jsx(ExportTools, {}) })
   ] });
 }
 function ToolbarIconBtn({ icon, label, active, onClick, title }) {
@@ -14048,10 +14026,10 @@ init_locale_context();
 function ClipToolbar() {
   const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible, resetRotation, setTransformMode } = useClipActions();
   const t = useLocale().clipToolbar;
-  const [enabled, setEnabledLocal] = React25.useState(isEnabled);
-  const [outlines, setOutlinesLocal] = React25.useState(outlinesVisible);
-  const [mode2, setMode] = React25.useState("scale");
-  React25.useEffect(() => {
+  const [enabled, setEnabledLocal] = React26.useState(isEnabled);
+  const [outlines, setOutlinesLocal] = React26.useState(outlinesVisible);
+  const [mode2, setMode] = React26.useState("scale");
+  React26.useEffect(() => {
     setEnabledLocal(isEnabled);
     setOutlinesLocal(outlinesVisible);
   }, [isEnabled, outlinesVisible, boxes]);
@@ -14237,6 +14215,73 @@ init_viewer_provider();
 // src/components/sidebar/layers-panel.tsx
 init_utils();
 init_viewer_provider();
+
+// src/components/sidebar/classification-panel.tsx
+init_viewer_provider();
+init_locale_context();
+var CLASS_DEFS = [
+  { code: 0, color: "#aaaaaa" },
+  { code: 1, color: "#888888" },
+  { code: 2, color: "#c8a46e" },
+  { code: 3, color: "#5ec45e" },
+  { code: 4, color: "#2ea02e" },
+  { code: 5, color: "#006600" },
+  { code: 6, color: "#e07070" },
+  { code: 7, color: "#ff4444" },
+  { code: 9, color: "#4488ff" },
+  { code: 17, color: "#cc88ff" },
+  { code: 18, color: "#ff8800" }
+];
+function ClassificationPanel() {
+  const { loader } = useViewer();
+  const t = useLocale().classificationPanel;
+  const [visible, setVisible] = useState(
+    Object.fromEntries(CLASS_DEFS.map((c) => [c.code, true]))
+  );
+  const toggle = (code) => {
+    setVisible((prev) => {
+      const next = { ...prev, [code]: !prev[code] };
+      const cloud = loader?.getPointCloud();
+      if (cloud?.material) {
+        const mat = cloud.material;
+        if (mat.classification) {
+          const THREE3 = window.THREE;
+          const hexColor = CLASS_DEFS.find((c) => c.code === code)?.color ?? "#ffffff";
+          mat.classification[code] = { visible: next[code], color: THREE3 ? new THREE3.Color(hexColor) : hexColor };
+        }
+      }
+      return next;
+    });
+  };
+  const toggleAll = (on) => {
+    const next = Object.fromEntries(CLASS_DEFS.map((c) => [c.code, on]));
+    setVisible(next);
+  };
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full overflow-y-auto p-2", children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-2", children: [
+      /* @__PURE__ */ jsx("p", { className: "text-[10px] font-semibold text-muted-foreground uppercase tracking-wide", children: t.title }),
+      /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
+        /* @__PURE__ */ jsx("button", { onClick: () => toggleAll(true), className: "text-[9px] text-muted-foreground hover:text-foreground transition-colors", children: t.all }),
+        /* @__PURE__ */ jsx("span", { className: "text-muted-foreground text-[9px]", children: "/" }),
+        /* @__PURE__ */ jsx("button", { onClick: () => toggleAll(false), className: "text-[9px] text-muted-foreground hover:text-foreground transition-colors", children: t.none })
+      ] })
+    ] }),
+    CLASS_DEFS.map((cls) => /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-2 py-1 cursor-pointer group", children: [
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          type: "checkbox",
+          checked: visible[cls.code] ?? true,
+          onChange: () => toggle(cls.code),
+          className: "accent-[hsl(var(--brand))] w-3 h-3 shrink-0"
+        }
+      ),
+      /* @__PURE__ */ jsx("span", { className: "w-2.5 h-2.5 rounded-sm shrink-0", style: { background: cls.color } }),
+      /* @__PURE__ */ jsx("span", { className: "text-[10px] font-mono text-foreground", children: cls.code }),
+      /* @__PURE__ */ jsx("span", { className: "text-[10px] text-muted-foreground truncate", children: t.classLabels[cls.code] ?? String(cls.code) })
+    ] }, cls.code))
+  ] });
+}
 function LayerRow({
   icon,
   label,
@@ -14334,7 +14379,26 @@ function LayersPanel() {
         disabled: !basemapAvailable,
         hint: basemapAvailable ? void 0 : "Requires a georeferenced cloud or basemap config"
       }
-    )
+    ),
+    /* @__PURE__ */ jsx(ClassificationSection, {})
+  ] });
+}
+function ClassificationSection() {
+  const [open, setOpen] = React26.useState(false);
+  return /* @__PURE__ */ jsxs("div", { className: "mt-1 border-t border-white/10 pt-1", children: [
+    /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: () => setOpen((o) => !o),
+        className: "flex items-center gap-2.5 w-full px-2 py-2 rounded-lg hover:bg-white/10 transition-colors text-left",
+        children: [
+          /* @__PURE__ */ jsx("span", { className: "text-white/50", children: /* @__PURE__ */ jsx(Tag, { size: 15 }) }),
+          /* @__PURE__ */ jsx("span", { className: "flex-1 text-xs text-white/80", children: "Classification" }),
+          /* @__PURE__ */ jsx(ChevronRight, { size: 14, className: cn("text-white/40 transition-transform", open && "rotate-90") })
+        ]
+      }
+    ),
+    open && /* @__PURE__ */ jsx("div", { className: "max-h-64 overflow-y-auto", children: /* @__PURE__ */ jsx(ClassificationPanel, {}) })
   ] });
 }
 
@@ -14690,73 +14754,6 @@ function MeasurementsPanel() {
   ] });
 }
 
-// src/components/sidebar/classification-panel.tsx
-init_viewer_provider();
-init_locale_context();
-var CLASS_DEFS = [
-  { code: 0, color: "#aaaaaa" },
-  { code: 1, color: "#888888" },
-  { code: 2, color: "#c8a46e" },
-  { code: 3, color: "#5ec45e" },
-  { code: 4, color: "#2ea02e" },
-  { code: 5, color: "#006600" },
-  { code: 6, color: "#e07070" },
-  { code: 7, color: "#ff4444" },
-  { code: 9, color: "#4488ff" },
-  { code: 17, color: "#cc88ff" },
-  { code: 18, color: "#ff8800" }
-];
-function ClassificationPanel() {
-  const { loader } = useViewer();
-  const t = useLocale().classificationPanel;
-  const [visible, setVisible] = useState(
-    Object.fromEntries(CLASS_DEFS.map((c) => [c.code, true]))
-  );
-  const toggle = (code) => {
-    setVisible((prev) => {
-      const next = { ...prev, [code]: !prev[code] };
-      const cloud = loader?.getPointCloud();
-      if (cloud?.material) {
-        const mat = cloud.material;
-        if (mat.classification) {
-          const THREE3 = window.THREE;
-          const hexColor = CLASS_DEFS.find((c) => c.code === code)?.color ?? "#ffffff";
-          mat.classification[code] = { visible: next[code], color: THREE3 ? new THREE3.Color(hexColor) : hexColor };
-        }
-      }
-      return next;
-    });
-  };
-  const toggleAll = (on) => {
-    const next = Object.fromEntries(CLASS_DEFS.map((c) => [c.code, on]));
-    setVisible(next);
-  };
-  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full overflow-y-auto p-2", children: [
-    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-2", children: [
-      /* @__PURE__ */ jsx("p", { className: "text-[10px] font-semibold text-muted-foreground uppercase tracking-wide", children: t.title }),
-      /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
-        /* @__PURE__ */ jsx("button", { onClick: () => toggleAll(true), className: "text-[9px] text-muted-foreground hover:text-foreground transition-colors", children: t.all }),
-        /* @__PURE__ */ jsx("span", { className: "text-muted-foreground text-[9px]", children: "/" }),
-        /* @__PURE__ */ jsx("button", { onClick: () => toggleAll(false), className: "text-[9px] text-muted-foreground hover:text-foreground transition-colors", children: t.none })
-      ] })
-    ] }),
-    CLASS_DEFS.map((cls) => /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-2 py-1 cursor-pointer group", children: [
-      /* @__PURE__ */ jsx(
-        "input",
-        {
-          type: "checkbox",
-          checked: visible[cls.code] ?? true,
-          onChange: () => toggle(cls.code),
-          className: "accent-[hsl(var(--brand))] w-3 h-3 shrink-0"
-        }
-      ),
-      /* @__PURE__ */ jsx("span", { className: "w-2.5 h-2.5 rounded-sm shrink-0", style: { background: cls.color } }),
-      /* @__PURE__ */ jsx("span", { className: "text-[10px] font-mono text-foreground", children: cls.code }),
-      /* @__PURE__ */ jsx("span", { className: "text-[10px] text-muted-foreground truncate", children: t.classLabels[cls.code] ?? String(cls.code) })
-    ] }, cls.code))
-  ] });
-}
-
 // src/components/sidebar/scenes-panel.tsx
 init_viewer_provider();
 init_locale_context();
@@ -14979,7 +14976,6 @@ function Sidebar() {
     { id: "panoramas", icon: /* @__PURE__ */ jsx(Camera, { size: 14 }), label: t.tabPanoramas },
     { id: "scene", icon: /* @__PURE__ */ jsx(Box, { size: 14 }), label: t.tabScene },
     { id: "measurements", icon: /* @__PURE__ */ jsx(Ruler, { size: 14 }), label: t.tabMeasurements },
-    { id: "classification", icon: /* @__PURE__ */ jsx(Tag, { size: 14 }), label: t.tabClassification, proOnly: true },
     { id: "scenes", icon: /* @__PURE__ */ jsx(Bookmark, { size: 14 }), label: t.tabScenes, proOnly: true }
   ];
   const TABS = ALL_TABS.filter((entry) => isPro || !entry.proOnly);
@@ -15004,7 +15000,6 @@ function Sidebar() {
       activeTab === "panoramas" && /* @__PURE__ */ jsx(PanoPanel, {}),
       activeTab === "scene" && /* @__PURE__ */ jsx(ScenePanel, {}),
       activeTab === "measurements" && /* @__PURE__ */ jsx(MeasurementsPanel, {}),
-      activeTab === "classification" && /* @__PURE__ */ jsx(ClassificationPanel, {}),
       activeTab === "scenes" && /* @__PURE__ */ jsx(ScenesPanel, {})
     ] })
   ] });
@@ -15199,6 +15194,40 @@ function PanoViewer() {
 
 // src/components/overlays/rendering-settings.tsx
 init_viewer_provider();
+
+// src/hooks/use-display-actions.ts
+init_viewer_provider();
+function useDisplayActions() {
+  const { loader, colorMode, setColorMode, pointBudget, setPointBudget, pointSize, setPointSize } = useViewer();
+  const setQualityPreset = useCallback((preset) => {
+    if (!loader) return;
+    switch (preset) {
+      case "performance":
+        loader.setPointShape(0);
+        loader.setPointSizeType(0);
+        break;
+      case "balanced":
+        loader.setPointShape(1);
+        loader.setPointSizeType(2);
+        break;
+      case "high":
+        loader.setPointShape(2);
+        loader.setPointSizeType(2);
+        break;
+    }
+  }, [loader]);
+  return {
+    colorMode,
+    setColorMode,
+    pointBudget,
+    setPointBudget,
+    pointSize,
+    setPointSize,
+    setQualityPreset
+  };
+}
+
+// src/components/overlays/rendering-settings.tsx
 init_locale_context();
 function useDraggable(options) {
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -15248,8 +15277,21 @@ function useDraggable(options) {
   );
   return { position, onDragStart, reset };
 }
+var COLOR_MODES2 = [
+  { value: "rgb", label: "RGB" },
+  { value: "height", label: "Elevation" },
+  { value: "intensity", label: "Intensity" },
+  { value: "classification", label: "Classification" }
+];
+var QUALITY = [
+  { value: "performance", label: "Performance" },
+  { value: "balanced", label: "Balanced" },
+  { value: "high", label: "High" }
+];
 function RenderingSettings({ open, onClose }) {
-  const { loader } = useViewer();
+  const { loader, colorMode, setColorMode, pointSize, setPointSize, pointBudget, setPointBudget } = useViewer();
+  const { setQualityPreset } = useDisplayActions();
+  const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().renderingSettings;
   const pcvRoot = usePcvRoot();
   const { position, onDragStart, reset } = useDraggable({ bounds: pcvRoot ?? void 0 });
@@ -15266,56 +15308,60 @@ function RenderingSettings({ open, onClose }) {
   const [heightMin, setHeightMin] = useState(0);
   const [heightMax, setHeightMax] = useState(100);
   const [opacity, setOpacity] = useState(1);
+  const mat = () => loader?.getPointCloud() ? loader.getPointCloud().material : null;
   useEffect(() => {
-    if (!open || !loader) return;
-    const pc = loader.getPointCloud();
-    if (!pc) return;
-    const mat = pc.material;
-    if (!mat) return;
-    setRgbGamma(mat.uniforms?.rgbGamma?.value ?? mat.rgbGamma ?? 1);
-    setRgbBrightness(mat.uniforms?.rgbBrightness?.value ?? mat.rgbBrightness ?? 0);
-    setRgbContrast(mat.uniforms?.rgbContrast?.value ?? mat.rgbContrast ?? 0);
-    setIntensityGamma(mat.uniforms?.intensityGamma?.value ?? mat.intensityGamma ?? 1);
-    setIntensityBrightness(mat.uniforms?.intensityBrightness?.value ?? mat.intensityBrightness ?? 0);
-    setIntensityContrast(mat.uniforms?.intensityContrast?.value ?? mat.intensityContrast ?? 0);
-    setOpacity(mat.opacity ?? 1);
-    const wb2 = loader.worldBox;
-    if (wb2 && !wb2.isEmpty()) {
-      setHeightMin(mat.uniforms?.heightMin?.value ?? mat.heightMin ?? wb2.min.z);
-      setHeightMax(mat.uniforms?.heightMax?.value ?? mat.heightMax ?? wb2.max.z);
-    }
-    const ir = mat.uniforms?.intensityRange?.value ?? mat.intensityRange;
+    if (!open) return;
+    const m = mat();
+    if (!m) return;
+    const u = m.uniforms ?? {};
+    setRgbGamma(u.rgbGamma?.value ?? 1);
+    setRgbBrightness(u.rgbBrightness?.value ?? 0);
+    setRgbContrast(u.rgbContrast?.value ?? 0);
+    setIntensityGamma(u.intensityGamma?.value ?? 1);
+    setIntensityBrightness(u.intensityBrightness?.value ?? 0);
+    setIntensityContrast(u.intensityContrast?.value ?? 0);
+    setOpacity(m.opacity ?? 1);
+    const ir = u.intensityRange?.value;
     if (ir) setIntensityRange([ir[0] ?? 0, ir[1] ?? 65535]);
+    const er = u.elevationRange?.value;
+    const wb2 = loader?.worldBox;
+    if (er) setHeightMin(er[0]), setHeightMax(er[1]);
+    else if (wb2 && !wb2.isEmpty()) setHeightMin(wb2.min.z), setHeightMax(wb2.max.z);
   }, [open, loader]);
-  const apply = (setter, prop, value) => {
+  const setUniform = (setter, name, value) => {
     setter(value);
-    if (!loader) return;
-    const pc = loader.getPointCloud();
-    if (!pc) return;
-    const mat = pc.material;
-    if (!mat) return;
-    mat[prop] = value;
-    mat.needsUpdate = true;
+    const m = mat();
+    if (m?.uniforms?.[name]) m.uniforms[name].value = value;
   };
-  const applyIntensityRange = (min, max) => {
+  const setElevation = (min, max) => {
+    setHeightMin(min);
+    setHeightMax(max);
+    const m = mat();
+    if (m) m.elevationRange = [min, max];
+  };
+  const setIntensity = (min, max) => {
     setIntensityRange([min, max]);
-    if (!loader) return;
-    const pc = loader.getPointCloud();
-    if (!pc) return;
-    const mat = pc.material;
-    if (!mat) return;
-    mat.intensityRange = [min, max];
-    mat.needsUpdate = true;
+    const m = mat();
+    if (m?.uniforms?.intensityRange) m.uniforms.intensityRange.value = [min, max];
+  };
+  const setOpacityVal = (v) => {
+    setOpacity(v);
+    const m = mat();
+    if (m) {
+      m.opacity = v;
+      m.transparent = v < 1;
+      m.needsUpdate = true;
+    }
   };
   if (!open) return null;
   const wb = loader?.worldBox;
   const zMin = wb && !wb.isEmpty() ? wb.min.z : -100;
   const zMax = wb && !wb.isEmpty() ? wb.max.z : 100;
-  const zRange = zMax - zMin;
+  const zRange = Math.max(1, zMax - zMin);
   return /* @__PURE__ */ jsxs(
     "div",
     {
-      className: "absolute top-12 left-12 z-50 w-80 max-h-[calc(100vh-6rem)] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl",
+      className: "absolute top-3 left-3 z-50 w-72 max-h-[calc(100vh-4rem)] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl",
       style: { transform: `translate(${position.x}px, ${position.y}px)` },
       children: [
         /* @__PURE__ */ jsxs(
@@ -15325,8 +15371,8 @@ function RenderingSettings({ open, onClose }) {
             onMouseDown: onDragStart,
             children: [
               /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
-                /* @__PURE__ */ jsx(Sliders, { size: 14, className: "text-[hsl(var(--brand))]" }),
-                /* @__PURE__ */ jsx("span", { className: "text-xs font-semibold", children: t.title })
+                /* @__PURE__ */ jsx(SlidersHorizontal, { size: 14, className: "text-[hsl(var(--brand))]" }),
+                /* @__PURE__ */ jsx("span", { className: "text-xs font-semibold", children: "Settings" })
               ] }),
               /* @__PURE__ */ jsx(
                 "button",
@@ -15341,6 +15387,58 @@ function RenderingSettings({ open, onClose }) {
           }
         ),
         /* @__PURE__ */ jsxs("div", { className: "p-3 space-y-4 text-xs", children: [
+          /* @__PURE__ */ jsxs(Section, { title: "Display", children: [
+            /* @__PURE__ */ jsx("div", { className: "grid grid-cols-2 gap-1", children: COLOR_MODES2.map((cm) => /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => {
+                  setColorMode(cm.value);
+                  loader?.setColorMode(cm.value);
+                },
+                className: colorMode === cm.value ? "text-[10px] py-1 px-2 rounded bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-[10px] py-1 px-2 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                children: cm.label
+              },
+              cm.value
+            )) }),
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: "Point size",
+                value: pointSize,
+                min: 0.2,
+                max: 5,
+                step: 0.1,
+                onChange: (v) => {
+                  setPointSize(v);
+                  loader?.setPointSize(v);
+                }
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: "Budget",
+                value: pointBudget,
+                min: 2e5,
+                max: 1e7,
+                step: 1e5,
+                onChange: (v) => {
+                  setPointBudget(v);
+                  loader?.setPointBudget(v);
+                },
+                display: (v) => (v / 1e6).toFixed(1) + "M"
+              }
+            ),
+            /* @__PURE__ */ jsx("div", { className: "flex items-center gap-1 pt-0.5", children: QUALITY.map((q) => /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => setQualityPreset(q.value),
+                className: "flex-1 text-[10px] py-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                children: q.label
+              },
+              q.value
+            )) })
+          ] }),
           /* @__PURE__ */ jsxs(Section, { title: t.rgbSection, children: [
             /* @__PURE__ */ jsx(
               Slider,
@@ -15350,7 +15448,7 @@ function RenderingSettings({ open, onClose }) {
                 min: 0.1,
                 max: 4,
                 step: 0.05,
-                onChange: (v) => apply(setRgbGamma, "rgbGamma", v)
+                onChange: (v) => setUniform(setRgbGamma, "rgbGamma", v)
               }
             ),
             /* @__PURE__ */ jsx(
@@ -15361,7 +15459,7 @@ function RenderingSettings({ open, onClose }) {
                 min: -1,
                 max: 1,
                 step: 0.02,
-                onChange: (v) => apply(setRgbBrightness, "rgbBrightness", v)
+                onChange: (v) => setUniform(setRgbBrightness, "rgbBrightness", v)
               }
             ),
             /* @__PURE__ */ jsx(
@@ -15372,7 +15470,7 @@ function RenderingSettings({ open, onClose }) {
                 min: -1,
                 max: 1,
                 step: 0.02,
-                onChange: (v) => apply(setRgbContrast, "rgbContrast", v)
+                onChange: (v) => setUniform(setRgbContrast, "rgbContrast", v)
               }
             )
           ] }),
@@ -15385,7 +15483,7 @@ function RenderingSettings({ open, onClose }) {
                 min: 0.1,
                 max: 4,
                 step: 0.05,
-                onChange: (v) => apply(setIntensityGamma, "intensityGamma", v)
+                onChange: (v) => setUniform(setIntensityGamma, "intensityGamma", v)
               }
             ),
             /* @__PURE__ */ jsx(
@@ -15396,7 +15494,7 @@ function RenderingSettings({ open, onClose }) {
                 min: -1,
                 max: 1,
                 step: 0.02,
-                onChange: (v) => apply(setIntensityBrightness, "intensityBrightness", v)
+                onChange: (v) => setUniform(setIntensityBrightness, "intensityBrightness", v)
               }
             ),
             /* @__PURE__ */ jsx(
@@ -15407,7 +15505,7 @@ function RenderingSettings({ open, onClose }) {
                 min: -1,
                 max: 1,
                 step: 0.02,
-                onChange: (v) => apply(setIntensityContrast, "intensityContrast", v)
+                onChange: (v) => setUniform(setIntensityContrast, "intensityContrast", v)
               }
             ),
             /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
@@ -15419,7 +15517,7 @@ function RenderingSettings({ open, onClose }) {
                   value: intensityRange[0],
                   min: 0,
                   max: 65535,
-                  onChange: (e) => applyIntensityRange(Number(e.target.value), intensityRange[1]),
+                  onChange: (e) => setIntensity(Number(e.target.value), intensityRange[1]),
                   className: "w-16 bg-muted/40 border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] font-mono"
                 }
               ),
@@ -15431,7 +15529,7 @@ function RenderingSettings({ open, onClose }) {
                   value: intensityRange[1],
                   min: 0,
                   max: 65535,
-                  onChange: (e) => applyIntensityRange(intensityRange[0], Number(e.target.value)),
+                  onChange: (e) => setIntensity(intensityRange[0], Number(e.target.value)),
                   className: "w-16 bg-muted/40 border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] font-mono"
                 }
               )
@@ -15446,7 +15544,7 @@ function RenderingSettings({ open, onClose }) {
                 min: zMin - zRange * 0.1,
                 max: zMax + zRange * 0.1,
                 step: zRange / 200,
-                onChange: (v) => apply(setHeightMin, "heightMin", v),
+                onChange: (v) => setElevation(v, heightMax),
                 display: (v) => v.toFixed(1) + "m"
               }
             ),
@@ -15458,7 +15556,7 @@ function RenderingSettings({ open, onClose }) {
                 min: zMin - zRange * 0.1,
                 max: zMax + zRange * 0.1,
                 step: zRange / 200,
-                onChange: (v) => apply(setHeightMax, "heightMax", v),
+                onChange: (v) => setElevation(heightMin, v),
                 display: (v) => v.toFixed(1) + "m"
               }
             )
@@ -15471,30 +15569,20 @@ function RenderingSettings({ open, onClose }) {
               min: 0,
               max: 1,
               step: 0.02,
-              onChange: (v) => apply(setOpacity, "opacity", v)
+              onChange: setOpacityVal
             }
           ) }),
-          /* @__PURE__ */ jsx(
+          /* @__PURE__ */ jsx(Section, { title: "Theme", children: /* @__PURE__ */ jsxs(
             "button",
             {
-              onClick: () => {
-                apply(setRgbGamma, "rgbGamma", 1);
-                apply(setRgbBrightness, "rgbBrightness", 0);
-                apply(setRgbContrast, "rgbContrast", 0);
-                apply(setIntensityGamma, "intensityGamma", 1);
-                apply(setIntensityBrightness, "intensityBrightness", 0);
-                apply(setIntensityContrast, "intensityContrast", 0);
-                apply(setOpacity, "opacity", 1);
-                if (wb && !wb.isEmpty()) {
-                  apply(setHeightMin, "heightMin", wb.min.z);
-                  apply(setHeightMax, "heightMax", wb.max.z);
-                }
-                applyIntensityRange(0, 65535);
-              },
-              className: "w-full py-1.5 text-center rounded bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors text-[10px] font-mono",
-              children: t.reset
+              onClick: toggleTheme,
+              className: "w-full flex items-center gap-2 px-2 py-1.5 rounded bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors",
+              children: [
+                resolvedTheme === "dark" ? /* @__PURE__ */ jsx(Sun, { size: 13 }) : /* @__PURE__ */ jsx(Moon, { size: 13 }),
+                /* @__PURE__ */ jsx("span", { className: "text-[11px]", children: resolvedTheme === "dark" ? "Switch to light" : "Switch to dark" })
+              ]
             }
-          )
+          ) })
         ] })
       ]
     }
@@ -15524,87 +15612,6 @@ function Slider({ label, value, min, max, step, onChange, display }) {
     /* @__PURE__ */ jsx("span", { className: "w-12 text-right font-mono text-[10px] tabular-nums", children: display ? display(value) : value.toFixed(2) })
   ] });
 }
-
-// src/components/overlays/quick-settings-popover.tsx
-init_utils();
-init_viewer_provider();
-
-// src/version.ts
-var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "474b95b \xB7 2026-06-29 15:44Z" ;
-var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
-var COLOR_MODES2 = [
-  { value: "rgb", label: "RGB" },
-  { value: "height", label: "Elevation" },
-  { value: "intensity", label: "Intensity" },
-  { value: "classification", label: "Classification" }
-];
-function QuickSettingsPopover({ onClose: _onClose }) {
-  const {
-    colorMode,
-    setColorMode,
-    pointSize,
-    setPointSize,
-    loader
-  } = useViewer();
-  return /* @__PURE__ */ jsx("div", { className: "absolute top-16 right-3 z-40", children: /* @__PURE__ */ jsxs(
-    "div",
-    {
-      className: cn(
-        "w-56 p-3 space-y-3",
-        "backdrop-blur-xl bg-black/30 dark:bg-black/40",
-        "border border-white/15 dark:border-white/10",
-        "rounded-xl shadow-2xl shadow-black/20"
-      ),
-      children: [
-        /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Display Settings" }),
-        /* @__PURE__ */ jsxs("div", { className: "space-y-1.5", children: [
-          /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Color" }),
-          /* @__PURE__ */ jsx("div", { className: "grid grid-cols-2 gap-1", children: COLOR_MODES2.map((cm) => /* @__PURE__ */ jsx(
-            "button",
-            {
-              onClick: () => {
-                setColorMode(cm.value);
-                loader?.setColorMode(cm.value);
-              },
-              className: cn(
-                "text-[10px] py-1 px-2 rounded-lg transition-colors",
-                colorMode === cm.value ? "bg-[hsl(var(--brand)/0.25)] text-[hsl(var(--brand))]" : "text-white/60 hover:text-white hover:bg-white/10"
-              ),
-              children: cm.label
-            },
-            cm.value
-          )) })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "space-y-1.5", children: [
-          /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Point Size" }),
-          /* @__PURE__ */ jsx("div", { className: "px-1", children: /* @__PURE__ */ jsx(
-            "input",
-            {
-              type: "range",
-              min: 0.5,
-              max: 5,
-              step: 0.1,
-              value: pointSize,
-              onChange: (e) => {
-                const v = parseFloat(e.target.value);
-                setPointSize(v);
-                loader?.setPointSize(v);
-              },
-              className: "pcv-slider w-full"
-            }
-          ) })
-        ] }),
-        /* @__PURE__ */ jsx("div", { className: "border-t border-white/10 pt-2 px-1", children: /* @__PURE__ */ jsxs("p", { className: "text-[9px] font-mono text-white/35 leading-tight", title: "Viewer version \xB7 build", children: [
-          "v",
-          PCV_VERSION,
-          " \xB7 ",
-          PCV_BUILD
-        ] }) })
-      ]
-    }
-  ) });
-}
 var chromeScale = { zoom: "var(--pcv-scale, 1)" };
 var Viewport2 = lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
 function ViewportFallback() {
@@ -15631,7 +15638,6 @@ function GlassCard({ children, className }) {
 function WorkspaceLayout({ className }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
-  const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
   const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
   const { metadata } = useData();
   const t = useLocale().viewport;
@@ -15651,14 +15657,11 @@ function WorkspaceLayout({ className }) {
         /* @__PURE__ */ jsx("div", { className: "absolute inset-0", children: /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsx(Viewport2, {}) }) }),
         selectedCamera && /* @__PURE__ */ jsx(PanoViewer, {}),
         /* @__PURE__ */ jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) }),
-        isPro && quickSettingsOpen && /* @__PURE__ */ jsx(QuickSettingsPopover, { onClose: () => setQuickSettingsOpen(false) }),
         /* @__PURE__ */ jsx("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(
           MainToolbar,
           {
             onToggleRenderSettings: isPro ? () => setRenderSettingsOpen((o) => !o) : void 0,
-            renderSettingsOpen,
-            onToggleQuickSettings: isPro ? () => setQuickSettingsOpen((o) => !o) : void 0,
-            quickSettingsOpen
+            renderSettingsOpen
           }
         ) }) }),
         /* @__PURE__ */ jsx("div", { className: "absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsx(ToolRail, {}) }) }),
@@ -15730,7 +15733,7 @@ var buttonVariants = cva(
     }
   }
 );
-var Button = React25.forwardRef(
+var Button = React26.forwardRef(
   ({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
     "button",
     {
@@ -15744,7 +15747,7 @@ Button.displayName = "Button";
 
 // src/ui/slider.tsx
 init_utils();
-var Slider2 = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxs(
+var Slider2 = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxs(
   SliderPrimitive.Root,
   {
     ref,
@@ -15766,7 +15769,7 @@ init_utils();
 var Dialog = DialogPrimitive.Root;
 var DialogTrigger = DialogPrimitive.Trigger;
 var DialogPortal = DialogPrimitive.Portal;
-var DialogOverlay = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogOverlay = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Overlay,
   {
     ref,
@@ -15775,7 +15778,7 @@ var DialogOverlay = React25.forwardRef(({ className, ...props }, ref) => /* @__P
   }
 ));
 DialogOverlay.displayName = "DialogOverlay";
-var DialogContent = React25.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
+var DialogContent = React26.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
   const dx = dragOffset?.x ?? 0;
   const dy = dragOffset?.y ?? 0;
   return /* @__PURE__ */ jsxs(DialogPortal, { container: container ?? void 0, children: [
@@ -15813,7 +15816,7 @@ var DialogHeader = ({
   }
 );
 DialogHeader.displayName = "DialogHeader";
-var DialogTitle = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogTitle = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Title,
   {
     ref,
@@ -15822,7 +15825,7 @@ var DialogTitle = React25.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 DialogTitle.displayName = "DialogTitle";
-var DialogClose = React25.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogClose = React26.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Close,
   {
     ref,
@@ -15839,7 +15842,7 @@ DialogClose.displayName = "DialogClose";
 // src/ui/tabs.tsx
 init_utils();
 var Tabs = TabsPrimitive.Root;
-var TabsList = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsList = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.List,
   {
     ref,
@@ -15851,7 +15854,7 @@ var TabsList = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__
   }
 ));
 TabsList.displayName = "TabsList";
-var TabsTrigger = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsTrigger = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.Trigger,
   {
     ref,
@@ -15866,7 +15869,7 @@ var TabsTrigger = React25.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 TabsTrigger.displayName = "TabsTrigger";
-var TabsContent = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsContent = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.Content,
   {
     ref,
@@ -15884,7 +15887,7 @@ init_utils();
 var Popover = PopoverPrimitive.Root;
 var PopoverTrigger = PopoverPrimitive.Trigger;
 var PopoverAnchor = PopoverPrimitive.Anchor;
-var PopoverContent = React25.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(PopoverPrimitive.Portal, { children: /* @__PURE__ */ jsx(
+var PopoverContent = React26.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(PopoverPrimitive.Portal, { children: /* @__PURE__ */ jsx(
   PopoverPrimitive.Content,
   {
     ref,
@@ -15909,7 +15912,7 @@ init_utils();
 var TooltipProvider = TooltipPrimitive.Provider;
 var Tooltip = TooltipPrimitive.Root;
 var TooltipTrigger = TooltipPrimitive.Trigger;
-var TooltipContent = React25.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(TooltipPrimitive.Portal, { children: /* @__PURE__ */ jsx(
+var TooltipContent = React26.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(TooltipPrimitive.Portal, { children: /* @__PURE__ */ jsx(
   TooltipPrimitive.Content,
   {
     ref,
@@ -15949,7 +15952,7 @@ var toggleVariants = cva(
     }
   }
 );
-var Toggle = React25.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
+var Toggle = React26.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
   TogglePrimitive.Root,
   {
     ref,
@@ -15964,7 +15967,7 @@ init_utils();
 var Select = SelectPrimitive.Root;
 var SelectGroup = SelectPrimitive.Group;
 var SelectValue = SelectPrimitive.Value;
-var SelectTrigger = React25.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+var SelectTrigger = React26.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
   SelectPrimitive.Trigger,
   {
     ref,
@@ -15984,7 +15987,7 @@ var SelectTrigger = React25.forwardRef(({ className, children, ...props }, ref) 
   }
 ));
 SelectTrigger.displayName = "SelectTrigger";
-var SelectScrollUpButton = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectScrollUpButton = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.ScrollUpButton,
   {
     ref,
@@ -15997,7 +16000,7 @@ var SelectScrollUpButton = React25.forwardRef(({ className, ...props }, ref) => 
   }
 ));
 SelectScrollUpButton.displayName = "SelectScrollUpButton";
-var SelectScrollDownButton = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectScrollDownButton = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.ScrollDownButton,
   {
     ref,
@@ -16010,7 +16013,7 @@ var SelectScrollDownButton = React25.forwardRef(({ className, ...props }, ref) =
   }
 ));
 SelectScrollDownButton.displayName = "SelectScrollDownButton";
-var SelectContent = React25.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Portal, { children: /* @__PURE__ */ jsxs(
+var SelectContent = React26.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Portal, { children: /* @__PURE__ */ jsxs(
   SelectPrimitive.Content,
   {
     ref,
@@ -16043,7 +16046,7 @@ var SelectContent = React25.forwardRef(({ className, children, position = "poppe
   }
 ) }));
 SelectContent.displayName = "SelectContent";
-var SelectLabel = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectLabel = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.Label,
   {
     ref,
@@ -16055,7 +16058,7 @@ var SelectLabel = React25.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 SelectLabel.displayName = "SelectLabel";
-var SelectItem = React25.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+var SelectItem = React26.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
   SelectPrimitive.Item,
   {
     ref,
@@ -16073,7 +16076,7 @@ var SelectItem = React25.forwardRef(({ className, children, ...props }, ref) => 
   }
 ));
 SelectItem.displayName = "SelectItem";
-var SelectSeparator = React25.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectSeparator = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.Separator,
   {
     ref,
@@ -16172,6 +16175,11 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
     /* @__PURE__ */ jsx(PanoOverlayBridge, {})
   ] }) : /* @__PURE__ */ jsx(WorkspaceLayout, {}) }) }) }) }) }) });
 }
+
+// src/version.ts
+var PCV_VERSION = "0.2.0" ;
+var PCV_BUILD = "638bc2e \xB7 2026-06-29 16:19Z" ;
+var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
 init_viewer_provider();
@@ -17327,38 +17335,6 @@ function useMeasurementActions() {
     remove,
     rename: rename2,
     exportCSV
-  };
-}
-
-// src/hooks/use-display-actions.ts
-init_viewer_provider();
-function useDisplayActions() {
-  const { loader, colorMode, setColorMode, pointBudget, setPointBudget, pointSize, setPointSize } = useViewer();
-  const setQualityPreset = useCallback((preset) => {
-    if (!loader) return;
-    switch (preset) {
-      case "performance":
-        loader.setPointShape(0);
-        loader.setPointSizeType(0);
-        break;
-      case "balanced":
-        loader.setPointShape(1);
-        loader.setPointSizeType(2);
-        break;
-      case "high":
-        loader.setPointShape(2);
-        loader.setPointSizeType(2);
-        break;
-    }
-  }, [loader]);
-  return {
-    colorMode,
-    setColorMode,
-    pointBudget,
-    setPointBudget,
-    pointSize,
-    setPointSize,
-    setQualityPreset
   };
 }
 

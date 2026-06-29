@@ -12,7 +12,6 @@ import { ClipToolbar } from "./toolbar/clip-toolbar";
 import { Sidebar } from "./sidebar/sidebar";
 import { PanoViewer } from "./overlays/pano-viewer";
 import { RenderingSettings } from "./overlays/rendering-settings";
-import { QuickSettingsPopover } from "./overlays/quick-settings-popover";
 
 /**
  * Inline style that scales UI chrome via the `--pcv-scale` CSS custom property
@@ -62,7 +61,6 @@ interface WorkspaceLayoutProps {
 export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
-  const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
 
   const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
   const { metadata } = useData();
@@ -94,13 +92,8 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       {/* ── Pano viewer overlay ─────────────────────────────────────────── */}
       {selectedCamera && <PanoViewer />}
 
-      {/* ── Rendering settings panel overlay ────────────────────────────── */}
+      {/* ── Unified Settings panel (top-left) ───────────────────────────── */}
       <RenderingSettings open={renderSettingsOpen} onClose={() => setRenderSettingsOpen(false)} />
-
-      {/* ── Quick settings popover (Pro, simple) ────────────────────────── */}
-      {isPro && quickSettingsOpen && (
-        <QuickSettingsPopover onClose={() => setQuickSettingsOpen(false)} />
-      )}
 
       {/* ── Top floating toolbar ────────────────────────────────────────── */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={chromeScale}>
@@ -108,8 +101,6 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
           <MainToolbar
             onToggleRenderSettings={isPro ? () => setRenderSettingsOpen(o => !o) : undefined}
             renderSettingsOpen={renderSettingsOpen}
-            onToggleQuickSettings={isPro ? () => setQuickSettingsOpen(o => !o) : undefined}
-            quickSettingsOpen={quickSettingsOpen}
           />
         </GlassCard>
       </div>

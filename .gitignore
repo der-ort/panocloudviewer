@@ -28,3 +28,6 @@ docs/.vitepress/cache/
 
 # Local input data (E57 scans, raw point clouds, conversion inputs) — never commit
 input_files/
+# Local point-cloud datasets dropped into the demo for verification — never commit
+apps/web/public/hahnensteig/
+apps/*/public/_local/

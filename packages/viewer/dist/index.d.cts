@@ -123,6 +123,11 @@ interface BasemapConfig {
     /** Highest zoom level to request (Carto raster ≈ 20). Default 20. */
     maxZoom?: number;
     /**
+     * Extra map context to show AROUND the cloud footprint, in meters per side.
+     * Larger = more surrounding area (at a slightly lower zoom). Default 250.
+     */
+    contextMeters?: number;
+    /**
      * **CRS mode** — for a cloud whose rendered coordinates are a projected CRS
      * (e.g. converted from a georeferenced LAS, so its `offset` is large). Supply
      * the CRS as a proj4 definition string, or a shortcut `"EPSG:4839"` /
@@ -1516,13 +1521,10 @@ interface ToolbarSectionProps {
 declare function ToolbarSection({ label, children, className }: ToolbarSectionProps): react_jsx_runtime.JSX.Element;
 
 interface MainToolbarProps {
-    onOpenCloudSelector?: () => void;
     onToggleRenderSettings?: () => void;
-    onToggleQuickSettings?: () => void;
     renderSettingsOpen?: boolean;
-    quickSettingsOpen?: boolean;
 }
-declare function MainToolbar({ onOpenCloudSelector, onToggleRenderSettings, onToggleQuickSettings, renderSettingsOpen, quickSettingsOpen }: MainToolbarProps): react_jsx_runtime.JSX.Element;
+declare function MainToolbar({ onToggleRenderSettings, renderSettingsOpen }: MainToolbarProps): react_jsx_runtime.JSX.Element;
 interface ToolbarIconBtnProps {
     icon: React.ReactNode;
     label?: string;
@@ -1557,6 +1559,12 @@ interface RenderingSettingsProps {
     open: boolean;
     onClose: () => void;
 }
+/**
+ * Unified Settings panel (top-left) — display + appearance + theme in one place.
+ * Replaces the separate quick-settings popover and rendering-settings modal.
+ * Appearance sliders write to the potree-core material **uniforms** (the shader
+ * reads `uniforms.*.value`; writing `mat.rgbGamma` was a no-op).
+ */
 declare function RenderingSettings({ open, onClose }: RenderingSettingsProps): react_jsx_runtime.JSX.Element | null;
 
 interface DisplaySettingsDialogProps {

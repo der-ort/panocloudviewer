@@ -153,6 +153,11 @@ export interface BasemapConfig {
   /** Highest zoom level to request (Carto raster ≈ 20). Default 20. */
   maxZoom?: number;
   /**
+   * Extra map context to show AROUND the cloud footprint, in meters per side.
+   * Larger = more surrounding area (at a slightly lower zoom). Default 250.
+   */
+  contextMeters?: number;
+  /**
    * **CRS mode** — for a cloud whose rendered coordinates are a projected CRS
    * (e.g. converted from a georeferenced LAS, so its `offset` is large). Supply
    * the CRS as a proj4 definition string, or a shortcut `"EPSG:4839"` /

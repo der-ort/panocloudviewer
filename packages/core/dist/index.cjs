@@ -1756,8 +1756,14 @@ var TileBasemapManager = class {
     const tileUrl = cfg.tileUrl ?? DEFAULT_TILE_URL;
     const maxZoom = cfg.maxZoom ?? 20;
     const groundZ = cfg.georeference?.groundZ ?? worldBox.min.z;
+    const ctx = cfg.contextMeters ?? 250;
+    const padBox = worldBox.clone();
+    padBox.min.x -= ctx;
+    padBox.min.y -= ctx;
+    padBox.max.x += ctx;
+    padBox.max.y += ctx;
     let latMin = 90, latMax = -90, lonMin = 180, lonMax = -180;
-    for (const [x, y] of cornersXY(worldBox)) {
+    for (const [x, y] of cornersXY(padBox)) {
       const [lon, lat] = toGeo.forward([x, y]);
       latMin = Math.min(latMin, lat);
       latMax = Math.max(latMax, lat);
@@ -1765,14 +1771,14 @@ var TileBasemapManager = class {
       lonMax = Math.max(lonMax, lon);
     }
     const size = new THREE5__namespace.Vector3();
-    worldBox.getSize(size);
+    padBox.getSize(size);
     const cosLat = Math.cos((latMin + latMax) / 2 * Math.PI / 180);
-    const targetTileM = Math.min(Math.max(Math.max(size.x, size.y), 20), 400);
+    const targetTileM = Math.min(Math.max(Math.max(size.x, size.y), 20), 600);
     let z = Math.round(Math.log2(EARTH_CIRC * cosLat / targetTileM));
     z = Math.max(1, Math.min(maxZoom, z));
     const xMin = lonToTileX(lonMin, z), xMax = lonToTileX(lonMax, z);
     const yMin = latToTileY(latMax, z), yMax = latToTileY(latMin, z);
-    if ((xMax - xMin + 1) * (yMax - yMin + 1) > 64) return;
+    if ((xMax - xMin + 1) * (yMax - yMin + 1) > 200) return;
     for (let tx = xMin; tx <= xMax; tx++) {
       for (let ty = yMin; ty <= yMax; ty++) {
         const nw = toProj.forward([tileXToLon(tx, z), tileYToLat(ty, z)]);
@@ -1794,9 +1800,15 @@ var TileBasemapManager = class {
     const rot = (geo.rotationDeg ?? 0) * Math.PI / 180;
     const groundZ = geo.groundZ ?? worldBox.min.z;
     const cosLat = Math.cos(geo.lat * Math.PI / 180);
+    const ctx = (cfg.contextMeters ?? 250) / mpu;
+    const padBox = worldBox.clone();
+    padBox.min.x -= ctx;
+    padBox.min.y -= ctx;
+    padBox.max.x += ctx;
+    padBox.max.y += ctx;
     const size = new THREE5__namespace.Vector3();
-    worldBox.getSize(size);
-    const targetTileM = Math.min(Math.max(Math.max(size.x, size.y) * mpu, 20), 400);
+    padBox.getSize(size);
+    const targetTileM = Math.min(Math.max(Math.max(size.x, size.y) * mpu, 20), 600);
     let z = Math.round(Math.log2(EARTH_CIRC * cosLat / targetTileM));
     z = Math.max(1, Math.min(maxZoom, z));
     const toEN = (x, y) => ({
@@ -1808,7 +1820,7 @@ var TileBasemapManager = class {
       lon: geo.lon + east / (EARTH_RADIUS * cosLat) * 180 / Math.PI
     });
     let latMin = 90, latMax = -90, lonMin = 180, lonMax = -180;
-    for (const [cx, cy] of cornersXY(worldBox)) {
+    for (const [cx, cy] of cornersXY(padBox)) {
       const { east, north } = toEN(cx, cy);
       const g = enToGeo(east, north);
       latMin = Math.min(latMin, g.lat);
@@ -1818,7 +1830,7 @@ var TileBasemapManager = class {
     }
     const xMin = lonToTileX(lonMin, z), xMax = lonToTileX(lonMax, z);
     const yMin = latToTileY(latMax, z), yMax = latToTileY(latMin, z);
-    if ((xMax - xMin + 1) * (yMax - yMin + 1) > 64) return;
+    if ((xMax - xMin + 1) * (yMax - yMin + 1) > 200) return;
     const deg2rad = Math.PI / 180;
     const geoToEnu = (lat, lon) => ({
       east: (lon - geo.lon) * deg2rad * EARTH_RADIUS * cosLat,
