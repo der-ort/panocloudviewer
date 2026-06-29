@@ -56,9 +56,6 @@ var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
-function easeOutQuart(t) {
-  return 1 - Math.pow(1 - t, 4);
-}
 function formatLength(meters) {
   return `${meters.toFixed(2)} m`;
 }
@@ -150,12 +147,13 @@ function genId() {
 function genSceneId() {
   return `scene_${Date.now()}_${_nextId2++}`;
 }
-function captureScene(name, cameraPos, cameraTarget, clipBoxes, colorMode, pointSize, pointBudget) {
+function captureScene(name, cameraPos, cameraTarget, clipBoxes, colorMode, pointSize, pointBudget, cameraUp = { x: 0, y: 0, z: 1 }) {
   return {
     name,
     camera: {
       position: [cameraPos.x, cameraPos.y, cameraPos.z],
-      target: [cameraTarget.x, cameraTarget.y, cameraTarget.z]
+      target: [cameraTarget.x, cameraTarget.y, cameraTarget.z],
+      up: [cameraUp.x, cameraUp.y, cameraUp.z]
     },
     clipBoxes: clipBoxes.map((b) => ({
       name: b.name,
@@ -179,7 +177,7 @@ function createAdapter(source) {
       return new exports.S3SourceAdapter(source.basePath);
   }
 }
-exports.SceneManager = void 0; exports.PointCloudLoader = void 0; exports.CameraAnimator = void 0; exports.DISPLAY_PRESETS = void 0; var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE; exports.MarkerManager = void 0; var _idCounter, COLORS; exports.MeasurementManager = void 0; var VIEW_DIRECTIONS; exports.ExportManager = void 0; exports.MinimapRenderer = void 0; var AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId; exports.ClipManager = void 0; exports.AxisWidget = void 0; var MAX_SCENES, _nextId2; exports.PresentationManager = void 0; exports.S3SourceAdapter = void 0; exports.ElectronSourceAdapter = void 0;
+exports.SceneManager = void 0; exports.PointCloudLoader = void 0; var EASINGS; exports.CameraAnimator = void 0; exports.DISPLAY_PRESETS = void 0; var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE; exports.MarkerManager = void 0; var _idCounter, COLORS; exports.MeasurementManager = void 0; var VIEW_DIRECTIONS; exports.ExportManager = void 0; exports.MinimapRenderer = void 0; var AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId; exports.ClipManager = void 0; exports.AxisWidget = void 0; var MAX_SCENES, _nextId2; exports.PresentationManager = void 0; exports.S3SourceAdapter = void 0; exports.ElectronSourceAdapter = void 0;
 var init_dist = __esm({
   "../core/dist/index.js"() {
     exports.SceneManager = class {
@@ -651,6 +649,12 @@ var init_dist = __esm({
         return Math.min(Math.max(Math.round(raw / 1e5) * 1e5, 5e5), 1e7);
       }
     };
+    EASINGS = {
+      smooth: (t) => 1 - Math.pow(1 - t, 4),
+      // quartic ease-out (default)
+      linear: (t) => t,
+      easeInOut: (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
+    };
     exports.CameraAnimator = class {
       camera;
       controls;
@@ -659,21 +663,27 @@ var init_dist = __esm({
         this.camera = camera;
         this.controls = controls;
       }
-      flyTo({ position, target, duration = 800 }) {
+      flyTo({ position, target, up, duration = 800, easing = "smooth" }) {
         return new Promise((resolve) => {
           if (this.animId !== null) cancelAnimationFrame(this.animId);
           const startPos = this.camera.position.clone();
           const startTarget = this.controls.target.clone();
+          const startUp = this.camera.up.clone();
+          const endUp = up ? up.clone().normalize() : null;
+          const ease = EASINGS[easing] ?? EASINGS.smooth;
           const startTime = performance.now();
           const animate = (now) => {
             const t = Math.min((now - startTime) / duration, 1);
-            const e = easeOutQuart(t);
+            const e = ease(t);
             this.camera.position.lerpVectors(startPos, position, e);
             this.controls.target.lerpVectors(startTarget, target, e);
+            if (endUp) this.camera.up.copy(startUp).lerp(endUp, e).normalize();
             this.controls.update();
             if (t < 1) {
               this.animId = requestAnimationFrame(animate);
             } else {
+              if (endUp) this.camera.up.copy(endUp);
+              this.controls.update();
               this.animId = null;
               resolve();
             }
@@ -5179,6 +5189,7 @@ function MeasurementsPanel() {
 }
 
 // src/components/sidebar/scenes-panel.tsx
+init_utils();
 init_viewer_provider();
 init_locale_context();
 init_dist();
@@ -5244,6 +5255,14 @@ function ScenesPanel() {
   const [newName, setNewName] = React26.useState("");
   const pmRef = React26.useRef(null);
   const fileInputRef = React26.useRef(null);
+  const [showAnim, setShowAnim] = React26.useState(false);
+  const [flySec, setFlySec] = React26.useState(2);
+  const [staySec, setStaySec] = React26.useState(1);
+  const [easing, setEasing] = React26.useState("smooth");
+  const [loop, setLoop] = React26.useState(false);
+  const [playing, setPlaying] = React26.useState(false);
+  const stopRef = React26.useRef(false);
+  const dwellTimer = React26.useRef(null);
   React26.useEffect(() => {
     const key = config.source.type === "s3" ? config.source.baseUrl : config.source.type === "electron" ? config.source.basePath : "local";
     const pm = new exports.PresentationManager(key);
@@ -5251,6 +5270,11 @@ function ScenesPanel() {
     pmRef.current = pm;
     setScenes(pm.getScenes());
   }, [config.source]);
+  React26.useEffect(() => () => {
+    stopRef.current = true;
+    if (dwellTimer.current != null) clearTimeout(dwellTimer.current);
+    cameraAnimator?.cancel();
+  }, [cameraAnimator]);
   const handleSave = () => {
     if (!sceneManager || !pmRef.current) return;
     const name = newName.trim() || `Scene ${scenes.length + 1}`;
@@ -5261,22 +5285,29 @@ function ScenesPanel() {
       clipBoxEntries,
       colorMode,
       pointSize,
-      pointBudget
+      pointBudget,
+      sceneManager.camera.up
     );
     pmRef.current.addScene(scene);
     setNewName("");
   };
-  const handleRestore = async (scene) => {
-    if (!sceneManager) return;
+  const flyToScene = (scene, durationMs, ease) => {
+    if (!sceneManager) return Promise.resolve();
     const pos = new THREE5__namespace.Vector3(...scene.camera.position);
     const target = new THREE5__namespace.Vector3(...scene.camera.target);
+    const up = scene.camera.up ? new THREE5__namespace.Vector3(...scene.camera.up) : new THREE5__namespace.Vector3(0, 0, 1);
     if (cameraAnimator) {
-      await cameraAnimator.flyTo({ position: pos, target, duration: 600 });
-    } else {
-      sceneManager.camera.position.copy(pos);
-      sceneManager.controls.target.copy(target);
-      sceneManager.controls.update();
+      return cameraAnimator.flyTo({ position: pos, target, up, duration: durationMs, easing: ease });
     }
+    sceneManager.camera.position.copy(pos);
+    sceneManager.controls.target.copy(target);
+    sceneManager.camera.up.copy(up);
+    sceneManager.controls.update();
+    return Promise.resolve();
+  };
+  const handleRestore = async (scene) => {
+    if (!sceneManager) return;
+    await flyToScene(scene, 600, "smooth");
     if (clipManager) {
       clipManager.clear();
       for (const cb of scene.clipBoxes) {
@@ -5324,6 +5355,75 @@ function ScenesPanel() {
     };
     reader.readAsText(file);
     e.target.value = "";
+  };
+  const sleep = (ms) => new Promise((res) => {
+    dwellTimer.current = window.setTimeout(() => {
+      dwellTimer.current = null;
+      res();
+    }, ms);
+  });
+  const runOnce = async () => {
+    for (const s of scenes) {
+      if (stopRef.current) return;
+      await flyToScene(s, flySec * 1e3, easing);
+      if (stopRef.current) return;
+      if (staySec > 0) await sleep(staySec * 1e3);
+    }
+  };
+  const play = async () => {
+    if (scenes.length < 2 || playing) return;
+    stopRef.current = false;
+    setPlaying(true);
+    try {
+      do {
+        await runOnce();
+      } while (loop && !stopRef.current);
+    } finally {
+      setPlaying(false);
+    }
+  };
+  const stop = () => {
+    stopRef.current = true;
+    if (dwellTimer.current != null) {
+      clearTimeout(dwellTimer.current);
+      dwellTimer.current = null;
+    }
+    cameraAnimator?.cancel();
+    setPlaying(false);
+  };
+  const record = async () => {
+    const canvas = sceneManager?.renderer.domElement;
+    const capture = canvas?.captureStream?.bind(canvas);
+    if (!canvas || !capture || typeof MediaRecorder === "undefined" || scenes.length < 2 || playing) {
+      if (typeof MediaRecorder === "undefined") alert("Video recording isn't supported in this browser.");
+      return;
+    }
+    const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m)) ?? "video/webm";
+    const rec = new MediaRecorder(capture(30), { mimeType: mime });
+    const chunks = [];
+    rec.ondataavailable = (e) => {
+      if (e.data.size) chunks.push(e.data);
+    };
+    const stopped = new Promise((r) => {
+      rec.onstop = () => r();
+    });
+    stopRef.current = false;
+    setPlaying(true);
+    rec.start();
+    try {
+      await runOnce();
+    } finally {
+      setPlaying(false);
+    }
+    rec.stop();
+    await stopped;
+    const blob = new Blob(chunks, { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `scene_animation_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.webm`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex flex-col h-full overflow-y-auto text-xs", children: [
     /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "p-2 border-b border-[hsl(var(--border))]", children: [
@@ -5387,7 +5487,127 @@ function ScenesPanel() {
           }
         )
       ] }, scene.id))
+    ] }),
+    /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "p-2 border-t border-[hsl(var(--border))]", children: [
+      /* @__PURE__ */ jsxRuntime.jsxs(
+        "button",
+        {
+          onClick: () => setShowAnim((o) => !o),
+          className: "flex items-center justify-between w-full text-[10px] font-semibold text-muted-foreground uppercase tracking-wide hover:text-foreground transition-colors",
+          children: [
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: "Animation" }),
+            /* @__PURE__ */ jsxRuntime.jsx(lucideReact.ChevronRight, { size: 12, className: cn("transition-transform", showAnim && "rotate-90") })
+          ]
+        }
+      ),
+      showAnim && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "mt-2 space-y-2", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs(AnimRow, { label: "Fly time", children: [
+          /* @__PURE__ */ jsxRuntime.jsx(
+            "input",
+            {
+              type: "range",
+              min: 0.3,
+              max: 8,
+              step: 0.1,
+              value: flySec,
+              onChange: (e) => setFlySec(Number(e.target.value)),
+              className: "flex-1 accent-[hsl(var(--brand))] h-1"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "w-9 text-right font-mono text-[10px]", children: [
+            flySec.toFixed(1),
+            "s"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs(AnimRow, { label: "Stay", children: [
+          /* @__PURE__ */ jsxRuntime.jsx(
+            "input",
+            {
+              type: "range",
+              min: 0,
+              max: 8,
+              step: 0.1,
+              value: staySec,
+              onChange: (e) => setStaySec(Number(e.target.value)),
+              className: "flex-1 accent-[hsl(var(--brand))] h-1"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "w-9 text-right font-mono text-[10px]", children: [
+            staySec.toFixed(1),
+            "s"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx(AnimRow, { label: "Type", children: /* @__PURE__ */ jsxRuntime.jsxs(
+          "select",
+          {
+            value: easing,
+            onChange: (e) => setEasing(e.target.value),
+            className: "flex-1 bg-muted/40 border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] text-foreground",
+            children: [
+              /* @__PURE__ */ jsxRuntime.jsx("option", { value: "smooth", children: "Smooth" }),
+              /* @__PURE__ */ jsxRuntime.jsx("option", { value: "linear", children: "Linear" }),
+              /* @__PURE__ */ jsxRuntime.jsx("option", { value: "easeInOut", children: "Ease in-out" })
+            ]
+          }
+        ) }),
+        /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "flex items-center gap-2 text-[10px] text-muted-foreground cursor-pointer", children: [
+          /* @__PURE__ */ jsxRuntime.jsx(
+            "input",
+            {
+              type: "checkbox",
+              checked: loop,
+              onChange: (e) => setLoop(e.target.checked),
+              className: "accent-[hsl(var(--brand))] w-3 h-3"
+            }
+          ),
+          "Loop"
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex gap-1 pt-0.5", children: [
+          !playing ? /* @__PURE__ */ jsxRuntime.jsxs(
+            "button",
+            {
+              onClick: play,
+              disabled: scenes.length < 2,
+              className: "flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] hover:bg-[hsl(var(--brand)/0.3)] disabled:opacity-40 transition-colors text-[10px]",
+              children: [
+                /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Play, { size: 12 }),
+                " Play"
+              ]
+            }
+          ) : /* @__PURE__ */ jsxRuntime.jsxs(
+            "button",
+            {
+              onClick: stop,
+              className: "flex-1 flex items-center justify-center gap-1 py-1 rounded bg-destructive/20 text-destructive hover:bg-destructive/30 transition-colors text-[10px]",
+              children: [
+                /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Square, { size: 11 }),
+                " Stop"
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntime.jsxs(
+            "button",
+            {
+              onClick: record,
+              disabled: playing || scenes.length < 2,
+              title: "Record a .webm video of one pass",
+              className: "flex items-center justify-center gap-1 px-2 py-1 rounded border border-[hsl(var(--border))] text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 transition-colors text-[10px]",
+              children: [
+                /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Film, { size: 12 }),
+                " Video"
+              ]
+            }
+          )
+        ] }),
+        scenes.length < 2 && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[9px] text-muted-foreground/70", children: "Save at least two scenes to animate." })
+      ] })
     ] })
+  ] });
+}
+function AnimRow({ label, children }) {
+  return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex items-center gap-2", children: [
+    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "w-14 text-[10px] text-muted-foreground shrink-0", children: label }),
+    children
   ] });
 }
 function Sidebar() {
@@ -6613,7 +6833,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "1378548 \xB7 2026-06-29 18:17Z" ;
+var PCV_BUILD = "824691e \xB7 2026-06-29 18:55Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

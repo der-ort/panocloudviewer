@@ -471,9 +471,12 @@ var PointCloudLoader = class {
     return Math.min(Math.max(Math.round(raw / 1e5) * 1e5, 5e5), 1e7);
   }
 };
-function easeOutQuart(t) {
-  return 1 - Math.pow(1 - t, 4);
-}
+var EASINGS = {
+  smooth: (t) => 1 - Math.pow(1 - t, 4),
+  // quartic ease-out (default)
+  linear: (t) => t,
+  easeInOut: (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
+};
 var CameraAnimator = class {
   camera;
   controls;
@@ -482,21 +485,27 @@ var CameraAnimator = class {
     this.camera = camera;
     this.controls = controls;
   }
-  flyTo({ position, target, duration = 800 }) {
+  flyTo({ position, target, up, duration = 800, easing = "smooth" }) {
     return new Promise((resolve) => {
       if (this.animId !== null) cancelAnimationFrame(this.animId);
       const startPos = this.camera.position.clone();
       const startTarget = this.controls.target.clone();
+      const startUp = this.camera.up.clone();
+      const endUp = up ? up.clone().normalize() : null;
+      const ease = EASINGS[easing] ?? EASINGS.smooth;
       const startTime = performance.now();
       const animate = (now) => {
         const t = Math.min((now - startTime) / duration, 1);
-        const e = easeOutQuart(t);
+        const e = ease(t);
         this.camera.position.lerpVectors(startPos, position, e);
         this.controls.target.lerpVectors(startTarget, target, e);
+        if (endUp) this.camera.up.copy(startUp).lerp(endUp, e).normalize();
         this.controls.update();
         if (t < 1) {
           this.animId = requestAnimationFrame(animate);
         } else {
+          if (endUp) this.camera.up.copy(endUp);
+          this.controls.update();
           this.animId = null;
           resolve();
         }
@@ -2654,12 +2663,13 @@ var PresentationManager = class {
     this.persist();
   }
 };
-function captureScene(name, cameraPos, cameraTarget, clipBoxes, colorMode, pointSize, pointBudget) {
+function captureScene(name, cameraPos, cameraTarget, clipBoxes, colorMode, pointSize, pointBudget, cameraUp = { x: 0, y: 0, z: 1 }) {
   return {
     name,
     camera: {
       position: [cameraPos.x, cameraPos.y, cameraPos.z],
-      target: [cameraTarget.x, cameraTarget.y, cameraTarget.z]
+      target: [cameraTarget.x, cameraTarget.y, cameraTarget.z],
+      up: [cameraUp.x, cameraUp.y, cameraUp.z]
     },
     clipBoxes: clipBoxes.map((b) => ({
       name: b.name,

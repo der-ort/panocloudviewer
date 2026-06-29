@@ -8,6 +8,8 @@ export interface ViewerScene {
   camera: {
     position: [number, number, number];
     target: [number, number, number];
+    /** Camera up vector. Optional for backward compat with older saved scenes. */
+    up?: [number, number, number];
   };
   clipBoxes: Array<{
     name: string;
@@ -133,12 +135,14 @@ export function captureScene(
   colorMode: string,
   pointSize: number,
   pointBudget: number,
+  cameraUp: { x: number; y: number; z: number } = { x: 0, y: 0, z: 1 },
 ): Omit<ViewerScene, "id" | "createdAt"> {
   return {
     name,
     camera: {
       position: [cameraPos.x, cameraPos.y, cameraPos.z],
       target: [cameraTarget.x, cameraTarget.y, cameraTarget.z],
+      up: [cameraUp.x, cameraUp.y, cameraUp.z],
     },
     clipBoxes: clipBoxes.map(b => ({
       name: b.name,

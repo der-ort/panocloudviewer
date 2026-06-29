@@ -320,10 +320,15 @@ declare class PointCloudLoader {
     static calcOptimalBudget(totalPoints: number): number;
 }
 
+/** Easing curves for fly-to / keyframe animations. */
+type Easing = "smooth" | "linear" | "easeInOut";
 interface AnimOptions {
     position: THREE.Vector3;
     target: THREE.Vector3;
+    /** Camera up vector to restore (prevents tilt when presets changed it). */
+    up?: THREE.Vector3;
     duration?: number;
+    easing?: Easing;
 }
 /** Smooth camera fly-to animation using requestAnimationFrame, no external deps */
 declare class CameraAnimator {
@@ -331,7 +336,7 @@ declare class CameraAnimator {
     private controls;
     private animId;
     constructor(camera: THREE.PerspectiveCamera, controls: OrbitControls);
-    flyTo({ position, target, duration }: AnimOptions): Promise<void>;
+    flyTo({ position, target, up, duration, easing }: AnimOptions): Promise<void>;
     /** Fly to a camera marker position (offset behind the camera by `offset` units) */
     flyToCamera(camPos: THREE.Vector3 | [number, number, number], yawDeg?: number, offset?: number, duration?: number): Promise<void>;
     cancel(): void;
@@ -725,6 +730,8 @@ interface ViewerScene {
     camera: {
         position: [number, number, number];
         target: [number, number, number];
+        /** Camera up vector. Optional for backward compat with older saved scenes. */
+        up?: [number, number, number];
     };
     clipBoxes: Array<{
         name: string;
@@ -767,7 +774,11 @@ declare function captureScene(name: string, cameraPos: {
     x: number;
     y: number;
     z: number;
-}, clipBoxes: ClipBoxEntry[], colorMode: string, pointSize: number, pointBudget: number): Omit<ViewerScene, "id" | "createdAt">;
+}, clipBoxes: ClipBoxEntry[], colorMode: string, pointSize: number, pointBudget: number, cameraUp?: {
+    x: number;
+    y: number;
+    z: number;
+}): Omit<ViewerScene, "id" | "createdAt">;
 
 /** Format a length in meters — always metric, 2 decimals. */
 declare function formatLength(meters: number): string;
@@ -782,4 +793,4 @@ declare function formatCoord(x: number, y: number, z: number, decimals?: number)
 /** Export measurements as a CSV string */
 declare function exportMeasurementsCSV(measurements: Measurement[]): string;
 
-export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type GeoInfo, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };
+export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type GeoInfo, type LocalSource, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };

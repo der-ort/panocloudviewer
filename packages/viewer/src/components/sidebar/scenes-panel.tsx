@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Bookmark, Plus, Trash2, Download, Upload, Play } from "lucide-react";
+import { Bookmark, Plus, Trash2, Download, Upload, Play, Square, Film, ChevronRight } from "lucide-react";
+import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
 import { PresentationManager, captureScene } from "@der-ort/pano-cloud-viewer-core";
-import type { ViewerScene } from "@der-ort/pano-cloud-viewer-core";
+import type { ViewerScene, Easing } from "@der-ort/pano-cloud-viewer-core";
 import * as THREE from "three";
 
 function InlineEditSceneName({ value, onSave }: { value: string; onSave: (v: string) => void }) {
@@ -61,6 +62,16 @@ export function ScenesPanel() {
   const pmRef = useRef<PresentationManager | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Keyframe animation (scenes = keyframes) ──────────────────────────────
+  const [showAnim, setShowAnim] = useState(false);
+  const [flySec, setFlySec] = useState(2);
+  const [staySec, setStaySec] = useState(1);
+  const [easing, setEasing] = useState<Easing>("smooth");
+  const [loop, setLoop] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const stopRef = useRef(false);
+  const dwellTimer = useRef<number | null>(null);
+
   // Derive a storage key from the source config
   useEffect(() => {
     const key =
@@ -73,6 +84,13 @@ export function ScenesPanel() {
     setScenes(pm.getScenes());
   }, [config.source]);
 
+  // Stop any running playback if the panel unmounts (tab switch / close).
+  useEffect(() => () => {
+    stopRef.current = true;
+    if (dwellTimer.current != null) clearTimeout(dwellTimer.current);
+    cameraAnimator?.cancel();
+  }, [cameraAnimator]);
+
   const handleSave = () => {
     if (!sceneManager || !pmRef.current) return;
     const name = newName.trim() || `Scene ${scenes.length + 1}`;
@@ -84,25 +102,33 @@ export function ScenesPanel() {
       colorMode,
       pointSize,
       pointBudget,
+      sceneManager.camera.up,
     );
     pmRef.current.addScene(scene);
     setNewName("");
   };
 
+  /** Fly the camera (position/target/up) to a scene — used by restore + playback. */
+  const flyToScene = (scene: ViewerScene, durationMs: number, ease: Easing): Promise<void> => {
+    if (!sceneManager) return Promise.resolve();
+    const pos = new THREE.Vector3(...scene.camera.position);
+    const target = new THREE.Vector3(...scene.camera.target);
+    const up = scene.camera.up ? new THREE.Vector3(...scene.camera.up) : new THREE.Vector3(0, 0, 1);
+    if (cameraAnimator) {
+      return cameraAnimator.flyTo({ position: pos, target, up, duration: durationMs, easing: ease });
+    }
+    sceneManager.camera.position.copy(pos);
+    sceneManager.controls.target.copy(target);
+    sceneManager.camera.up.copy(up);
+    sceneManager.controls.update();
+    return Promise.resolve();
+  };
+
   const handleRestore = async (scene: ViewerScene) => {
     if (!sceneManager) return;
 
-    // Restore camera
-    const pos = new THREE.Vector3(...scene.camera.position);
-    const target = new THREE.Vector3(...scene.camera.target);
-
-    if (cameraAnimator) {
-      await cameraAnimator.flyTo({ position: pos, target, duration: 600 });
-    } else {
-      sceneManager.camera.position.copy(pos);
-      sceneManager.controls.target.copy(target);
-      sceneManager.controls.update();
-    }
+    // Restore camera (incl. up, so presets that changed up don't tilt the view)
+    await flyToScene(scene, 600, "smooth");
 
     // Restore clip boxes
     if (clipManager) {
@@ -158,6 +184,71 @@ export function ScenesPanel() {
     };
     reader.readAsText(file);
     e.target.value = "";
+  };
+
+  // Cancellable dwell between keyframes.
+  const sleep = (ms: number) => new Promise<void>(res => {
+    dwellTimer.current = window.setTimeout(() => { dwellTimer.current = null; res(); }, ms);
+  });
+
+  /** Fly through every scene once, in the displayed order, dwelling at each. */
+  const runOnce = async () => {
+    for (const s of scenes) {
+      if (stopRef.current) return;
+      await flyToScene(s, flySec * 1000, easing);
+      if (stopRef.current) return;
+      if (staySec > 0) await sleep(staySec * 1000);
+    }
+  };
+
+  const play = async () => {
+    if (scenes.length < 2 || playing) return;
+    stopRef.current = false;
+    setPlaying(true);
+    try {
+      do { await runOnce(); } while (loop && !stopRef.current);
+    } finally {
+      setPlaying(false);
+    }
+  };
+
+  const stop = () => {
+    stopRef.current = true;
+    if (dwellTimer.current != null) { clearTimeout(dwellTimer.current); dwellTimer.current = null; }
+    cameraAnimator?.cancel();
+    setPlaying(false);
+  };
+
+  /** Record one pass of the animation to a downloadable .webm (best-effort). */
+  const record = async () => {
+    const canvas = sceneManager?.renderer.domElement as HTMLCanvasElement | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const capture = (canvas as any)?.captureStream?.bind(canvas);
+    if (!canvas || !capture || typeof MediaRecorder === "undefined" || scenes.length < 2 || playing) {
+      if (typeof MediaRecorder === "undefined") alert("Video recording isn't supported in this browser.");
+      return;
+    }
+    const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
+      .find(m => MediaRecorder.isTypeSupported(m)) ?? "video/webm";
+    const rec = new MediaRecorder(capture(30) as MediaStream, { mimeType: mime });
+    const chunks: BlobPart[] = [];
+    rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    const stopped = new Promise<void>(r => { rec.onstop = () => r(); });
+
+    stopRef.current = false;
+    setPlaying(true);
+    rec.start();
+    try { await runOnce(); } finally { setPlaying(false); }
+    rec.stop();
+    await stopped;
+
+    const blob = new Blob(chunks, { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `scene_animation_${new Date().toISOString().slice(0, 10)}.webm`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -229,6 +320,77 @@ export function ScenesPanel() {
           ))
         )}
       </div>
+
+      {/* ── Animation (scenes = keyframes) ─────────────────────────────── */}
+      <div className="p-2 border-t border-[hsl(var(--border))]">
+        <button
+          onClick={() => setShowAnim(o => !o)}
+          className="flex items-center justify-between w-full text-[10px] font-semibold text-muted-foreground uppercase tracking-wide hover:text-foreground transition-colors"
+        >
+          <span>Animation</span>
+          <ChevronRight size={12} className={cn("transition-transform", showAnim && "rotate-90")} />
+        </button>
+
+        {showAnim && (
+          <div className="mt-2 space-y-2">
+            <AnimRow label="Fly time">
+              <input type="range" min={0.3} max={8} step={0.1} value={flySec}
+                onChange={e => setFlySec(Number(e.target.value))}
+                className="flex-1 accent-[hsl(var(--brand))] h-1" />
+              <span className="w-9 text-right font-mono text-[10px]">{flySec.toFixed(1)}s</span>
+            </AnimRow>
+            <AnimRow label="Stay">
+              <input type="range" min={0} max={8} step={0.1} value={staySec}
+                onChange={e => setStaySec(Number(e.target.value))}
+                className="flex-1 accent-[hsl(var(--brand))] h-1" />
+              <span className="w-9 text-right font-mono text-[10px]">{staySec.toFixed(1)}s</span>
+            </AnimRow>
+            <AnimRow label="Type">
+              <select value={easing} onChange={e => setEasing(e.target.value as Easing)}
+                className="flex-1 bg-muted/40 border border-[hsl(var(--border))] rounded px-1 py-0.5 text-[10px] text-foreground">
+                <option value="smooth">Smooth</option>
+                <option value="linear">Linear</option>
+                <option value="easeInOut">Ease in-out</option>
+              </select>
+            </AnimRow>
+            <label className="flex items-center gap-2 text-[10px] text-muted-foreground cursor-pointer">
+              <input type="checkbox" checked={loop} onChange={e => setLoop(e.target.checked)}
+                className="accent-[hsl(var(--brand))] w-3 h-3" />
+              Loop
+            </label>
+
+            <div className="flex gap-1 pt-0.5">
+              {!playing ? (
+                <button onClick={play} disabled={scenes.length < 2}
+                  className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] hover:bg-[hsl(var(--brand)/0.3)] disabled:opacity-40 transition-colors text-[10px]">
+                  <Play size={12} /> Play
+                </button>
+              ) : (
+                <button onClick={stop}
+                  className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-destructive/20 text-destructive hover:bg-destructive/30 transition-colors text-[10px]">
+                  <Square size={11} /> Stop
+                </button>
+              )}
+              <button onClick={record} disabled={playing || scenes.length < 2} title="Record a .webm video of one pass"
+                className="flex items-center justify-center gap-1 px-2 py-1 rounded border border-[hsl(var(--border))] text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 transition-colors text-[10px]">
+                <Film size={12} /> Video
+              </button>
+            </div>
+            {scenes.length < 2 && (
+              <p className="text-[9px] text-muted-foreground/70">Save at least two scenes to animate.</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AnimRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-14 text-[10px] text-muted-foreground shrink-0">{label}</span>
+      {children}
     </div>
   );
 }

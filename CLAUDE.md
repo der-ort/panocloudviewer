@@ -134,7 +134,7 @@ Loads Potree 2.0 point clouds via `potree-core`.
 ### `CameraAnimator` (`core/camera-animator.ts`)
 Smooth camera fly-to animations, no external tween library.
 
-- **`flyTo({ position, target, duration? })`**: Animates camera position and OrbitControls target using quartic ease-out over `duration` ms (default 800). Cancels any in-progress animation. Returns `Promise<void>`.
+- **`flyTo({ position, target, up?, duration?, easing? })`**: Animates camera position + OrbitControls target (and lerps the camera **`up`** when given) over `duration` ms (default 800). `easing`: `"smooth"` (quartic ease-out, default) / `"linear"` / `"easeInOut"`. Cancels any in-progress animation. Returns `Promise<void>`. **Passing `up` is what stops scene restores from tilting** — the view-preset buttons change `camera.up` (e.g. top → `(0,1,0)`), so a saved scene must restore its own up or OrbitControls reconstructs orientation with the wrong up.
 - **`flyToCamera(camPos, yawDeg, offset, duration)`**: Convenience method — positions camera `offset` units behind a panorama marker and looks at it.
 - **`cancel()`**: Cancels in-progress animation.
 
@@ -195,7 +195,7 @@ Top-down orthographic minimap with overlay, rendered in the **bottom-right** cor
 
 
 ### `PresentationManager` (`core/presentation-manager.ts`)
-Persists named viewer scenes (camera position + clip boxes + display settings) in `localStorage`.
+Persists named viewer scenes (camera position + **up** + target + clip boxes + display settings) in `localStorage`. `ViewerScene.camera.up` is optional (older saved scenes lack it → restore defaults to `(0,0,1)`). The `ScenesPanel` also drives a **keyframe animation** that flies the camera through the saved scenes in order (configurable fly time / dwell time / easing / loop), with an optional `MediaRecorder` `.webm` capture of one pass.
 
 - **Constructor `(sourceKey)`**: Storage key is `pcv_scenes_${sourceKey}` — one list per project.
 - **`addScene(scene)` / `removeScene(id)` / `renameScene(id, name)`**: Mutate and persist. Max 50 scenes.
