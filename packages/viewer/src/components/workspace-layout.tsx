@@ -43,8 +43,8 @@ export function GlassCard({ children, className }: { children: React.ReactNode; 
   return (
     <div
       className={cn(
-        "backdrop-blur-xl bg-black/30 dark:bg-black/40",
-        "border border-white/15 dark:border-white/10",
+        "backdrop-blur-xl bg-[hsl(var(--card)/0.72)]",
+        "border border-border",
         "rounded-2xl shadow-2xl shadow-black/20",
         className,
       )}
@@ -133,10 +133,10 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
           className={cn(
             "absolute top-1/2 -translate-y-1/2 -left-7 z-40",
             "flex items-center justify-center w-7 h-16 rounded-l-lg",
-            "backdrop-blur-xl bg-black/45 dark:bg-black/55",
-            "border border-r-0 border-white/25 dark:border-white/20",
+            "backdrop-blur-xl bg-[hsl(var(--card)/0.85)]",
+            "border border-r-0 border-border",
             "shadow-2xl shadow-black/30",
-            "text-white/80 hover:text-[hsl(var(--brand))] hover:bg-black/55 transition-colors",
+            "text-foreground hover:text-[hsl(var(--brand))] hover:bg-[hsl(var(--card))] transition-colors",
           )}
         >
           {sidebarOpen ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
@@ -159,7 +159,7 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       {/* ── Bottom status strip ─────────────────────────────────────────── */}
       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={chromeScale}>
         <GlassCard className="pointer-events-none">
-          <div className="px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-white/50 select-none">
+          <div className="px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none">
             {metadata && <span>{t.statusPts(metadata.points / 1e6)}</span>}
             <span>{t.statusBudget(pointBudget / 1e6)}</span>
             <span>{t.statusFps(fps)}</span>

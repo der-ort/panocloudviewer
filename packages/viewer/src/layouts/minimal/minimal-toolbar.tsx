@@ -38,7 +38,7 @@ function GlassButton({
         "flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-200",
         active
           ? "bg-[hsl(var(--brand)/0.25)] text-[hsl(var(--brand))] shadow-[0_0_12px_hsl(var(--brand)/0.3)]"
-          : "text-white/70 hover:text-white hover:bg-white/10",
+          : "text-muted-foreground hover:text-foreground hover:bg-muted",
         className,
       )}
     >
@@ -48,7 +48,7 @@ function GlassButton({
 }
 
 function Separator() {
-  return <div className="w-px h-6 bg-white/15 mx-0.5" />;
+  return <div className="w-px h-6 bg-muted mx-0.5" />;
 }
 
 export function MinimalToolbar() {
@@ -84,8 +84,8 @@ export function MinimalToolbar() {
         <div
           className={cn(
             "flex items-center gap-0.5 px-2 py-1.5",
-            "backdrop-blur-xl bg-black/30 dark:bg-black/40",
-            "border border-white/15 dark:border-white/10",
+            "backdrop-blur-xl bg-[hsl(var(--card)/0.72)]",
+            "border border-border",
             "rounded-2xl shadow-2xl shadow-black/20",
           )}
         >

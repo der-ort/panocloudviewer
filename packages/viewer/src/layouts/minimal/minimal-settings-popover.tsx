@@ -32,21 +32,21 @@ function ToggleRow({
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
+      className="flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg hover:bg-muted transition-colors"
     >
-      <span className={cn("text-white/50", active && "text-[hsl(var(--brand))]")}>
+      <span className={cn("text-muted-foreground", active && "text-[hsl(var(--brand))]")}>
         {icon}
       </span>
-      <span className="text-xs text-white/80 flex-1 text-left">{label}</span>
+      <span className="text-xs text-foreground flex-1 text-left">{label}</span>
       <div
         className={cn(
           "w-7 h-4 rounded-full transition-colors flex items-center px-0.5",
-          active ? "bg-[hsl(var(--brand)/0.6)]" : "bg-white/15",
+          active ? "bg-[hsl(var(--brand)/0.6)]" : "bg-muted",
         )}
       >
         <div
           className={cn(
-            "w-3 h-3 rounded-full bg-white transition-transform",
+            "w-3 h-3 rounded-full bg-foreground transition-transform",
             active && "translate-x-3",
           )}
         />
@@ -75,12 +75,12 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
       <div
         className={cn(
           "w-56 p-3 space-y-3",
-          "backdrop-blur-xl bg-black/30 dark:bg-black/40",
-          "border border-white/15 dark:border-white/10",
+          "backdrop-blur-xl bg-[hsl(var(--card)/0.72)]",
+          "border border-border",
           "rounded-xl shadow-2xl shadow-black/20",
         )}
       >
-        <p className="text-[10px] font-mono uppercase tracking-widest text-white/40 px-1">
+        <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60 px-1">
           Layers
         </p>
 
@@ -106,7 +106,7 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
         </div>
 
         <div className="space-y-1.5">
-          <p className="text-[10px] font-mono uppercase tracking-widest text-white/40 px-1">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60 px-1">
             Color
           </p>
           <div className="grid grid-cols-2 gap-1">
@@ -121,7 +121,7 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
                   "text-[10px] py-1 px-2 rounded-lg transition-colors",
                   colorMode === cm.value
                     ? "bg-[hsl(var(--brand)/0.25)] text-[hsl(var(--brand))]"
-                    : "text-white/60 hover:text-white hover:bg-white/10",
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
                 )}
               >
                 {cm.label}
@@ -131,7 +131,7 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
         </div>
 
         <div className="space-y-1.5">
-          <p className="text-[10px] font-mono uppercase tracking-widest text-white/40 px-1">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60 px-1">
             Point Size
           </p>
           <div className="px-1">
@@ -152,8 +152,8 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
         </div>
 
         {/* Build/version — confirm the deployed viewer build */}
-        <div className="border-t border-white/10 pt-2 px-1">
-          <p className="text-[9px] font-mono text-white/35 leading-tight" title="Viewer version · build">
+        <div className="border-t border-border pt-2 px-1">
+          <p className="text-[9px] font-mono text-muted-foreground/60 leading-tight" title="Viewer version · build">
             v{PCV_VERSION} · {PCV_BUILD}
           </p>
         </div>

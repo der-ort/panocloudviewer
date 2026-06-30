@@ -4593,7 +4593,7 @@ function ClipToolbar() {
         )
       ] })
     ] }),
-    /* @__PURE__ */ jsx("div", { className: "h-px bg-white/10 mx-1 mb-1.5" }),
+    /* @__PURE__ */ jsx("div", { className: "h-px bg-muted mx-1 mb-1.5" }),
     /* @__PURE__ */ jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxs(
       "button",
       {
@@ -4605,7 +4605,7 @@ function ClipToolbar() {
         title: enabled ? "Clipping on" : "Clipping off",
         className: cn(
           "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
-          enabled ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          enabled ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
         ),
         children: [
           enabled ? /* @__PURE__ */ jsx(Scissors, { size: 12 }) : /* @__PURE__ */ jsx(ScissorsLineDashed, { size: 12 }),
@@ -4625,7 +4625,7 @@ function ClipToolbar() {
         title: outlines ? "Outlines visible" : "Outlines hidden",
         className: cn(
           "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
-          outlines ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          outlines ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
         ),
         children: [
           outlines ? /* @__PURE__ */ jsx(Eye, { size: 12 }) : /* @__PURE__ */ jsx(EyeOff, { size: 12 }),
@@ -4640,7 +4640,7 @@ function ClipToolbar() {
         className: cn(
           "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors",
           "border",
-          isInside ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          isInside ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
         ),
         children: [
           /* @__PURE__ */ jsx(Scissors, { size: 12 }),
@@ -4694,7 +4694,7 @@ function ClipToolbar() {
       );
     }) }),
     selectedClipBoxId && /* @__PURE__ */ jsxs(Fragment, { children: [
-      /* @__PURE__ */ jsx("div", { className: "h-px bg-white/10 mx-1 mt-1.5 mb-1.5" }),
+      /* @__PURE__ */ jsx("div", { className: "h-px bg-muted mx-1 mt-1.5 mb-1.5" }),
       /* @__PURE__ */ jsx("div", { className: "flex items-center gap-1 px-1", children: TRANSFORM_MODES.map(({ m, icon, label }) => /* @__PURE__ */ jsxs(
         "button",
         {
@@ -4719,7 +4719,7 @@ function ClipToolbar() {
         {
           onClick: () => resetRotation(),
           title: "Reset the box back to axis-aligned",
-          className: "w-full flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] border border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
+          className: "w-full flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] border border-border text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
           children: [
             /* @__PURE__ */ jsx(RotateCcw, { size: 12 }),
             /* @__PURE__ */ jsx("span", { children: "Reset rotation" })
@@ -4822,26 +4822,26 @@ function LayerRow({
       title: hint ?? label,
       className: cn(
         "flex items-center gap-2.5 w-full px-2 py-2 rounded-lg transition-colors text-left",
-        disabled ? "opacity-40 cursor-not-allowed" : "hover:bg-white/10"
+        disabled ? "opacity-40 cursor-not-allowed" : "hover:bg-muted"
       ),
       children: [
-        /* @__PURE__ */ jsx("span", { className: cn("text-white/50", active && !disabled && "text-[hsl(var(--brand))]"), children: icon }),
+        /* @__PURE__ */ jsx("span", { className: cn("text-muted-foreground", active && !disabled && "text-[hsl(var(--brand))]"), children: icon }),
         /* @__PURE__ */ jsxs("span", { className: "flex-1 min-w-0", children: [
-          /* @__PURE__ */ jsx("span", { className: "block text-xs text-white/80 truncate", children: label }),
-          hint && /* @__PURE__ */ jsx("span", { className: "block text-[10px] text-white/35 truncate", children: hint })
+          /* @__PURE__ */ jsx("span", { className: "block text-xs text-foreground truncate", children: label }),
+          hint && /* @__PURE__ */ jsx("span", { className: "block text-[10px] text-muted-foreground/60 truncate", children: hint })
         ] }),
         /* @__PURE__ */ jsx(
           "div",
           {
             className: cn(
               "w-7 h-4 rounded-full transition-colors flex items-center px-0.5 shrink-0",
-              active && !disabled ? "bg-[hsl(var(--brand)/0.6)]" : "bg-white/15"
+              active && !disabled ? "bg-[hsl(var(--brand)/0.6)]" : "bg-muted"
             ),
             children: /* @__PURE__ */ jsx(
               "div",
               {
                 className: cn(
-                  "w-3 h-3 rounded-full bg-white transition-transform",
+                  "w-3 h-3 rounded-full bg-foreground transition-transform",
                   active && !disabled && "translate-x-3"
                 )
               }
@@ -4864,7 +4864,7 @@ function LayersPanel() {
   const { cameras } = useData();
   const hasPanoramas = cameras.length > 0;
   return /* @__PURE__ */ jsxs("div", { className: "p-3 space-y-1 overflow-y-auto h-full", children: [
-    /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1 mb-1", children: "Layers" }),
+    /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60 px-1 mb-1", children: "Layers" }),
     hasPanoramas && /* @__PURE__ */ jsx(
       LayerRow,
       {
@@ -4897,16 +4897,16 @@ function LayersPanel() {
 }
 function ClassificationSection() {
   const [open, setOpen] = React26.useState(false);
-  return /* @__PURE__ */ jsxs("div", { className: "mt-1 border-t border-white/10 pt-1", children: [
+  return /* @__PURE__ */ jsxs("div", { className: "mt-1 border-t border-border pt-1", children: [
     /* @__PURE__ */ jsxs(
       "button",
       {
         onClick: () => setOpen((o) => !o),
-        className: "flex items-center gap-2.5 w-full px-2 py-2 rounded-lg hover:bg-white/10 transition-colors text-left",
+        className: "flex items-center gap-2.5 w-full px-2 py-2 rounded-lg hover:bg-muted transition-colors text-left",
         children: [
-          /* @__PURE__ */ jsx("span", { className: "text-white/50", children: /* @__PURE__ */ jsx(Tag, { size: 15 }) }),
-          /* @__PURE__ */ jsx("span", { className: "flex-1 text-xs text-white/80", children: "Classification" }),
-          /* @__PURE__ */ jsx(ChevronRight, { size: 14, className: cn("text-white/40 transition-transform", open && "rotate-90") })
+          /* @__PURE__ */ jsx("span", { className: "text-muted-foreground", children: /* @__PURE__ */ jsx(Tag, { size: 15 }) }),
+          /* @__PURE__ */ jsx("span", { className: "flex-1 text-xs text-foreground", children: "Classification" }),
+          /* @__PURE__ */ jsx(ChevronRight, { size: 14, className: cn("text-muted-foreground/60 transition-transform", open && "rotate-90") })
         ]
       }
     ),
@@ -5781,13 +5781,13 @@ function Sidebar() {
   );
   const activeTab = TABS.some((tb) => tb.id === tab) ? tab : "layers";
   return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full", children: [
-    /* @__PURE__ */ jsx("div", { className: "flex border-b border-white/10 shrink-0", children: TABS.map((tb) => /* @__PURE__ */ jsxs(
+    /* @__PURE__ */ jsx("div", { className: "flex border-b border-border shrink-0", children: TABS.map((tb) => /* @__PURE__ */ jsxs(
       "button",
       {
         onClick: () => setTab(tb.id),
         title: tb.label,
         className: `flex-1 flex flex-col items-center gap-0.5 py-2 text-[9px] font-mono transition-colors
-              ${activeTab === tb.id ? "text-[hsl(var(--brand))] border-b-2 border-[hsl(var(--brand))] -mb-px" : "text-white/50 hover:text-white/80"}`,
+              ${activeTab === tb.id ? "text-[hsl(var(--brand))] border-b-2 border-[hsl(var(--brand))] -mb-px" : "text-muted-foreground hover:text-foreground"}`,
         children: [
           tb.icon,
           /* @__PURE__ */ jsx("span", { className: "hidden xl:block", children: tb.label })
@@ -6433,8 +6433,8 @@ function GlassCard({ children, className }) {
     "div",
     {
       className: cn(
-        "backdrop-blur-xl bg-black/30 dark:bg-black/40",
-        "border border-white/15 dark:border-white/10",
+        "backdrop-blur-xl bg-[hsl(var(--card)/0.72)]",
+        "border border-border",
         "rounded-2xl shadow-2xl shadow-black/20",
         className
       ),
@@ -6491,10 +6491,10 @@ function WorkspaceLayout({ className }) {
                   className: cn(
                     "absolute top-1/2 -translate-y-1/2 -left-7 z-40",
                     "flex items-center justify-center w-7 h-16 rounded-l-lg",
-                    "backdrop-blur-xl bg-black/45 dark:bg-black/55",
-                    "border border-r-0 border-white/25 dark:border-white/20",
+                    "backdrop-blur-xl bg-[hsl(var(--card)/0.85)]",
+                    "border border-r-0 border-border",
                     "shadow-2xl shadow-black/30",
-                    "text-white/80 hover:text-[hsl(var(--brand))] hover:bg-black/55 transition-colors"
+                    "text-foreground hover:text-[hsl(var(--brand))] hover:bg-[hsl(var(--card))] transition-colors"
                   ),
                   children: sidebarOpen ? /* @__PURE__ */ jsx(ChevronRight, { size: 18 }) : /* @__PURE__ */ jsx(ChevronLeft, { size: 18 })
                 }
@@ -6504,7 +6504,7 @@ function WorkspaceLayout({ className }) {
           }
         ),
         isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsx("div", { className: "absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(ClipToolbar, {}) }) }),
-        /* @__PURE__ */ jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-white/50 select-none", children: [
+        /* @__PURE__ */ jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none", children: [
           metadata && /* @__PURE__ */ jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
           /* @__PURE__ */ jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
           /* @__PURE__ */ jsx("span", { children: t.statusFps(fps) }),
@@ -6985,7 +6985,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "0c0ce91 \xB7 2026-06-29 22:32Z" ;
+var PCV_BUILD = "f9d6671 \xB7 2026-06-30 00:22Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
@@ -7015,22 +7015,22 @@ function ToggleRow({
     "button",
     {
       onClick,
-      className: "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors",
+      className: "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg hover:bg-muted transition-colors",
       children: [
-        /* @__PURE__ */ jsx("span", { className: cn("text-white/50", active && "text-[hsl(var(--brand))]"), children: icon }),
-        /* @__PURE__ */ jsx("span", { className: "text-xs text-white/80 flex-1 text-left", children: label }),
+        /* @__PURE__ */ jsx("span", { className: cn("text-muted-foreground", active && "text-[hsl(var(--brand))]"), children: icon }),
+        /* @__PURE__ */ jsx("span", { className: "text-xs text-foreground flex-1 text-left", children: label }),
         /* @__PURE__ */ jsx(
           "div",
           {
             className: cn(
               "w-7 h-4 rounded-full transition-colors flex items-center px-0.5",
-              active ? "bg-[hsl(var(--brand)/0.6)]" : "bg-white/15"
+              active ? "bg-[hsl(var(--brand)/0.6)]" : "bg-muted"
             ),
             children: /* @__PURE__ */ jsx(
               "div",
               {
                 className: cn(
-                  "w-3 h-3 rounded-full bg-white transition-transform",
+                  "w-3 h-3 rounded-full bg-foreground transition-transform",
                   active && "translate-x-3"
                 )
               }
@@ -7060,12 +7060,12 @@ function MinimalSettingsPopover({ onClose }) {
     {
       className: cn(
         "w-56 p-3 space-y-3",
-        "backdrop-blur-xl bg-black/30 dark:bg-black/40",
-        "border border-white/15 dark:border-white/10",
+        "backdrop-blur-xl bg-[hsl(var(--card)/0.72)]",
+        "border border-border",
         "rounded-xl shadow-2xl shadow-black/20"
       ),
       children: [
-        /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Layers" }),
+        /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60 px-1", children: "Layers" }),
         /* @__PURE__ */ jsxs("div", { className: "space-y-0.5", children: [
           /* @__PURE__ */ jsx(
             ToggleRow,
@@ -7096,7 +7096,7 @@ function MinimalSettingsPopover({ onClose }) {
           )
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "space-y-1.5", children: [
-          /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Color" }),
+          /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60 px-1", children: "Color" }),
           /* @__PURE__ */ jsx("div", { className: "grid grid-cols-2 gap-1", children: COLOR_MODES3.map((cm) => /* @__PURE__ */ jsx(
             "button",
             {
@@ -7106,7 +7106,7 @@ function MinimalSettingsPopover({ onClose }) {
               },
               className: cn(
                 "text-[10px] py-1 px-2 rounded-lg transition-colors",
-                colorMode === cm.value ? "bg-[hsl(var(--brand)/0.25)] text-[hsl(var(--brand))]" : "text-white/60 hover:text-white hover:bg-white/10"
+                colorMode === cm.value ? "bg-[hsl(var(--brand)/0.25)] text-[hsl(var(--brand))]" : "text-muted-foreground hover:text-foreground hover:bg-muted"
               ),
               children: cm.label
             },
@@ -7114,7 +7114,7 @@ function MinimalSettingsPopover({ onClose }) {
           )) })
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "space-y-1.5", children: [
-          /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-white/40 px-1", children: "Point Size" }),
+          /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60 px-1", children: "Point Size" }),
           /* @__PURE__ */ jsx("div", { className: "px-1", children: /* @__PURE__ */ jsx(
             "input",
             {
@@ -7132,7 +7132,7 @@ function MinimalSettingsPopover({ onClose }) {
             }
           ) })
         ] }),
-        /* @__PURE__ */ jsx("div", { className: "border-t border-white/10 pt-2 px-1", children: /* @__PURE__ */ jsxs("p", { className: "text-[9px] font-mono text-white/35 leading-tight", title: "Viewer version \xB7 build", children: [
+        /* @__PURE__ */ jsx("div", { className: "border-t border-border pt-2 px-1", children: /* @__PURE__ */ jsxs("p", { className: "text-[9px] font-mono text-muted-foreground/60 leading-tight", title: "Viewer version \xB7 build", children: [
           "v",
           PCV_VERSION,
           " \xB7 ",
@@ -7156,7 +7156,7 @@ function GlassButton({
       onClick,
       className: cn(
         "flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-200",
-        active ? "bg-[hsl(var(--brand)/0.25)] text-[hsl(var(--brand))] shadow-[0_0_12px_hsl(var(--brand)/0.3)]" : "text-white/70 hover:text-white hover:bg-white/10",
+        active ? "bg-[hsl(var(--brand)/0.25)] text-[hsl(var(--brand))] shadow-[0_0_12px_hsl(var(--brand)/0.3)]" : "text-muted-foreground hover:text-foreground hover:bg-muted",
         className
       ),
       children: icon
@@ -7164,7 +7164,7 @@ function GlassButton({
   );
 }
 function Separator2() {
-  return /* @__PURE__ */ jsx("div", { className: "w-px h-6 bg-white/15 mx-0.5" });
+  return /* @__PURE__ */ jsx("div", { className: "w-px h-6 bg-muted mx-0.5" });
 }
 function MinimalToolbar() {
   const {
@@ -7194,8 +7194,8 @@ function MinimalToolbar() {
       {
         className: cn(
           "flex items-center gap-0.5 px-2 py-1.5",
-          "backdrop-blur-xl bg-black/30 dark:bg-black/40",
-          "border border-white/15 dark:border-white/10",
+          "backdrop-blur-xl bg-[hsl(var(--card)/0.72)]",
+          "border border-border",
           "rounded-2xl shadow-2xl shadow-black/20"
         ),
         children: [

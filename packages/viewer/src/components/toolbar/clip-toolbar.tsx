@@ -75,7 +75,7 @@ export function ClipToolbar() {
       </div>
 
       {/* Divider */}
-      <div className="h-px bg-white/10 mx-1 mb-1.5" />
+      <div className="h-px bg-muted mx-1 mb-1.5" />
 
       {/* Global clipping on/off toggle */}
       <div className="px-1 mb-1.5">
@@ -90,7 +90,7 @@ export function ClipToolbar() {
             "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
             enabled
               ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]"
-              : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+              : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
           )}
         >
           {enabled ? <Scissors size={12} /> : <ScissorsLineDashed size={12} />}
@@ -113,7 +113,7 @@ export function ClipToolbar() {
             "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
             outlines
               ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]"
-              : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+              : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
           )}
         >
           {outlines ? <Eye size={12} /> : <EyeOff size={12} />}
@@ -130,7 +130,7 @@ export function ClipToolbar() {
             "border",
             isInside
               ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]"
-              : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+              : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
           )}
         >
           <Scissors size={12} />
@@ -188,7 +188,7 @@ export function ClipToolbar() {
           (move arrows / resize spheres / XYZ rotation rings). */}
       {selectedClipBoxId && (
         <>
-          <div className="h-px bg-white/10 mx-1 mt-1.5 mb-1.5" />
+          <div className="h-px bg-muted mx-1 mt-1.5 mb-1.5" />
           <div className="flex items-center gap-1 px-1">
             {TRANSFORM_MODES.map(({ m, icon, label }) => (
               <button
@@ -212,7 +212,7 @@ export function ClipToolbar() {
             <button
               onClick={() => resetRotation()}
               title="Reset the box back to axis-aligned"
-              className="w-full flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] border border-white/10 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              className="w-full flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] border border-border text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
             >
               <RotateCcw size={12} />
               <span>Reset rotation</span>

@@ -41,7 +41,7 @@ export function Sidebar() {
   return (
     <div className="flex flex-col h-full">
       {/* Tab bar */}
-      <div className="flex border-b border-white/10 shrink-0">
+      <div className="flex border-b border-border shrink-0">
         {TABS.map(tb => (
           <button
             key={tb.id}
@@ -50,7 +50,7 @@ export function Sidebar() {
             className={`flex-1 flex flex-col items-center gap-0.5 py-2 text-[9px] font-mono transition-colors
               ${activeTab === tb.id
                 ? "text-[hsl(var(--brand))] border-b-2 border-[hsl(var(--brand))] -mb-px"
-                : "text-white/50 hover:text-white/80"}`}
+                : "text-muted-foreground hover:text-foreground"}`}
           >
             {tb.icon}
             <span className="hidden xl:block">{tb.label}</span>
