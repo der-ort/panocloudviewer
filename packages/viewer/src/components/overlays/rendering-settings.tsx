@@ -127,7 +127,7 @@ export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
 
   return (
     <div
-      className="absolute top-3 left-3 z-50 w-[calc(100vw-1.5rem)] max-w-xs md:w-72 max-h-[calc(100vh-4rem)] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl"
+      className="absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-[calc(0.75rem+env(safe-area-inset-left))] z-50 w-[calc(100vw-1.5rem)] max-w-xs md:w-72 max-h-[calc(100dvh-4rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl"
       style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
     >
       {/* Header — drag handle */}

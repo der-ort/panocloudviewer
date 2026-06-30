@@ -3815,8 +3815,14 @@ function Viewport({ className }) {
     showMinimap && /* @__PURE__ */ jsxRuntime.jsxs(
       "div",
       {
-        className: "absolute bottom-10 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer transition-[right] duration-200",
-        style: { width: minimapSize, height: minimapSize, right: "var(--pcv-minimap-right, 0.75rem)" },
+        className: "absolute rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer transition-[right] duration-200",
+        style: {
+          width: minimapSize,
+          height: minimapSize,
+          right: "var(--pcv-minimap-right, 0.75rem)",
+          // Lift above the OS home indicator / browser nav bar on mobile.
+          bottom: "calc(2.5rem + env(safe-area-inset-bottom))"
+        },
         onClick: handleMinimapClick,
         children: [
           /* @__PURE__ */ jsxRuntime.jsx(
@@ -6213,7 +6219,7 @@ function RenderingSettings({ open, onClose }) {
   return /* @__PURE__ */ jsxRuntime.jsxs(
     "div",
     {
-      className: "absolute top-3 left-3 z-50 w-[calc(100vw-1.5rem)] max-w-xs md:w-72 max-h-[calc(100vh-4rem)] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl",
+      className: "absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-[calc(0.75rem+env(safe-area-inset-left))] z-50 w-[calc(100vw-1.5rem)] max-w-xs md:w-72 max-h-[calc(100dvh-4rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl",
       style: { transform: `translate(${position.x}px, ${position.y}px)` },
       children: [
         /* @__PURE__ */ jsxRuntime.jsxs(
@@ -6514,14 +6520,14 @@ function WorkspaceLayout({ className }) {
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute inset-0", children: /* @__PURE__ */ jsxRuntime.jsx(React26.Suspense, { fallback: /* @__PURE__ */ jsxRuntime.jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsxRuntime.jsx(Viewport2, {}) }) }),
         selectedCamera && /* @__PURE__ */ jsxRuntime.jsx(PanoViewer, {}),
         /* @__PURE__ */ jsxRuntime.jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) }),
-        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[calc(100vw-1.5rem)]", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto max-w-full overflow-hidden", children: /* @__PURE__ */ jsxRuntime.jsx(
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[calc(100vw-1.5rem)]", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto max-w-full overflow-hidden", children: /* @__PURE__ */ jsxRuntime.jsx(
           MainToolbar,
           {
             onToggleRenderSettings: isPro ? () => setRenderSettingsOpen((o) => !o) : void 0,
             renderSettingsOpen
           }
         ) }) }),
-        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsxRuntime.jsx(ToolRail, {}) }) }),
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute left-[calc(0.75rem+env(safe-area-inset-left))] top-[calc(3.5rem+env(safe-area-inset-top))] bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 pointer-events-none flex items-center", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsxRuntime.jsx(ToolRail, {}) }) }),
         isMobile && sidebarOpen && /* @__PURE__ */ jsxRuntime.jsx(
           "div",
           {
@@ -6534,7 +6540,11 @@ function WorkspaceLayout({ className }) {
           {
             className: cn(
               "absolute z-30 transition-transform duration-200",
-              "top-14 md:top-16 bottom-0 md:bottom-10 right-0 md:right-3",
+              // Mobile: full-bleed overlay inset from the notch / home indicator so
+              // its scroll area isn't hidden by the OS status bar or browser nav bar.
+              "top-[calc(3.5rem+env(safe-area-inset-top))] md:top-16",
+              "bottom-[env(safe-area-inset-bottom)] md:bottom-10",
+              "right-[env(safe-area-inset-right)] md:right-3",
               "w-full max-w-sm md:w-72 xl:w-80",
               sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]"
             ),
@@ -6561,7 +6571,7 @@ function WorkspaceLayout({ className }) {
             ]
           }
         ),
-        isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntime.jsx(ClipToolbar, {}) }) }),
+        isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-[calc(3rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntime.jsx(ClipToolbar, {}) }) }),
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden md:block", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none", children: [
           metadata && /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
           /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
@@ -7043,7 +7053,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "8be11f1 \xB7 2026-06-30 00:30Z" ;
+var PCV_BUILD = "b59da72 \xB7 2026-06-30 00:51Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

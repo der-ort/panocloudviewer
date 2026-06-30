@@ -626,8 +626,14 @@ export function Viewport({ className }: ViewportProps) {
       {/* Minimap overlay */}
       {showMinimap && (
         <div
-          className="absolute bottom-10 rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer transition-[right] duration-200"
-          style={{ width: minimapSize, height: minimapSize, right: "var(--pcv-minimap-right, 0.75rem)" }}
+          className="absolute rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer transition-[right] duration-200"
+          style={{
+            width: minimapSize,
+            height: minimapSize,
+            right: "var(--pcv-minimap-right, 0.75rem)",
+            // Lift above the OS home indicator / browser nav bar on mobile.
+            bottom: "calc(2.5rem + env(safe-area-inset-bottom))",
+          }}
           onClick={handleMinimapClick}
         >
           <div

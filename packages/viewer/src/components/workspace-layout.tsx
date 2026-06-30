@@ -103,7 +103,9 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       <RenderingSettings open={renderSettingsOpen} onClose={() => setRenderSettingsOpen(false)} />
 
       {/* ── Top floating toolbar (caps to screen width on mobile, scrolls) ─ */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[calc(100vw-1.5rem)]" style={chromeScale}>
+      {/* `env(safe-area-inset-top)` keeps it clear of the notch / OS status bar
+          (resolves to 0 on desktop and when the host omits viewport-fit=cover). */}
+      <div className="absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[calc(100vw-1.5rem)]" style={chromeScale}>
         <GlassCard className="pointer-events-auto max-w-full overflow-hidden">
           <MainToolbar
             onToggleRenderSettings={isPro ? () => setRenderSettingsOpen(o => !o) : undefined}
@@ -113,8 +115,9 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       </div>
 
       {/* ── Left floating tool rail ──────────────────────────────────────── */}
-      {/* Positioned wrapper with explicit top/bottom gives the GlassCard a height anchor */}
-      <div className="absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center" style={chromeScale}>
+      {/* Positioned wrapper with explicit top/bottom gives the GlassCard a height anchor.
+          Safe-area insets keep the rail off the notch / home indicator on mobile. */}
+      <div className="absolute left-[calc(0.75rem+env(safe-area-inset-left))] top-[calc(3.5rem+env(safe-area-inset-top))] bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 pointer-events-none flex items-center" style={chromeScale}>
         <GlassCard className="pointer-events-auto overflow-y-auto max-h-full">
           <ToolRail />
         </GlassCard>
@@ -134,7 +137,11 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       <div
         className={cn(
           "absolute z-30 transition-transform duration-200",
-          "top-14 md:top-16 bottom-0 md:bottom-10 right-0 md:right-3",
+          // Mobile: full-bleed overlay inset from the notch / home indicator so
+          // its scroll area isn't hidden by the OS status bar or browser nav bar.
+          "top-[calc(3.5rem+env(safe-area-inset-top))] md:top-16",
+          "bottom-[env(safe-area-inset-bottom)] md:bottom-10",
+          "right-[env(safe-area-inset-right)] md:right-3",
           "w-full max-w-sm md:w-72 xl:w-80",
           sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]",
         )}
@@ -164,7 +171,7 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
 
       {/* ── Clip management toolbar (Pro + has boxes) ───────────────────── */}
       {isPro && clipBoxEntries.length > 0 && (
-        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={chromeScale}>
+        <div className="absolute bottom-[calc(3rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={chromeScale}>
           <GlassCard className="pointer-events-auto">
             <ClipToolbar />
           </GlassCard>
