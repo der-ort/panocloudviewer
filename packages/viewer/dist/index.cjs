@@ -3917,6 +3917,19 @@ init_utils();
 init_viewer_provider();
 init_data_provider();
 init_locale_context();
+function useIsMobile(breakpointPx = 768) {
+  const [isMobile, setIsMobile] = React26.useState(
+    () => typeof window !== "undefined" ? window.innerWidth < breakpointPx : false
+  );
+  React26.useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpointPx - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, [breakpointPx]);
+  return isMobile;
+}
 
 // src/components/toolbar/main-toolbar.tsx
 init_utils();
@@ -6200,7 +6213,7 @@ function RenderingSettings({ open, onClose }) {
   return /* @__PURE__ */ jsxRuntime.jsxs(
     "div",
     {
-      className: "absolute top-3 left-3 z-50 w-72 max-h-[calc(100vh-4rem)] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl",
+      className: "absolute top-3 left-3 z-50 w-[calc(100vw-1.5rem)] max-w-xs md:w-72 max-h-[calc(100vh-4rem)] overflow-y-auto bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl",
       style: { transform: `translate(${position.x}px, ${position.y}px)` },
       children: [
         /* @__PURE__ */ jsxRuntime.jsxs(
@@ -6475,7 +6488,10 @@ function GlassCard({ children, className }) {
   );
 }
 function WorkspaceLayout({ className }) {
-  const [sidebarOpen, setSidebarOpen] = React26.useState(true);
+  const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = React26.useState(
+    () => typeof window === "undefined" || window.innerWidth >= 768
+  );
   const [renderSettingsOpen, setRenderSettingsOpen] = React26.useState(false);
   const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
   const { metadata } = useData();
@@ -6489,14 +6505,16 @@ function WorkspaceLayout({ className }) {
         // Publish the minimap's right offset so it sits just left of the sidebar
         // when open and snaps back to the edge when closed (the minimap, inside
         // the viewport, consumes `--pcv-minimap-right`).
-        sidebarOpen ? "[--pcv-minimap-right:19.25rem] xl:[--pcv-minimap-right:21.25rem]" : "[--pcv-minimap-right:0.75rem]",
+        // On mobile the sidebar is a full-bleed overlay, so the minimap stays at
+        // the edge; only shift it on md+ where the sidebar sits beside the view.
+        sidebarOpen ? "[--pcv-minimap-right:0.75rem] md:[--pcv-minimap-right:19.25rem] xl:[--pcv-minimap-right:21.25rem]" : "[--pcv-minimap-right:0.75rem]",
         className
       ),
       children: [
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute inset-0", children: /* @__PURE__ */ jsxRuntime.jsx(React26.Suspense, { fallback: /* @__PURE__ */ jsxRuntime.jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsxRuntime.jsx(Viewport2, {}) }) }),
         selectedCamera && /* @__PURE__ */ jsxRuntime.jsx(PanoViewer, {}),
         /* @__PURE__ */ jsxRuntime.jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) }),
-        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntime.jsx(
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[calc(100vw-1.5rem)]", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto max-w-full overflow-hidden", children: /* @__PURE__ */ jsxRuntime.jsx(
           MainToolbar,
           {
             onToggleRenderSettings: isPro ? () => setRenderSettingsOpen((o) => !o) : void 0,
@@ -6504,12 +6522,20 @@ function WorkspaceLayout({ className }) {
           }
         ) }) }),
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute left-3 top-14 bottom-14 z-30 pointer-events-none flex items-center", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsxRuntime.jsx(ToolRail, {}) }) }),
+        isMobile && sidebarOpen && /* @__PURE__ */ jsxRuntime.jsx(
+          "div",
+          {
+            className: "absolute inset-0 z-20 bg-black/50 md:hidden",
+            onClick: () => setSidebarOpen(false)
+          }
+        ),
         /* @__PURE__ */ jsxRuntime.jsxs(
           "div",
           {
             className: cn(
-              "absolute top-16 bottom-10 right-3 z-30 w-72 xl:w-80",
-              "transition-transform duration-200",
+              "absolute z-30 transition-transform duration-200",
+              "top-14 md:top-16 bottom-0 md:bottom-10 right-0 md:right-3",
+              "w-full max-w-sm md:w-72 xl:w-80",
               sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]"
             ),
             style: chromeScale,
@@ -6536,7 +6562,7 @@ function WorkspaceLayout({ className }) {
           }
         ),
         isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntime.jsx(ClipToolbar, {}) }) }),
-        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden md:block", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none", children: [
           metadata && /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
           /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
           /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusFps(fps) }),
@@ -7017,7 +7043,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "f9d6671 \xB7 2026-06-30 00:22Z" ;
+var PCV_BUILD = "8be11f1 \xB7 2026-06-30 00:30Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

@@ -393,6 +393,9 @@ Panorama markers are `THREE.Sprite`s with `sizeAttenuation:false`, so they keep 
 ### `uiScale` scales chrome only, not the canvas
 The `uiScale` prop scales the UI chrome (toolbars, tool-rail, sidebar, floating palettes, dialogs) via a `--pcv-scale` CSS variable plus `zoom`, while the 3D viewport/canvas stays at full device resolution. This keeps point-cloud rendering crisp on high-DPI / large displays while letting the surrounding controls be enlarged or shrunk independently.
 
+### Mobile / touch responsiveness
+`WorkspaceLayout` is responsive at the Tailwind `md` (768px) breakpoint via the `useIsMobile()` hook. On phones/small tablets the **sidebar becomes a full-bleed overlay** (`w-full max-w-sm`) that starts **closed** (so the viewport is usable) with a tap-to-close backdrop; on `md+` it sits beside the viewport as before. The minimap stays at the edge on mobile (the `--pcv-minimap-right` shift is `md:`-gated), the bottom status strip is `hidden md:block`, the top toolbar caps to `max-w-[calc(100vw-1.5rem)]` and scrolls, and the Settings panel is `w-[calc(100vw-1.5rem)] max-w-xs md:w-72`. **3D touch nav already works** — `SceneManager` sets `renderer.domElement.style.touchAction = "none"` and OrbitControls has touch enabled by default (one-finger rotate, two-finger pinch-zoom/pan); taps place measurement/clip points via synthesized mouse events. (The host app still needs a `<meta name="viewport" content="width=device-width, initial-scale=1">`.)
+
 ---
 
 ## Navigation Modes

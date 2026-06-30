@@ -6,6 +6,7 @@ import { cn } from "../lib/utils";
 import { useViewer } from "../providers/viewer-provider";
 import { useData } from "../providers/data-provider";
 import { useLocale } from "../i18n/locale-context";
+import { useIsMobile } from "../hooks/use-is-mobile";
 import { MainToolbar } from "./toolbar/main-toolbar";
 import { ToolRail } from "./toolbar/tool-rail";
 import { ClipToolbar } from "./toolbar/clip-toolbar";
@@ -59,7 +60,11 @@ interface WorkspaceLayoutProps {
 }
 
 export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = useIsMobile();
+  // Sidebar starts closed on phones/small tablets so the viewport is usable.
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => typeof window === "undefined" || window.innerWidth >= 768,
+  );
   const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
 
   const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
@@ -75,8 +80,10 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
         // Publish the minimap's right offset so it sits just left of the sidebar
         // when open and snaps back to the edge when closed (the minimap, inside
         // the viewport, consumes `--pcv-minimap-right`).
+        // On mobile the sidebar is a full-bleed overlay, so the minimap stays at
+        // the edge; only shift it on md+ where the sidebar sits beside the view.
         sidebarOpen
-          ? "[--pcv-minimap-right:19.25rem] xl:[--pcv-minimap-right:21.25rem]"
+          ? "[--pcv-minimap-right:0.75rem] md:[--pcv-minimap-right:19.25rem] xl:[--pcv-minimap-right:21.25rem]"
           : "[--pcv-minimap-right:0.75rem]",
         className,
       )}
@@ -95,9 +102,9 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       {/* ── Unified Settings panel (top-left) ───────────────────────────── */}
       <RenderingSettings open={renderSettingsOpen} onClose={() => setRenderSettingsOpen(false)} />
 
-      {/* ── Top floating toolbar ────────────────────────────────────────── */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={chromeScale}>
-        <GlassCard className="pointer-events-auto">
+      {/* ── Top floating toolbar (caps to screen width on mobile, scrolls) ─ */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[calc(100vw-1.5rem)]" style={chromeScale}>
+        <GlassCard className="pointer-events-auto max-w-full overflow-hidden">
           <MainToolbar
             onToggleRenderSettings={isPro ? () => setRenderSettingsOpen(o => !o) : undefined}
             renderSettingsOpen={renderSettingsOpen}
@@ -113,14 +120,22 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
         </GlassCard>
       </div>
 
+      {/* ── Mobile backdrop (tap to close the full-screen sidebar) ──────── */}
+      {isMobile && sidebarOpen && (
+        <div
+          className="absolute inset-0 z-20 bg-black/50 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* ── Right collapsible sidebar ───────────────────────────────────── */}
-      {/* top-16 keeps the sidebar clear of the top toolbar so it stays fully
-          visible. The panel slides off the right edge when collapsed, and its
-          chevron handle rides the panel's left edge so it moves out with it. */}
+      {/* On md+ it sits beside the viewport and slides off the right edge when
+          collapsed; on mobile it's a full-bleed overlay over the viewport. */}
       <div
         className={cn(
-          "absolute top-16 bottom-10 right-3 z-30 w-72 xl:w-80",
-          "transition-transform duration-200",
+          "absolute z-30 transition-transform duration-200",
+          "top-14 md:top-16 bottom-0 md:bottom-10 right-0 md:right-3",
+          "w-full max-w-sm md:w-72 xl:w-80",
           sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]",
         )}
         style={chromeScale}
@@ -156,8 +171,8 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
         </div>
       )}
 
-      {/* ── Bottom status strip ─────────────────────────────────────────── */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={chromeScale}>
+      {/* ── Bottom status strip (hidden on mobile to free screen space) ──── */}
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden md:block" style={chromeScale}>
         <GlassCard className="pointer-events-none">
           <div className="px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none">
             {metadata && <span>{t.statusPts(metadata.points / 1e6)}</span>}
