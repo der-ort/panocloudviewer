@@ -168,6 +168,8 @@ declare class SceneManager {
     potree: unknown;
     pointClouds: unknown[];
     constructor({ canvas, onFpsUpdate, onPointsUpdate }: SceneManagerOptions);
+    /** Bound so it can be removed in dispose(); blocks native drag/ghost-image. */
+    private preventDragStart;
     private onResize;
     /** Start the render loop */
     start(): void;
@@ -302,7 +304,7 @@ declare class PointCloudLoader {
     get isGeoreferenced(): boolean;
     /** Georeference status for the cloud info / About dialog. */
     getGeoInfo(): GeoInfo;
-    /** Remove all loaded point clouds from scene */
+    /** Remove all loaded point clouds from scene, releasing their GPU buffers. */
     clear(): void;
     /** Set point budget on all loaded clouds */
     setPointBudget(budget: number): void;
@@ -339,6 +341,12 @@ declare class CameraAnimator {
     flyTo({ position, target, up, duration, easing }: AnimOptions): Promise<void>;
     /** Fly to a camera marker position (offset behind the camera by `offset` units) */
     flyToCamera(camPos: THREE.Vector3 | [number, number, number], yawDeg?: number, offset?: number, duration?: number): Promise<void>;
+    /**
+     * Stop any in-flight animation. Note: the Promise returned by the interrupted
+     * `flyTo()` is abandoned (never resolves) — callers awaiting it should not rely
+     * on cancel() to settle it. Starting a new `flyTo()` cancels the previous one
+     * the same way; that path is fine because the old promise is simply discarded.
+     */
     cancel(): void;
 }
 
@@ -485,6 +493,12 @@ declare class ExportManager {
      * long each frame takes. Requires WebCodecs (Chrome/Edge).
      */
     recordAnimation(opts: RecordOptions): Promise<Blob>;
+    /**
+     * Flip a bottom-up WebGL pixel buffer into top-down image order.
+     * `readRenderTargetPixels` returns rows starting at the bottom of the frame;
+     * ImageData / canvas expect the top row first.
+     */
+    private static flipY;
     /** World-space bounds of the loaded point clouds (potree octrees aren't Meshes). */
     private cloudBounds;
     /**
@@ -556,6 +570,8 @@ declare class FaceHandleController {
     /** Orientation of the box (full 3-axis rotation). */
     private _quaternion;
     constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement);
+    /** Shared sphere geometry for all 6 handles — disposed exactly once in dispose(). */
+    private handleGeometry;
     private createHandles;
     attach(box: THREE.Box3, onChange: (box: THREE.Box3) => void): void;
     /** Set the box's orientation (full 3-axis) so handles follow it. */
@@ -620,7 +636,18 @@ declare class ClipManager {
     onChange?: (boxes: ClipBoxEntry[]) => void;
     onSelectChange?: (id: string | null) => void;
     constructor(sm: SceneManager);
+    /**
+     * Remove a Box3Helper from the scene and dispose BOTH its geometry and its
+     * internally-created LineBasicMaterial. Box3Helper owns its material, so
+     * disposing only the geometry (the easy-to-forget half) leaks it.
+     */
+    private disposeBox3Helper;
+    /** Remove the invisible transform pivot mesh and dispose its geometry + material. */
+    private disposePivot;
+    /** In-flight init promise — guards against concurrent selectBox() double-init. */
+    private _initTcPromise;
     private initTransformControls;
+    private _doInitTransformControls;
     /**
      * Force the TransformControls gizmos to render on top of the point cloud.
      * The gizmos use default materials (depthTest=true, renderOrder=0) so they are

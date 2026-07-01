@@ -15,6 +15,8 @@ import { MinimapRenderer } from "@der-ort/pano-cloud-viewer-core";
 import { ClipManager } from "@der-ort/pano-cloud-viewer-core";
 import { AxisWidget } from "@der-ort/pano-cloud-viewer-core";
 import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
+import { useMinimapResize } from "../hooks/use-minimap-resize";
+import { useSnapThrottle } from "../hooks/use-snap-throttle";
 import * as THREE from "three";
 
 interface ViewportProps {
@@ -26,7 +28,6 @@ export function Viewport({ className }: ViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const minimapContainerRef = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
-  const [minimapSize, setMinimapSize] = React.useState(176);
   const t = useLocale().viewport;
 
   const {
@@ -57,12 +58,11 @@ export function Viewport({ className }: ViewportProps) {
   const measureRef = useRef<MeasurementManager | null>(null);
   const minimapRef = useRef<MinimapRenderer | null>(null);
   const clipRef = useRef<ClipManager | null>(null);
-  // Measurement snap throttle: pick at most once per animation frame (a GPU pick
-  // on every mousemove stalls badly on dense clouds).
-  const snapRafRef = useRef<number | null>(null);
-  const snapNdcRef = useRef<{ nx: number; ny: number } | null>(null);
   const animRef = useRef<CameraAnimator | null>(null);
   const axisRef = useRef<AxisWidget | null>(null);
+
+  // Minimap pixel size + corner-drag resize (window listeners cleaned up on unmount).
+  const { minimapSize, handleMinimapResizeStart } = useMinimapResize(minimapRef);
 
   // Clip-box cursor-drop state: current draft box + pointer-down screen pos
   // (used to distinguish a placement click from an orbit drag).
@@ -198,30 +198,6 @@ export function Viewport({ className }: ViewportProps) {
     sm.controls.update();
   }, []);
 
-  // Resize minimap via corner drag
-  const minimapResizeRef = useRef(false);
-  const handleMinimapResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    minimapResizeRef.current = true;
-    const startY = e.clientY;
-    const startSize = minimapSize;
-    const onMove = (ev: MouseEvent) => {
-      if (!minimapResizeRef.current) return;
-      const delta = startY - ev.clientY;
-      setMinimapSize(Math.max(120, Math.min(400, startSize + delta)));
-      minimapRef.current?.resize();
-    };
-    const onUp = () => {
-      minimapResizeRef.current = false;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      setTimeout(() => minimapRef.current?.resize(), 0);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [minimapSize]);
-
   // Rebuild markers when cameras load
   useEffect(() => {
     if (markerRef.current && cameras.length > 0) {
@@ -307,6 +283,12 @@ export function Viewport({ className }: ViewportProps) {
     }
     return projectToPlaneZ(nx, ny, sm.controls.target.z);
   }, [projectToPlaneZ]);
+
+  // Live snap-crosshair preview, throttled to one GPU pick per frame.
+  const { scheduleSnap, cancelSnap } = useSnapThrottle((nx, ny) => {
+    const hit = pickVisiblePoint(nx, ny);
+    if (hit) measureRef.current?.updateSnap(hit);
+  });
 
   // Build a section-box draft centered at the cursor's ground point. The box is
   // kept compact (flat in Z) so all six face handles stay on screen.
@@ -431,10 +413,10 @@ export function Viewport({ className }: ViewportProps) {
         measureRef.current?.setVolumeDraft(box);
       } else if (vd.phase === "height" && vd.footprintBox && vd.startClientY !== undefined) {
         // Map vertical mouse movement to box Z range
-        const deltaY = vd.startClientY! - e.clientY; // up = positive
+        const deltaY = vd.startClientY - e.clientY; // up = positive
         const sensitivity = 0.1; // world units per pixel
         const zExtent = Math.max(0.1, Math.abs(deltaY) * sensitivity);
-        const midZ = (vd.baseZMin! + vd.baseZMax!) / 2;
+        const midZ = ((vd.baseZMin ?? 0) + (vd.baseZMax ?? 0)) / 2;
         const box = vd.footprintBox.clone();
         box.min.z = midZ - zExtent / 2;
         box.max.z = midZ + zExtent / 2;
@@ -454,22 +436,12 @@ export function Viewport({ className }: ViewportProps) {
     }
 
     // Measurement snap preview — show where the point will land before clicking.
-    // Throttled to one GPU pick per animation frame so it stays responsive on
-    // dense clouds (mousemove can fire far faster than we can pick).
+    // Throttled (see useSnapThrottle) to stay responsive on dense clouds.
     if (activeTool.startsWith("measure-") && smRef.current) {
       const { nx, ny } = getNDC(e);
-      snapNdcRef.current = { nx, ny };
-      if (snapRafRef.current == null) {
-        snapRafRef.current = requestAnimationFrame(() => {
-          snapRafRef.current = null;
-          const p = snapNdcRef.current;
-          if (!p || !measureRef.current) return;
-          const hit = pickVisiblePoint(p.nx, p.ny);
-          if (hit) measureRef.current.updateSnap(hit);
-        });
-      }
+      scheduleSnap(nx, ny);
     }
-  }, [activeTool, pickVisiblePoint, buildClipDraftAt]);
+  }, [activeTool, scheduleSnap, buildClipDraftAt]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const sm = smRef.current;
@@ -570,10 +542,11 @@ export function Viewport({ className }: ViewportProps) {
     }
   }, [activeTool, cameras, config, pickVisiblePoint, showMarkers]);
 
-  // Hide the snap crosshair when the cursor leaves the viewport.
+  // Hide the snap crosshair (and drop any pending pick) when the cursor leaves.
   const handleMouseLeave = useCallback(() => {
+    cancelSnap();
     measureRef.current?.clearSnap();
-  }, []);
+  }, [cancelSnap]);
 
   // Right-click to finish measurement, cancel volume drag, or clear clip box
   const handleContextMenu = useCallback((e: React.MouseEvent) => {

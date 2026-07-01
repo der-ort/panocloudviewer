@@ -443,11 +443,14 @@ export class MeasurementManager {
           this.group.add(line);
           objects.push(line);
         }
-        // Close polygon for area
+        // Close polygon for area — track it in `objects` so it's disposed with the rest.
         if (m.type === "area" && pts.length >= 3) {
           const geo = new THREE.BufferGeometry().setFromPoints([pts[pts.length - 1], pts[0]]);
           const mat = new THREE.LineBasicMaterial({ color, depthTest: false });
-          this.group.add(new THREE.Line(geo, mat));
+          const closingLine = new THREE.Line(geo, mat);
+          closingLine.renderOrder = 1;
+          this.group.add(closingLine);
+          objects.push(closingLine);
         }
       }
     }
@@ -469,7 +472,9 @@ export class MeasurementManager {
       }
       if (text) {
         const sprite = this.makeTextSprite(text, m.color);
-        const mid = pts.reduce((a, b) => a.clone().add(b), new THREE.Vector3()).divideScalar(pts.length);
+        const mid = new THREE.Vector3();
+        for (const p of pts) mid.add(p);
+        mid.divideScalar(pts.length);
         sprite.position.copy(mid).add(new THREE.Vector3(0, 0, 1));
         const ls = this._displaySettings.measurementLabelScale;
         sprite.scale.set(3.2 * ls, 0.8 * ls, 1);

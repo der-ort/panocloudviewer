@@ -97,6 +97,13 @@ export class FpsControls {
     this._dragging = false;
   }
 
+  // Reused scratch vectors so update() (called up to 60×/s) allocates nothing.
+  private _forward = new THREE.Vector3();
+  private _right = new THREE.Vector3();
+  private _move = new THREE.Vector3();
+  /** World up — Z-up scene, never mutated. */
+  private static readonly UP = new THREE.Vector3(0, 0, 1);
+
   /**
    * Update camera position based on held keys.
    * @param delta Time in seconds since last frame
@@ -106,14 +113,12 @@ export class FpsControls {
 
     const speed = this.movementSpeed * delta * (this._keys.has("ShiftLeft") || this._keys.has("ShiftRight") ? 2 : 1);
 
-    // Forward/backward direction (camera's local -Z projected onto horizontal plane)
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    // Right direction
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
-    // World up
-    const up = new THREE.Vector3(0, 0, 1); // Z-up scene
+    // Forward (camera-local -Z) and right (camera-local +X) in world space.
+    const forward = this._forward.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    const right = this._right.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    const up = FpsControls.UP;
 
-    const move = new THREE.Vector3();
+    const move = this._move.set(0, 0, 0);
 
     if (this._keys.has("KeyW")) move.add(forward);
     if (this._keys.has("KeyS")) move.sub(forward);

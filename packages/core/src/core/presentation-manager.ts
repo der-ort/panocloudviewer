@@ -49,7 +49,9 @@ export class PresentationManager {
     try {
       const raw = localStorage.getItem(this.storageKey);
       if (raw) this.scenes = JSON.parse(raw);
-    } catch {
+    } catch (err) {
+      // Corrupted payload — reset rather than crash, but surface it for debugging.
+      console.warn("[PresentationManager] Failed to parse saved scenes, resetting.", err);
       this.scenes = [];
     }
   }
@@ -105,7 +107,13 @@ export class PresentationManager {
       const existingIds = new Set(this.scenes.map(s => s.id));
       let count = 0;
       for (const scene of imported) {
-        if (!scene.id || !scene.name || !scene.camera) continue;
+        // Require the fields downstream code destructures as tuples, so a
+        // malformed backup can't slip a half-formed scene into the list.
+        if (
+          !scene.id || !scene.name ||
+          !Array.isArray(scene.camera?.position) ||
+          !Array.isArray(scene.camera?.target)
+        ) continue;
         if (existingIds.has(scene.id)) {
           scene.id = genSceneId(); // avoid duplicates
         }

@@ -47,8 +47,40 @@ export class ClipManager {
     this.sm = sm;
   }
 
-  private async initTransformControls(): Promise<void> {
-    if (this.tcMove && this.tcRotate) return;
+  /**
+   * Remove a Box3Helper from the scene and dispose BOTH its geometry and its
+   * internally-created LineBasicMaterial. Box3Helper owns its material, so
+   * disposing only the geometry (the easy-to-forget half) leaks it.
+   */
+  private disposeBox3Helper(helper: THREE.Box3Helper | null): void {
+    if (!helper) return;
+    this.sm.scene.remove(helper);
+    helper.geometry.dispose();
+    (helper.material as THREE.Material).dispose();
+  }
+
+  /** Remove the invisible transform pivot mesh and dispose its geometry + material. */
+  private disposePivot(): void {
+    if (!this.pivot) return;
+    this.sm.scene.remove(this.pivot);
+    this.pivot.geometry.dispose();
+    (this.pivot.material as THREE.Material).dispose();
+    this.pivot = null;
+  }
+
+  /** In-flight init promise — guards against concurrent selectBox() double-init. */
+  private _initTcPromise: Promise<void> | null = null;
+
+  private initTransformControls(): Promise<void> {
+    if (this.tcMove && this.tcRotate) return Promise.resolve();
+    // Reuse the pending promise so two rapid selects don't both run the async
+    // body and create four gizmos instead of two (the sync guard above can't
+    // catch a second call while the dynamic import is still awaiting).
+    if (!this._initTcPromise) this._initTcPromise = this._doInitTransformControls();
+    return this._initTcPromise;
+  }
+
+  private async _doInitTransformControls(): Promise<void> {
     const { TransformControls } = await import(
       "three/examples/jsm/controls/TransformControls.js"
     );
@@ -171,11 +203,7 @@ export class ClipManager {
 
     // Detach previous pivot, gizmos, and face handles
     this._detachGizmos();
-    if (this.pivot) {
-      this.sm.scene.remove(this.pivot);
-      this.pivot.geometry.dispose();
-      this.pivot = null;
-    }
+    this.disposePivot();
     this._faceHandles?.detach();
 
     this.selectedId = id;
@@ -323,12 +351,8 @@ export class ClipManager {
     if (idx === -1) return;
     this.entries.splice(idx, 1);
 
-    const helper = this.helpers.get(id);
-    if (helper) {
-      this.sm.scene.remove(helper);
-      helper.geometry.dispose();
-      this.helpers.delete(id);
-    }
+    this.disposeBox3Helper(this.helpers.get(id) ?? null);
+    this.helpers.delete(id);
 
     const fill = this.fills.get(id);
     if (fill) {
@@ -343,11 +367,7 @@ export class ClipManager {
       // Hide the resize handles too, or the six face spheres linger in the
       // scene as an artifact after the box itself is gone.
       this._faceHandles?.detach();
-      if (this.pivot) {
-        this.sm.scene.remove(this.pivot);
-        this.pivot.geometry.dispose();
-        this.pivot = null;
-      }
+      this.disposePivot();
       this.selectedId = null;
       this.onSelectChange?.(null);
     }
@@ -489,11 +509,8 @@ export class ClipManager {
 
   /** Draft box — live drag preview, no clip applied */
   setDraft(box: THREE.Box3 | null): void {
-    if (this.draftHelper) {
-      this.sm.scene.remove(this.draftHelper);
-      this.draftHelper.geometry.dispose();
-      this.draftHelper = null;
-    }
+    this.disposeBox3Helper(this.draftHelper);
+    this.draftHelper = null;
     if (box && !box.isEmpty()) {
       this.draftHelper = new THREE.Box3Helper(box, new THREE.Color(0xdcd546));
       (this.draftHelper.material as THREE.LineBasicMaterial).transparent = true;
@@ -508,16 +525,9 @@ export class ClipManager {
     this._detachGizmos();
     // Hide the resize handles so they don't linger after every box is cleared.
     this._faceHandles?.detach();
-    if (this.pivot) {
-      this.sm.scene.remove(this.pivot);
-      this.pivot.geometry.dispose();
-      this.pivot = null;
-    }
+    this.disposePivot();
 
-    for (const [, helper] of this.helpers) {
-      this.sm.scene.remove(helper);
-      helper.geometry.dispose();
-    }
+    for (const [, helper] of this.helpers) this.disposeBox3Helper(helper);
     this.helpers.clear();
 
     for (const [, fill] of this.fills) {
@@ -530,11 +540,8 @@ export class ClipManager {
     this.entries = [];
     this.selectedId = null;
 
-    if (this.draftHelper) {
-      this.sm.scene.remove(this.draftHelper);
-      this.draftHelper.geometry.dispose();
-      this.draftHelper = null;
-    }
+    this.disposeBox3Helper(this.draftHelper);
+    this.draftHelper = null;
 
     this.applyAll();
     this.onChange?.([]);
@@ -551,6 +558,7 @@ export class ClipManager {
     }
     this.tcMove = null;
     this.tcRotate = null;
+    this._initTcPromise = null;
     if (this._faceHandles) {
       this._faceHandles.dispose();
       this._faceHandles = null;

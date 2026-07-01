@@ -2,7 +2,7 @@
 
 var THREE5 = require('three');
 var OrbitControls_js = require('three/examples/jsm/controls/OrbitControls.js');
-var React26 = require('react');
+var React27 = require('react');
 var jsxRuntime = require('react/jsx-runtime');
 var clsx = require('clsx');
 var tailwindMerge = require('tailwind-merge');
@@ -38,7 +38,7 @@ function _interopNamespace(e) {
 }
 
 var THREE5__namespace = /*#__PURE__*/_interopNamespace(THREE5);
-var React26__default = /*#__PURE__*/_interopDefault(React26);
+var React27__default = /*#__PURE__*/_interopDefault(React27);
 var SliderPrimitive__namespace = /*#__PURE__*/_interopNamespace(SliderPrimitive);
 var DialogPrimitive__namespace = /*#__PURE__*/_interopNamespace(DialogPrimitive);
 var TabsPrimitive__namespace = /*#__PURE__*/_interopNamespace(TabsPrimitive);
@@ -214,7 +214,8 @@ var init_dist = __esm({
         this.onPointsUpdate = onPointsUpdate;
         this.scene = new THREE5__namespace.Scene();
         this.scene.background = new THREE5__namespace.Color(657930);
-        const { clientWidth: w, clientHeight: h } = canvas;
+        const w = Math.max(canvas.clientWidth, 1);
+        const h = Math.max(canvas.clientHeight, 1);
         this.camera = new THREE5__namespace.PerspectiveCamera(60, w / h, 0.01, 1e5);
         this.camera.up.set(0, 0, 1);
         this.camera.position.set(0, -50, 30);
@@ -229,7 +230,7 @@ var init_dist = __esm({
         canvas.appendChild(this.renderer.domElement);
         this.renderer.domElement.style.touchAction = "none";
         this.renderer.domElement.style.userSelect = "none";
-        this.renderer.domElement.addEventListener("dragstart", (e) => e.preventDefault());
+        this.renderer.domElement.addEventListener("dragstart", this.preventDragStart);
         this.controls = new OrbitControls_js.OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.06;
@@ -252,9 +253,11 @@ var init_dist = __esm({
         this.resizeObserver.observe(canvas);
         this.fpsInterval = performance.now();
       }
+      /** Bound so it can be removed in dispose(); blocks native drag/ghost-image. */
+      preventDragStart = (e) => e.preventDefault();
       onResize(canvas) {
-        const w = canvas.clientWidth;
-        const h = canvas.clientHeight;
+        const w = Math.max(canvas.clientWidth, 1);
+        const h = Math.max(canvas.clientHeight, 1);
         this.camera.aspect = w / h;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(w, h);
@@ -401,6 +404,7 @@ var init_dist = __esm({
       dispose() {
         if (this.animationId !== null) cancelAnimationFrame(this.animationId);
         this.resizeObserver.disconnect();
+        this.renderer.domElement.removeEventListener("dragstart", this.preventDragStart);
         this.controls.dispose();
         this.renderer.dispose();
         this.renderer.domElement.remove();
@@ -598,10 +602,14 @@ var init_dist = __esm({
       getGeoInfo() {
         return { georeferenced: this.isGeoreferenced, projection: this._projection };
       }
-      /** Remove all loaded point clouds from scene */
+      /** Remove all loaded point clouds from scene, releasing their GPU buffers. */
       clear() {
         for (const cloud of this.currentClouds) {
           this.sceneManager.scene.remove(cloud);
+          try {
+            cloud.dispose?.();
+          } catch {
+          }
         }
         this.currentClouds = [];
         this.sceneManager.pointClouds = [];
@@ -709,6 +717,12 @@ var init_dist = __esm({
         );
         return this.flyTo({ position: viewerPos, target: pos, duration });
       }
+      /**
+       * Stop any in-flight animation. Note: the Promise returned by the interrupted
+       * `flyTo()` is abandoned (never resolves) — callers awaiting it should not rely
+       * on cancel() to settle it. Starting a new `flyTo()` cancels the previous one
+       * the same way; that path is fine because the old promise is simply discarded.
+       */
       cancel() {
         if (this.animId !== null) {
           cancelAnimationFrame(this.animId);
@@ -1371,7 +1385,10 @@ var init_dist = __esm({
             if (m.type === "area" && pts.length >= 3) {
               const geo = new THREE5__namespace.BufferGeometry().setFromPoints([pts[pts.length - 1], pts[0]]);
               const mat = new THREE5__namespace.LineBasicMaterial({ color, depthTest: false });
-              this.group.add(new THREE5__namespace.Line(geo, mat));
+              const closingLine = new THREE5__namespace.Line(geo, mat);
+              closingLine.renderOrder = 1;
+              this.group.add(closingLine);
+              objects.push(closingLine);
             }
           }
         }
@@ -1401,7 +1418,9 @@ var init_dist = __esm({
           }
           if (text) {
             const sprite = this.makeTextSprite(text, m.color);
-            const mid = pts.reduce((a, b) => a.clone().add(b), new THREE5__namespace.Vector3()).divideScalar(pts.length);
+            const mid = new THREE5__namespace.Vector3();
+            for (const p of pts) mid.add(p);
+            mid.divideScalar(pts.length);
             sprite.position.copy(mid).add(new THREE5__namespace.Vector3(0, 0, 1));
             const ls = this._displaySettings.measurementLabelScale;
             sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
@@ -1484,7 +1503,7 @@ var init_dist = __esm({
       custom: { pos: new THREE5__namespace.Vector3(0, 0, 1), up: new THREE5__namespace.Vector3(0, 1, 0) }
     };
     _muxerPromise = null;
-    exports.ExportManager = class {
+    exports.ExportManager = class _ExportManager {
       sceneManager;
       constructor(sceneManager) {
         this.sceneManager = sceneManager;
@@ -1553,8 +1572,6 @@ var init_dist = __esm({
         c2d.height = height;
         const ctx = c2d.getContext("2d");
         const pixels = new Uint8Array(width * height * 4);
-        const flipped = new Uint8ClampedArray(width * height * 4);
-        const row = width * 4;
         const frameDur = Math.round(1e6 / fps);
         const total = Math.max(1, Math.round(durationSec * fps));
         try {
@@ -1569,11 +1586,7 @@ var init_dist = __esm({
             renderer.render(scene, cam);
             renderer.setRenderTarget(null);
             renderer.readRenderTargetPixels(rt, 0, 0, width, height, pixels);
-            for (let y = 0; y < height; y++) {
-              const s = (height - 1 - y) * row;
-              flipped.set(pixels.subarray(s, s + row), y * row);
-            }
-            ctx.putImageData(new ImageData(flipped, width, height), 0, 0);
+            ctx.putImageData(new ImageData(_ExportManager.flipY(pixels, width, height), width, height), 0, 0);
             const frame = new w.VideoFrame(c2d, { timestamp: f * frameDur, duration: frameDur });
             encoder.encode(frame, { keyFrame: f % (fps * 2) === 0 });
             frame.close();
@@ -1584,12 +1597,30 @@ var init_dist = __esm({
           muxer.finalize();
           return new Blob([muxer.target.buffer], { type: "video/mp4" });
         } finally {
+          try {
+            encoder.close();
+          } catch {
+          }
           renderer.setRenderTarget(null);
           renderer.setPixelRatio(prevPR);
           renderer.setSize(prevSize.x, prevSize.y, false);
           scene.background = prevBg;
           rt.dispose();
         }
+      }
+      /**
+       * Flip a bottom-up WebGL pixel buffer into top-down image order.
+       * `readRenderTargetPixels` returns rows starting at the bottom of the frame;
+       * ImageData / canvas expect the top row first.
+       */
+      static flipY(pixels, width, height) {
+        const flipped = new Uint8ClampedArray(width * height * 4);
+        const row = width * 4;
+        for (let y = 0; y < height; y++) {
+          const src = (height - 1 - y) * row;
+          flipped.set(pixels.subarray(src, src + row), y * row);
+        }
+        return flipped;
       }
       /** World-space bounds of the loaded point clouds (potree octrees aren't Meshes). */
       cloudBounds() {
@@ -1672,12 +1703,7 @@ var init_dist = __esm({
         const pixels = new Uint8Array(outW * outH * 4);
         renderer.readRenderTargetPixels(rt, 0, 0, outW, outH, pixels);
         rt.dispose();
-        const flipped = new Uint8ClampedArray(outW * outH * 4);
-        for (let y = 0; y < outH; y++) {
-          const src = (outH - 1 - y) * outW * 4;
-          const dst = y * outW * 4;
-          flipped.set(pixels.subarray(src, src + outW * 4), dst);
-        }
+        const flipped = _ExportManager.flipY(pixels, outW, outH);
         const canvas = document.createElement("canvas");
         canvas.width = outW;
         canvas.height = outH;
@@ -1905,10 +1931,12 @@ var init_dist = __esm({
         this.scene.add(this.group);
         this.createHandles();
       }
+      /** Shared sphere geometry for all 6 handles — disposed exactly once in dispose(). */
+      handleGeometry = new THREE5__namespace.SphereGeometry(1, 12, 8);
       createHandles() {
         const axes = ["x", "y", "z"];
         const signs = [1, -1];
-        const geo = new THREE5__namespace.SphereGeometry(1, 12, 8);
+        const geo = this.handleGeometry;
         for (const axis of axes) {
           for (const sign of signs) {
             const mat = new THREE5__namespace.MeshBasicMaterial({
@@ -2068,8 +2096,8 @@ var init_dist = __esm({
       dispose() {
         if (this.disposed) return;
         this.disposed = true;
+        this.handleGeometry.dispose();
         for (const h of this.handles) {
-          h.mesh.geometry.dispose();
           h.mesh.material.dispose();
         }
         this.scene.remove(this.group);
@@ -2118,8 +2146,33 @@ var init_dist = __esm({
       constructor(sm) {
         this.sm = sm;
       }
-      async initTransformControls() {
-        if (this.tcMove && this.tcRotate) return;
+      /**
+       * Remove a Box3Helper from the scene and dispose BOTH its geometry and its
+       * internally-created LineBasicMaterial. Box3Helper owns its material, so
+       * disposing only the geometry (the easy-to-forget half) leaks it.
+       */
+      disposeBox3Helper(helper) {
+        if (!helper) return;
+        this.sm.scene.remove(helper);
+        helper.geometry.dispose();
+        helper.material.dispose();
+      }
+      /** Remove the invisible transform pivot mesh and dispose its geometry + material. */
+      disposePivot() {
+        if (!this.pivot) return;
+        this.sm.scene.remove(this.pivot);
+        this.pivot.geometry.dispose();
+        this.pivot.material.dispose();
+        this.pivot = null;
+      }
+      /** In-flight init promise — guards against concurrent selectBox() double-init. */
+      _initTcPromise = null;
+      initTransformControls() {
+        if (this.tcMove && this.tcRotate) return Promise.resolve();
+        if (!this._initTcPromise) this._initTcPromise = this._doInitTransformControls();
+        return this._initTcPromise;
+      }
+      async _doInitTransformControls() {
         const { TransformControls } = await import('three/examples/jsm/controls/TransformControls.js');
         const makeTc = (mode, size) => {
           const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement);
@@ -2215,11 +2268,7 @@ var init_dist = __esm({
       async selectBox(id) {
         this._highlightHelper(this.selectedId, false);
         this._detachGizmos();
-        if (this.pivot) {
-          this.sm.scene.remove(this.pivot);
-          this.pivot.geometry.dispose();
-          this.pivot = null;
-        }
+        this.disposePivot();
         this._faceHandles?.detach();
         this.selectedId = id;
         this.onSelectChange?.(id);
@@ -2345,12 +2394,8 @@ var init_dist = __esm({
         const idx = this.entries.findIndex((e) => e.id === id);
         if (idx === -1) return;
         this.entries.splice(idx, 1);
-        const helper = this.helpers.get(id);
-        if (helper) {
-          this.sm.scene.remove(helper);
-          helper.geometry.dispose();
-          this.helpers.delete(id);
-        }
+        this.disposeBox3Helper(this.helpers.get(id) ?? null);
+        this.helpers.delete(id);
         const fill = this.fills.get(id);
         if (fill) {
           this.sm.scene.remove(fill);
@@ -2361,11 +2406,7 @@ var init_dist = __esm({
         if (this.selectedId === id) {
           this._detachGizmos();
           this._faceHandles?.detach();
-          if (this.pivot) {
-            this.sm.scene.remove(this.pivot);
-            this.pivot.geometry.dispose();
-            this.pivot = null;
-          }
+          this.disposePivot();
           this.selectedId = null;
           this.onSelectChange?.(null);
         }
@@ -2483,11 +2524,8 @@ var init_dist = __esm({
       }
       /** Draft box — live drag preview, no clip applied */
       setDraft(box) {
-        if (this.draftHelper) {
-          this.sm.scene.remove(this.draftHelper);
-          this.draftHelper.geometry.dispose();
-          this.draftHelper = null;
-        }
+        this.disposeBox3Helper(this.draftHelper);
+        this.draftHelper = null;
         if (box && !box.isEmpty()) {
           this.draftHelper = new THREE5__namespace.Box3Helper(box, new THREE5__namespace.Color(14472518));
           this.draftHelper.material.transparent = true;
@@ -2499,15 +2537,8 @@ var init_dist = __esm({
       clear() {
         this._detachGizmos();
         this._faceHandles?.detach();
-        if (this.pivot) {
-          this.sm.scene.remove(this.pivot);
-          this.pivot.geometry.dispose();
-          this.pivot = null;
-        }
-        for (const [, helper] of this.helpers) {
-          this.sm.scene.remove(helper);
-          helper.geometry.dispose();
-        }
+        this.disposePivot();
+        for (const [, helper] of this.helpers) this.disposeBox3Helper(helper);
         this.helpers.clear();
         for (const [, fill] of this.fills) {
           this.sm.scene.remove(fill);
@@ -2517,11 +2548,8 @@ var init_dist = __esm({
         this.fills.clear();
         this.entries = [];
         this.selectedId = null;
-        if (this.draftHelper) {
-          this.sm.scene.remove(this.draftHelper);
-          this.draftHelper.geometry.dispose();
-          this.draftHelper = null;
-        }
+        this.disposeBox3Helper(this.draftHelper);
+        this.draftHelper = null;
         this.applyAll();
         this.onChange?.([]);
         this.onSelectChange?.(null);
@@ -2535,6 +2563,7 @@ var init_dist = __esm({
         }
         this.tcMove = null;
         this.tcRotate = null;
+        this._initTcPromise = null;
         if (this._faceHandles) {
           this._faceHandles.dispose();
           this._faceHandles = null;
@@ -2781,7 +2810,8 @@ var init_dist = __esm({
         try {
           const raw = localStorage.getItem(this.storageKey);
           if (raw) this.scenes = JSON.parse(raw);
-        } catch {
+        } catch (err) {
+          console.warn("[PresentationManager] Failed to parse saved scenes, resetting.", err);
           this.scenes = [];
         }
       }
@@ -2829,7 +2859,7 @@ var init_dist = __esm({
           const existingIds = new Set(this.scenes.map((s) => s.id));
           let count = 0;
           for (const scene of imported) {
-            if (!scene.id || !scene.name || !scene.camera) continue;
+            if (!scene.id || !scene.name || !Array.isArray(scene.camera?.position) || !Array.isArray(scene.camera?.target)) continue;
             if (existingIds.has(scene.id)) {
               scene.id = genSceneId();
             }
@@ -2905,54 +2935,54 @@ var init_dist = __esm({
   }
 });
 function useViewer() {
-  const ctx = React26.useContext(ViewerContext);
+  const ctx = React27.useContext(ViewerContext);
   if (!ctx) throw new Error("useViewer must be used inside <ViewerProvider>");
   return ctx;
 }
 function ViewerProvider({ config, children }) {
-  const [sceneManager, _setSceneManager] = React26.useState(null);
-  const [loader, _setLoader] = React26.useState(null);
-  const [measurementManager, _setMeasurementManager] = React26.useState(null);
-  const [markerManager, _setMarkerManager] = React26.useState(null);
-  const [cameraAnimator, _setCameraAnimator] = React26.useState(null);
-  const [exporter, _setExporter] = React26.useState(null);
-  const [minimap, _setMinimap] = React26.useState(null);
-  const [clipManager, _setClipManager] = React26.useState(null);
-  const [activeTool, setActiveTool] = React26.useState("none");
-  const [pointBudget, setPointBudget] = React26.useState(config.pointBudget ?? 2e6);
-  const [pointSize, setPointSize] = React26.useState(1.5);
-  const [fps, setFps] = React26.useState(0);
-  const [pointCount, setPointCount] = React26.useState(0);
-  const [measurementList, setMeasurementList] = React26.useState([]);
-  const [showMarkers, setShowMarkers] = React26.useState(true);
-  const [showMinimap, setShowMinimap] = React26.useState(config.showMinimap ?? true);
-  const [showMeasurements, setShowMeasurements] = React26.useState(true);
-  const [selectedCamera, setSelectedCamera] = React26.useState(null);
-  const [clipBoxEntries, setClipBoxEntries] = React26.useState([]);
-  const [selectedClipBoxId, setSelectedClipBoxId] = React26.useState(null);
-  const [colorMode, setColorMode] = React26.useState("rgb");
-  const [navigationMode, _setNavigationMode] = React26.useState("orbit");
-  const [projection, _setProjection] = React26.useState("perspective");
-  const [displaySettings, setDisplaySettings] = React26.useState(() => ({
+  const [sceneManager, _setSceneManager] = React27.useState(null);
+  const [loader, _setLoader] = React27.useState(null);
+  const [measurementManager, _setMeasurementManager] = React27.useState(null);
+  const [markerManager, _setMarkerManager] = React27.useState(null);
+  const [cameraAnimator, _setCameraAnimator] = React27.useState(null);
+  const [exporter, _setExporter] = React27.useState(null);
+  const [minimap, _setMinimap] = React27.useState(null);
+  const [clipManager, _setClipManager] = React27.useState(null);
+  const [activeTool, setActiveTool] = React27.useState("none");
+  const [pointBudget, setPointBudget] = React27.useState(config.pointBudget ?? 2e6);
+  const [pointSize, setPointSize] = React27.useState(1.5);
+  const [fps, setFps] = React27.useState(0);
+  const [pointCount, setPointCount] = React27.useState(0);
+  const [measurementList, setMeasurementList] = React27.useState([]);
+  const [showMarkers, setShowMarkers] = React27.useState(true);
+  const [showMinimap, setShowMinimap] = React27.useState(config.showMinimap ?? true);
+  const [showMeasurements, setShowMeasurements] = React27.useState(true);
+  const [selectedCamera, setSelectedCamera] = React27.useState(null);
+  const [clipBoxEntries, setClipBoxEntries] = React27.useState([]);
+  const [selectedClipBoxId, setSelectedClipBoxId] = React27.useState(null);
+  const [colorMode, setColorMode] = React27.useState("rgb");
+  const [navigationMode, _setNavigationMode] = React27.useState("orbit");
+  const [projection, _setProjection] = React27.useState("perspective");
+  const [displaySettings, setDisplaySettings] = React27.useState(() => ({
     ...exports.DISPLAY_PRESETS.standard,
     ...config.displaySettings
   }));
-  const setNavigationMode = React26.useCallback((mode) => {
+  const setNavigationMode = React27.useCallback((mode) => {
     _setNavigationMode(mode);
   }, []);
-  const setProjection = React26.useCallback((mode) => {
+  const setProjection = React27.useCallback((mode) => {
     _setProjection(mode);
   }, []);
-  const setSceneManager = React26.useCallback((sm) => _setSceneManager(sm), []);
-  const setLoader = React26.useCallback((l) => _setLoader(l), []);
-  const setMeasurementManager = React26.useCallback((m) => _setMeasurementManager(m), []);
-  const setMarkerManager = React26.useCallback((m) => _setMarkerManager(m), []);
-  const setCameraAnimator = React26.useCallback((a) => _setCameraAnimator(a), []);
-  const setExporter = React26.useCallback((e) => _setExporter(e), []);
-  const setMinimap = React26.useCallback((r) => _setMinimap(r), []);
-  const setClipManager = React26.useCallback((c) => _setClipManager(c), []);
+  const setSceneManager = React27.useCallback((sm) => _setSceneManager(sm), []);
+  const setLoader = React27.useCallback((l) => _setLoader(l), []);
+  const setMeasurementManager = React27.useCallback((m) => _setMeasurementManager(m), []);
+  const setMarkerManager = React27.useCallback((m) => _setMarkerManager(m), []);
+  const setCameraAnimator = React27.useCallback((a) => _setCameraAnimator(a), []);
+  const setExporter = React27.useCallback((e) => _setExporter(e), []);
+  const setMinimap = React27.useCallback((r) => _setMinimap(r), []);
+  const setClipManager = React27.useCallback((c) => _setClipManager(c), []);
   const uiMode = config.uiMode ?? "professional";
-  const [panoEngine, setPanoEngine] = React26.useState(config.panoEngine ?? "photo-sphere-viewer");
+  const [panoEngine, setPanoEngine] = React27.useState(config.panoEngine ?? "photo-sphere-viewer");
   const value = {
     sceneManager,
     loader,
@@ -3014,21 +3044,21 @@ var init_viewer_provider = __esm({
   "src/providers/viewer-provider.tsx"() {
     "use client";
     init_dist();
-    ViewerContext = React26.createContext(null);
+    ViewerContext = React27.createContext(null);
   }
 });
 function useData() {
-  const ctx = React26.useContext(DataContext);
+  const ctx = React27.useContext(DataContext);
   if (!ctx) throw new Error("useData must be used inside <DataProvider>");
   return ctx;
 }
 function DataProvider({ adapter, children }) {
-  const [cameras, setCameras] = React26.useState([]);
-  const [metadata, setMetadata] = React26.useState(null);
-  const [loading, setLoading] = React26.useState(true);
-  const [error, setError] = React26.useState(null);
-  const [rev, setRev] = React26.useState(0);
-  React26.useEffect(() => {
+  const [cameras, setCameras] = React27.useState([]);
+  const [metadata, setMetadata] = React27.useState(null);
+  const [loading, setLoading] = React27.useState(true);
+  const [error, setError] = React27.useState(null);
+  const [rev, setRev] = React27.useState(0);
+  React27.useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -3066,7 +3096,7 @@ var DataContext;
 var init_data_provider = __esm({
   "src/providers/data-provider.tsx"() {
     "use client";
-    DataContext = React26.createContext(null);
+    DataContext = React27.createContext(null);
   }
 });
 
@@ -3306,7 +3336,7 @@ var init_en = __esm({
   }
 });
 function useLocale() {
-  return React26.useContext(LocaleContext);
+  return React27.useContext(LocaleContext);
 }
 function LocaleProvider({ locale = exports.en, children }) {
   return /* @__PURE__ */ jsxRuntime.jsx(LocaleContext.Provider, { value: locale, children });
@@ -3316,15 +3346,85 @@ var init_locale_context = __esm({
   "src/i18n/locale-context.tsx"() {
     "use client";
     init_en();
-    LocaleContext = React26.createContext(exports.en);
+    LocaleContext = React27.createContext(exports.en);
   }
 });
 function cn(...inputs) {
   return tailwindMerge.twMerge(clsx.clsx(inputs));
 }
+var pcvChromeScaleStyle;
 var init_utils = __esm({
   "src/lib/utils.ts"() {
     init_dist();
+    pcvChromeScaleStyle = { zoom: "var(--pcv-scale, 1)" };
+  }
+});
+function useMinimapResize(minimapRef, initialSize = 176) {
+  const [minimapSize, setMinimapSize] = React27.useState(initialSize);
+  const sizeRef = React27.useRef(initialSize);
+  sizeRef.current = minimapSize;
+  const draggingRef = React27.useRef(false);
+  const removeListenersRef = React27.useRef(null);
+  const handleMinimapResizeStart = React27.useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    draggingRef.current = true;
+    const startY = e.clientY;
+    const startSize = sizeRef.current;
+    const onMove = (ev) => {
+      if (!draggingRef.current) return;
+      const delta = startY - ev.clientY;
+      setMinimapSize(Math.max(120, Math.min(400, startSize + delta)));
+      minimapRef.current?.resize();
+    };
+    const onUp = () => {
+      draggingRef.current = false;
+      removeListenersRef.current?.();
+      removeListenersRef.current = null;
+      setTimeout(() => minimapRef.current?.resize(), 0);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    removeListenersRef.current = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [minimapRef]);
+  React27.useEffect(() => () => removeListenersRef.current?.(), []);
+  return { minimapSize, handleMinimapResizeStart };
+}
+var init_use_minimap_resize = __esm({
+  "src/hooks/use-minimap-resize.ts"() {
+    "use client";
+  }
+});
+function useSnapThrottle(pick) {
+  const rafRef = React27.useRef(null);
+  const ndcRef = React27.useRef(null);
+  const pickRef = React27.useRef(pick);
+  pickRef.current = pick;
+  const scheduleSnap = React27.useCallback((nx, ny) => {
+    ndcRef.current = { nx, ny };
+    if (rafRef.current == null) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const p = ndcRef.current;
+        if (p) pickRef.current(p.nx, p.ny);
+      });
+    }
+  }, []);
+  const cancelSnap = React27.useCallback(() => {
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  }, []);
+  React27.useEffect(() => cancelSnap, [cancelSnap]);
+  return { scheduleSnap, cancelSnap };
+}
+var init_use_snap_throttle = __esm({
+  "src/hooks/use-snap-throttle.ts"() {
+    "use client";
   }
 });
 
@@ -3334,10 +3434,9 @@ __export(viewport_exports, {
   Viewport: () => Viewport
 });
 function Viewport({ className }) {
-  const containerRef = React26.useRef(null);
-  const minimapContainerRef = React26.useRef(null);
-  const initialized = React26.useRef(false);
-  const [minimapSize, setMinimapSize] = React26__default.default.useState(176);
+  const containerRef = React27.useRef(null);
+  const minimapContainerRef = React27.useRef(null);
+  const initialized = React27.useRef(false);
   const t = useLocale().viewport;
   const {
     config,
@@ -3365,8 +3464,8 @@ function Viewport({ className }) {
     displaySettings
   } = useViewer();
   const { cameras, metadata } = useData();
-  const metaZRef = React26.useRef(null);
-  React26.useEffect(() => {
+  const metaZRef = React27.useRef(null);
+  React27.useEffect(() => {
     if (metadata) {
       metaZRef.current = {
         min: metadata.boundingBox.min[2],
@@ -3374,20 +3473,19 @@ function Viewport({ className }) {
       };
     }
   }, [metadata]);
-  const smRef = React26.useRef(null);
-  const loaderRef = React26.useRef(null);
-  const markerRef = React26.useRef(null);
-  const measureRef = React26.useRef(null);
-  const minimapRef = React26.useRef(null);
-  const clipRef = React26.useRef(null);
-  const snapRafRef = React26.useRef(null);
-  const snapNdcRef = React26.useRef(null);
-  const animRef = React26.useRef(null);
-  const axisRef = React26.useRef(null);
-  const clipDraftRef = React26.useRef(null);
-  const clipDownRef = React26.useRef(null);
-  const volumeDragRef = React26.useRef(null);
-  React26.useEffect(() => {
+  const smRef = React27.useRef(null);
+  const loaderRef = React27.useRef(null);
+  const markerRef = React27.useRef(null);
+  const measureRef = React27.useRef(null);
+  const minimapRef = React27.useRef(null);
+  const clipRef = React27.useRef(null);
+  const animRef = React27.useRef(null);
+  const axisRef = React27.useRef(null);
+  const { minimapSize, handleMinimapResizeStart } = useMinimapResize(minimapRef);
+  const clipDraftRef = React27.useRef(null);
+  const clipDownRef = React27.useRef(null);
+  const volumeDragRef = React27.useRef(null);
+  React27.useEffect(() => {
     if (!containerRef.current || initialized.current) return;
     initialized.current = true;
     const adapter = createAdapter(config.source);
@@ -3461,12 +3559,12 @@ function Viewport({ className }) {
       initialized.current = false;
     };
   }, []);
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     if (minimapRef.current && minimapContainerRef.current) {
       minimapRef.current.attach(minimapContainerRef.current);
     }
   }, [showMinimap]);
-  const handleMinimapClick = React26.useCallback((e) => {
+  const handleMinimapClick = React27.useCallback((e) => {
     const sm = smRef.current;
     const minimap = minimapRef.current;
     if (!sm || !minimap) return;
@@ -3480,48 +3578,26 @@ function Viewport({ className }) {
     cam.position.set(world.x + offset.x, world.y + offset.y, cam.position.z);
     sm.controls.update();
   }, []);
-  const minimapResizeRef = React26.useRef(false);
-  const handleMinimapResizeStart = React26.useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    minimapResizeRef.current = true;
-    const startY = e.clientY;
-    const startSize = minimapSize;
-    const onMove = (ev) => {
-      if (!minimapResizeRef.current) return;
-      const delta = startY - ev.clientY;
-      setMinimapSize(Math.max(120, Math.min(400, startSize + delta)));
-      minimapRef.current?.resize();
-    };
-    const onUp = () => {
-      minimapResizeRef.current = false;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      setTimeout(() => minimapRef.current?.resize(), 0);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [minimapSize]);
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     if (markerRef.current && cameras.length > 0) {
       const wb = loaderRef.current?.worldBox;
       markerRef.current.build(cameras, wb && !wb.isEmpty() ? wb : void 0);
       markerRef.current.setVisible(showMarkers);
     }
   }, [cameras, showMarkers]);
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     markerRef.current?.setVisible(showMarkers);
   }, [showMarkers]);
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     measureRef.current?.setVisible(showMeasurements);
   }, [showMeasurements]);
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     const mm = markerRef.current;
     const cm = clipRef.current;
     if (!mm) return;
     mm.applyClipFilter(cm ? (p) => cm.isPointVisible(p) : null);
   }, [clipBoxEntries]);
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     if (!activeTool.startsWith("measure-")) {
       measureRef.current?.clearSnap();
     }
@@ -3535,17 +3611,17 @@ function Viewport({ className }) {
       clipRef.current?.setDraft(null);
     }
   }, [activeTool]);
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     smRef.current?.setNavigationMode(navigationMode);
   }, [navigationMode]);
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     smRef.current?.setProjection(projection);
   }, [projection]);
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     measureRef.current?.applyDisplaySettings(displaySettings);
     markerRef.current?.applyDisplaySettings(displaySettings);
   }, [displaySettings]);
-  const projectToPlaneZ = React26.useCallback((nx, ny, planeZ) => {
+  const projectToPlaneZ = React27.useCallback((nx, ny, planeZ) => {
     const sm = smRef.current;
     if (!sm) return null;
     const raycaster = new THREE5__namespace.Raycaster();
@@ -3554,7 +3630,7 @@ function Viewport({ className }) {
     const hit = new THREE5__namespace.Vector3();
     return raycaster.ray.intersectPlane(plane, hit) ? hit : null;
   }, []);
-  const pickVisiblePoint = React26.useCallback((nx, ny) => {
+  const pickVisiblePoint = React27.useCallback((nx, ny) => {
     const sm = smRef.current;
     if (!sm) return null;
     const picked = sm.pickPoint(nx, ny);
@@ -3563,7 +3639,11 @@ function Viewport({ className }) {
     }
     return projectToPlaneZ(nx, ny, sm.controls.target.z);
   }, [projectToPlaneZ]);
-  const buildClipDraftAt = React26.useCallback((nx, ny) => {
+  const { scheduleSnap, cancelSnap } = useSnapThrottle((nx, ny) => {
+    const hit = pickVisiblePoint(nx, ny);
+    if (hit) measureRef.current?.updateSnap(hit);
+  });
+  const buildClipDraftAt = React27.useCallback((nx, ny) => {
     const sm = smRef.current;
     if (!sm) return null;
     const zMid = metaZRef.current ? (metaZRef.current.min + metaZRef.current.max) / 2 : sm.controls.target.z;
@@ -3589,7 +3669,7 @@ function Viewport({ className }) {
       ny: -((e.clientY - rect.top) / rect.height) * 2 + 1
     };
   };
-  const handleDblClick = React26.useCallback((e) => {
+  const handleDblClick = React27.useCallback((e) => {
     const sm = smRef.current;
     const anim = animRef.current;
     if (!sm || !anim) return;
@@ -3598,7 +3678,7 @@ function Viewport({ className }) {
     if (!hit) return;
     anim.flyTo({ position: sm.camera.position.clone(), target: hit, duration: 600 });
   }, [projectToPlaneZ]);
-  const handleMouseDown = React26.useCallback((e) => {
+  const handleMouseDown = React27.useCallback((e) => {
     const sm = smRef.current;
     if (!sm) return;
     const fh = clipRef.current?.faceHandles;
@@ -3632,7 +3712,7 @@ function Viewport({ className }) {
     if (activeTool !== "section-box" || e.button !== 0) return;
     clipDownRef.current = { x: e.clientX, y: e.clientY };
   }, [activeTool]);
-  const handleMouseMove = React26.useCallback((e) => {
+  const handleMouseMove = React27.useCallback((e) => {
     const fh = clipRef.current?.faceHandles;
     if (fh && fh.isDragging()) {
       fh.onPointerMove(e.clientX, e.clientY);
@@ -3659,7 +3739,7 @@ function Viewport({ className }) {
         const deltaY = vd.startClientY - e.clientY;
         const sensitivity = 0.1;
         const zExtent = Math.max(0.1, Math.abs(deltaY) * sensitivity);
-        const midZ = (vd.baseZMin + vd.baseZMax) / 2;
+        const midZ = ((vd.baseZMin ?? 0) + (vd.baseZMax ?? 0)) / 2;
         const box = vd.footprintBox.clone();
         box.min.z = midZ - zExtent / 2;
         box.max.z = midZ + zExtent / 2;
@@ -3677,19 +3757,10 @@ function Viewport({ className }) {
     }
     if (activeTool.startsWith("measure-") && smRef.current) {
       const { nx, ny } = getNDC(e);
-      snapNdcRef.current = { nx, ny };
-      if (snapRafRef.current == null) {
-        snapRafRef.current = requestAnimationFrame(() => {
-          snapRafRef.current = null;
-          const p = snapNdcRef.current;
-          if (!p || !measureRef.current) return;
-          const hit = pickVisiblePoint(p.nx, p.ny);
-          if (hit) measureRef.current.updateSnap(hit);
-        });
-      }
+      scheduleSnap(nx, ny);
     }
-  }, [activeTool, pickVisiblePoint, buildClipDraftAt]);
-  const handleMouseUp = React26.useCallback((e) => {
+  }, [activeTool, scheduleSnap, buildClipDraftAt]);
+  const handleMouseUp = React27.useCallback((e) => {
     const sm = smRef.current;
     const fh = clipRef.current?.faceHandles;
     if (fh && fh.isDragging()) {
@@ -3746,7 +3817,7 @@ function Viewport({ className }) {
       return;
     }
   }, [activeTool, buildClipDraftAt]);
-  const handleClick = React26.useCallback((e) => {
+  const handleClick = React27.useCallback((e) => {
     if (activeTool === "section-box") return;
     const sm = smRef.current;
     if (!sm) return;
@@ -3769,10 +3840,11 @@ function Viewport({ className }) {
       }
     }
   }, [activeTool, cameras, config, pickVisiblePoint, showMarkers]);
-  const handleMouseLeave = React26.useCallback(() => {
+  const handleMouseLeave = React27.useCallback(() => {
+    cancelSnap();
     measureRef.current?.clearSnap();
-  }, []);
-  const handleContextMenu = React26.useCallback((e) => {
+  }, [cancelSnap]);
+  const handleContextMenu = React27.useCallback((e) => {
     e.preventDefault();
     if (volumeDragRef.current) {
       volumeDragRef.current = null;
@@ -3877,14 +3949,16 @@ var init_viewport = __esm({
     init_dist();
     init_dist();
     init_dist();
+    init_use_minimap_resize();
+    init_use_snap_throttle();
   }
 });
 
 // src/index.ts
 init_dist();
-var ThemeContext = React26.createContext(null);
+var ThemeContext = React27.createContext(null);
 function useTheme() {
-  const ctx = React26.useContext(ThemeContext);
+  const ctx = React27.useContext(ThemeContext);
   if (!ctx) throw new Error("useTheme must be used inside <ThemeProvider>");
   return ctx;
 }
@@ -3893,13 +3967,13 @@ function ThemeProvider({
   storageKey = "pcv-theme",
   children
 }) {
-  const [theme, setThemeState] = React26.useState(() => {
+  const [theme, setThemeState] = React27.useState(() => {
     if (typeof window === "undefined") return defaultTheme;
     return localStorage.getItem(storageKey) ?? defaultTheme;
   });
-  const [, forceUpdate] = React26.useReducer((n) => n + 1, 0);
+  const [, forceUpdate] = React27.useReducer((n) => n + 1, 0);
   const resolvedTheme = theme === "system" ? typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light" : theme;
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     if (theme !== "system") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", forceUpdate);
@@ -3924,10 +3998,10 @@ init_viewer_provider();
 init_data_provider();
 init_locale_context();
 function useIsMobile(breakpointPx = 768) {
-  const [isMobile, setIsMobile] = React26.useState(
+  const [isMobile, setIsMobile] = React27.useState(
     () => typeof window !== "undefined" ? window.innerWidth < breakpointPx : false
   );
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     const mq = window.matchMedia(`(max-width: ${breakpointPx - 1}px)`);
     const update = () => setIsMobile(mq.matches);
     update();
@@ -4127,7 +4201,7 @@ function ViewModeControls() {
 function DisplayControls() {
   const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, uiMode } = useViewer();
   const t = useLocale().toolbar;
-  const [quality, setQuality] = React26.useState("balanced");
+  const [quality, setQuality] = React27.useState("balanced");
   const isPro = uiMode === "professional";
   const handleBudget = (e) => {
     const val = Number(e.target.value);
@@ -4220,27 +4294,27 @@ function ExportTools() {
   const { exporter } = useViewer();
   const t = useLocale().exportPanel;
   const pcvRoot = usePcvRoot();
-  const [open, setOpen] = React26.useState(false);
-  const [view, setView] = React26.useState("current");
-  const [scale, setScale] = React26.useState(2);
-  const [bg, setBg] = React26.useState("white");
-  const [fmt, setFmt] = React26.useState("png");
-  const [exporting, setExporting] = React26.useState(false);
-  const btnRef = React26.useRef(null);
-  const popoverRef = React26.useRef(null);
-  const [pos, setPos] = React26.useState({ top: 0, right: 0 });
-  React26.useEffect(() => {
+  const [open, setOpen] = React27.useState(false);
+  const [view, setView] = React27.useState("current");
+  const [scale, setScale] = React27.useState(2);
+  const [bg, setBg] = React27.useState("white");
+  const [fmt, setFmt] = React27.useState("png");
+  const [exporting, setExporting] = React27.useState(false);
+  const btnRef = React27.useRef(null);
+  const popoverRef = React27.useRef(null);
+  const [pos, setPos] = React27.useState({ top: 0, right: 0 });
+  React27.useEffect(() => {
     if (open && btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
       setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
     }
   }, [open]);
-  const handleClickOutside = React26.useCallback((e) => {
+  const handleClickOutside = React27.useCallback((e) => {
     if (popoverRef.current && !popoverRef.current.contains(e.target) && btnRef.current && !btnRef.current.contains(e.target)) {
       setOpen(false);
     }
   }, []);
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     if (open) {
       document.addEventListener("mousedown", handleClickOutside);
       return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -4531,46 +4605,46 @@ function useClipActions() {
   const boxes = clipBoxEntries;
   const hasClipBox = boxes.length > 0;
   const clipMode = boxes.find((b) => b.visible)?.mode ?? "outside";
-  const addBox = React26.useCallback(() => {
+  const addBox = React27.useCallback(() => {
     if (!clipManager || !loader) return;
     if (loader.worldBox.isEmpty()) return;
     const entry = clipManager.addDefaultBox(loader.worldBox);
     clipManager.selectBox(entry.id);
   }, [clipManager, loader]);
-  const clearAll = React26.useCallback(() => {
+  const clearAll = React27.useCallback(() => {
     clipManager?.clear();
     if (activeTool === "section-box") setActiveTool("none");
   }, [clipManager, activeTool, setActiveTool]);
-  const toggleMode = React26.useCallback(() => {
+  const toggleMode = React27.useCallback(() => {
     const next = clipMode === "outside" ? "inside" : "outside";
     clipManager?.setModeAll(next);
   }, [clipManager, clipMode]);
-  const setEnabled = React26.useCallback((enabled) => {
+  const setEnabled = React27.useCallback((enabled) => {
     clipManager?.setEnabled(enabled);
   }, [clipManager]);
   const isEnabled = clipManager?.isEnabled() ?? true;
   const outlinesVisible = clipManager?.areOutlinesVisible() ?? true;
-  const setOutlinesVisible = React26.useCallback((visible) => {
+  const setOutlinesVisible = React27.useCallback((visible) => {
     clipManager?.setOutlinesVisible(visible);
   }, [clipManager]);
-  const selectBox = React26.useCallback((id) => {
+  const selectBox = React27.useCallback((id) => {
     clipManager?.selectBox(id);
   }, [clipManager]);
-  const resetRotation = React26.useCallback((id) => {
+  const resetRotation = React27.useCallback((id) => {
     clipManager?.resetRotation(id);
   }, [clipManager]);
-  const setTransformMode = React26.useCallback((mode) => {
+  const setTransformMode = React27.useCallback((mode) => {
     if (!clipManager) return;
     if (!clipManager.getSelectedId() && boxes[0]) clipManager.selectBox(boxes[0].id);
     clipManager.setTransformMode(mode);
   }, [clipManager, boxes]);
-  const removeBox = React26.useCallback((id) => {
+  const removeBox = React27.useCallback((id) => {
     clipManager?.removeBox(id);
   }, [clipManager]);
-  const setBoxVisible = React26.useCallback((id, visible) => {
+  const setBoxVisible = React27.useCallback((id, visible) => {
     clipManager?.setBoxVisible(id, visible);
   }, [clipManager]);
-  const setModeAll = React26.useCallback((mode) => {
+  const setModeAll = React27.useCallback((mode) => {
     clipManager?.setModeAll(mode);
   }, [clipManager]);
   return {
@@ -4599,10 +4673,10 @@ init_locale_context();
 function ClipToolbar() {
   const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible, resetRotation, setTransformMode } = useClipActions();
   const t = useLocale().clipToolbar;
-  const [enabled, setEnabledLocal] = React26__default.default.useState(isEnabled);
-  const [outlines, setOutlinesLocal] = React26__default.default.useState(outlinesVisible);
-  const [mode, setMode] = React26__default.default.useState("scale");
-  React26__default.default.useEffect(() => {
+  const [enabled, setEnabledLocal] = React27__default.default.useState(isEnabled);
+  const [outlines, setOutlinesLocal] = React27__default.default.useState(outlinesVisible);
+  const [mode, setMode] = React27__default.default.useState("scale");
+  React27__default.default.useEffect(() => {
     setEnabledLocal(isEnabled);
     setOutlinesLocal(outlinesVisible);
   }, [isEnabled, outlinesVisible, boxes]);
@@ -4810,7 +4884,7 @@ var CLASS_DEFS = [
 function ClassificationPanel() {
   const { loader } = useViewer();
   const t = useLocale().classificationPanel;
-  const [visible, setVisible] = React26.useState(
+  const [visible, setVisible] = React27.useState(
     Object.fromEntries(CLASS_DEFS.map((c) => [c.code, true]))
   );
   const toggle = (code) => {
@@ -4857,14 +4931,11 @@ function ClassificationPanel() {
     ] }, cls.code))
   ] });
 }
-function LayerRow({
-  icon,
-  label,
-  active,
-  onToggle,
-  disabled,
-  hint
-}) {
+
+// src/ui/toggle-row.tsx
+init_utils();
+function ToggleRow({ icon, label, active, onToggle, disabled, hint }) {
+  const on = active && !disabled;
   return /* @__PURE__ */ jsxRuntime.jsxs(
     "button",
     {
@@ -4876,7 +4947,7 @@ function LayerRow({
         disabled ? "opacity-40 cursor-not-allowed" : "hover:bg-muted"
       ),
       children: [
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: cn("text-muted-foreground", active && !disabled && "text-[hsl(var(--brand))]"), children: icon }),
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: cn("text-muted-foreground", on && "text-[hsl(var(--brand))]"), children: icon }),
         /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "flex-1 min-w-0", children: [
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "block text-xs text-foreground truncate", children: label }),
           hint && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "block text-[10px] text-muted-foreground/60 truncate", children: hint })
@@ -4886,14 +4957,14 @@ function LayerRow({
           {
             className: cn(
               "w-7 h-4 rounded-full transition-colors flex items-center px-0.5 shrink-0",
-              active && !disabled ? "bg-[hsl(var(--brand)/0.6)]" : "bg-muted"
+              on ? "bg-[hsl(var(--brand)/0.6)]" : "bg-muted"
             ),
             children: /* @__PURE__ */ jsxRuntime.jsx(
               "div",
               {
                 className: cn(
                   "w-3 h-3 rounded-full bg-foreground transition-transform",
-                  active && !disabled && "translate-x-3"
+                  on && "translate-x-3"
                 )
               }
             )
@@ -4917,7 +4988,7 @@ function LayersPanel() {
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "p-3 space-y-1 overflow-y-auto h-full", children: [
     /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60 px-1 mb-1", children: "Layers" }),
     hasPanoramas && /* @__PURE__ */ jsxRuntime.jsx(
-      LayerRow,
+      ToggleRow,
       {
         icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Camera, { size: 15 }),
         label: "Panoramas",
@@ -4926,7 +4997,7 @@ function LayersPanel() {
       }
     ),
     /* @__PURE__ */ jsxRuntime.jsx(
-      LayerRow,
+      ToggleRow,
       {
         icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Ruler, { size: 15 }),
         label: "Measurements",
@@ -4935,7 +5006,7 @@ function LayersPanel() {
       }
     ),
     /* @__PURE__ */ jsxRuntime.jsx(
-      LayerRow,
+      ToggleRow,
       {
         icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Map, { size: 15 }),
         label: "Minimap",
@@ -4947,7 +5018,7 @@ function LayersPanel() {
   ] });
 }
 function ClassificationSection() {
-  const [open, setOpen] = React26__default.default.useState(false);
+  const [open, setOpen] = React27__default.default.useState(false);
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "mt-1 border-t border-border pt-1", children: [
     /* @__PURE__ */ jsxRuntime.jsxs(
       "button",
@@ -4975,9 +5046,9 @@ function PanoPanel() {
   const { cameras } = useData();
   const t = useLocale().panoPanel;
   const tToolbar = useLocale().toolbar;
-  const [query, setQuery] = React26.useState("");
-  const [selected, setSelected] = React26.useState(null);
-  const filtered = React26.useMemo(() => {
+  const [query, setQuery] = React27.useState("");
+  const [selected, setSelected] = React27.useState(null);
+  const filtered = React27.useMemo(() => {
     const q = query.toLowerCase();
     return cameras.filter((c) => !q || c.name.toLowerCase().includes(q) || String(c.index).includes(q));
   }, [cameras, query]);
@@ -5182,6 +5253,57 @@ function ScenePanel() {
 init_viewer_provider();
 init_locale_context();
 init_utils();
+function InlineEdit({
+  value,
+  onSave,
+  activateOn = "click",
+  displayClassName,
+  inputClassName,
+  title
+}) {
+  const [editing, setEditing] = React27.useState(false);
+  const [draft, setDraft] = React27.useState(value);
+  const inputRef = React27.useRef(null);
+  React27.useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+  const begin = () => {
+    setDraft(value);
+    setEditing(true);
+  };
+  const save = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== value) onSave(trimmed);
+    setEditing(false);
+  };
+  if (!editing) {
+    return /* @__PURE__ */ jsxRuntime.jsx(
+      "p",
+      {
+        className: displayClassName,
+        onClick: activateOn === "click" ? begin : void 0,
+        onDoubleClick: activateOn === "dblclick" ? begin : void 0,
+        title,
+        children: value
+      }
+    );
+  }
+  return /* @__PURE__ */ jsxRuntime.jsx(
+    "input",
+    {
+      ref: inputRef,
+      type: "text",
+      value: draft,
+      onChange: (e) => setDraft(e.target.value),
+      onKeyDown: (e) => {
+        if (e.key === "Enter") save();
+        if (e.key === "Escape") setEditing(false);
+      },
+      onBlur: save,
+      className: inputClassName
+    }
+  );
+}
 function formatValue(m) {
   if (m.value === void 0) return "\u2014";
   switch (m.type) {
@@ -5200,48 +5322,6 @@ function formatValue(m) {
     default:
       return m.value.toFixed(3);
   }
-}
-function InlineEditName({ value, onSave }) {
-  const [editing, setEditing] = React26.useState(false);
-  const [draft, setDraft] = React26.useState(value);
-  const inputRef = React26.useRef(null);
-  React26.useEffect(() => {
-    if (editing) inputRef.current?.select();
-  }, [editing]);
-  if (!editing) {
-    return /* @__PURE__ */ jsxRuntime.jsx(
-      "p",
-      {
-        className: "text-[10px] font-semibold text-foreground cursor-pointer hover:text-[hsl(var(--brand))] transition-colors truncate",
-        onClick: () => {
-          setDraft(value);
-          setEditing(true);
-        },
-        title: "Click to rename",
-        children: value
-      }
-    );
-  }
-  const save = () => {
-    const trimmed = draft.trim();
-    if (trimmed && trimmed !== value) onSave(trimmed);
-    setEditing(false);
-  };
-  return /* @__PURE__ */ jsxRuntime.jsx(
-    "input",
-    {
-      ref: inputRef,
-      type: "text",
-      value: draft,
-      onChange: (e) => setDraft(e.target.value),
-      onKeyDown: (e) => {
-        if (e.key === "Enter") save();
-        if (e.key === "Escape") setEditing(false);
-      },
-      onBlur: save,
-      className: "text-[10px] font-semibold text-foreground bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
-    }
-  );
 }
 function MeasurementsPanel() {
   const { measurementList, measurementManager, setMeasurementList } = useViewer();
@@ -5302,7 +5382,17 @@ function MeasurementsPanel() {
     /* @__PURE__ */ jsxRuntime.jsx("div", { className: "flex-1 overflow-y-auto", children: measurementList.map((m) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex items-center gap-2 px-2 py-2 border-b border-[hsl(var(--border)/0.4)] hover:bg-muted group transition-colors", children: [
       /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: m.color ?? "hsl(var(--brand))" } }),
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex-1 min-w-0", children: [
-        /* @__PURE__ */ jsxRuntime.jsx(InlineEditName, { value: m.label, onSave: (name) => handleRename(m.id, name) }),
+        /* @__PURE__ */ jsxRuntime.jsx(
+          InlineEdit,
+          {
+            value: m.label,
+            onSave: (name) => handleRename(m.id, name),
+            activateOn: "click",
+            title: "Click to rename",
+            displayClassName: "text-[10px] font-semibold text-foreground cursor-pointer hover:text-[hsl(var(--brand))] transition-colors truncate",
+            inputClassName: "text-[10px] font-semibold text-foreground bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
+          }
+        ),
         /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-mono text-[hsl(var(--brand))]", children: formatValue(m) })
       ] }),
       /* @__PURE__ */ jsxRuntime.jsx(
@@ -5322,48 +5412,6 @@ init_utils();
 init_viewer_provider();
 init_locale_context();
 init_dist();
-function InlineEditSceneName({ value, onSave }) {
-  const [editing, setEditing] = React26.useState(false);
-  const [draft, setDraft] = React26.useState(value);
-  const inputRef = React26.useRef(null);
-  React26.useEffect(() => {
-    if (editing) inputRef.current?.select();
-  }, [editing]);
-  if (!editing) {
-    return /* @__PURE__ */ jsxRuntime.jsx(
-      "p",
-      {
-        className: "font-mono text-foreground truncate text-[11px] cursor-pointer hover:text-[hsl(var(--brand))] transition-colors",
-        onDoubleClick: () => {
-          setDraft(value);
-          setEditing(true);
-        },
-        title: "Double-click to rename",
-        children: value
-      }
-    );
-  }
-  const save = () => {
-    const trimmed = draft.trim();
-    if (trimmed && trimmed !== value) onSave(trimmed);
-    setEditing(false);
-  };
-  return /* @__PURE__ */ jsxRuntime.jsx(
-    "input",
-    {
-      ref: inputRef,
-      type: "text",
-      value: draft,
-      onChange: (e) => setDraft(e.target.value),
-      onKeyDown: (e) => {
-        if (e.key === "Enter") save();
-        if (e.key === "Escape") setEditing(false);
-      },
-      onBlur: save,
-      className: "font-mono text-foreground text-[11px] bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
-    }
-  );
-}
 function ScenesPanel() {
   const {
     sceneManager,
@@ -5381,29 +5429,29 @@ function ScenesPanel() {
     config
   } = useViewer();
   const t = useLocale().scenesPanel;
-  const [scenes, setScenes] = React26.useState([]);
-  const [newName, setNewName] = React26.useState("");
-  const pmRef = React26.useRef(null);
-  const fileInputRef = React26.useRef(null);
-  const [showAnim, setShowAnim] = React26.useState(false);
-  const [flySec, setFlySec] = React26.useState(2);
-  const [staySec, setStaySec] = React26.useState(1);
-  const [easing, setEasing] = React26.useState("smooth");
-  const [recBg, setRecBg] = React26.useState("current");
-  const [loop, setLoop] = React26.useState(false);
-  const [playing, setPlaying] = React26.useState(false);
-  const [recording, setRecording] = React26.useState(false);
-  const [recPct, setRecPct] = React26.useState(0);
-  const stopRef = React26.useRef(false);
-  const dwellTimer = React26.useRef(null);
-  React26.useEffect(() => {
+  const [scenes, setScenes] = React27.useState([]);
+  const [newName, setNewName] = React27.useState("");
+  const pmRef = React27.useRef(null);
+  const fileInputRef = React27.useRef(null);
+  const [showAnim, setShowAnim] = React27.useState(false);
+  const [flySec, setFlySec] = React27.useState(2);
+  const [staySec, setStaySec] = React27.useState(1);
+  const [easing, setEasing] = React27.useState("smooth");
+  const [recBg, setRecBg] = React27.useState("current");
+  const [loop, setLoop] = React27.useState(false);
+  const [playing, setPlaying] = React27.useState(false);
+  const [recording, setRecording] = React27.useState(false);
+  const [recPct, setRecPct] = React27.useState(0);
+  const stopRef = React27.useRef(false);
+  const dwellTimer = React27.useRef(null);
+  React27.useEffect(() => {
     const key = config.source.type === "s3" ? config.source.baseUrl : config.source.type === "electron" ? config.source.basePath : "local";
     const pm = new exports.PresentationManager(key);
     pm.onChange = (s) => setScenes(s);
     pmRef.current = pm;
     setScenes(pm.getScenes());
   }, [config.source]);
-  React26.useEffect(() => () => {
+  React27.useEffect(() => () => {
     stopRef.current = true;
     if (dwellTimer.current != null) clearTimeout(dwellTimer.current);
     cameraAnimator?.cancel();
@@ -5647,7 +5695,17 @@ function ScenesPanel() {
       scenes.length === 0 ? /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] text-muted-foreground", children: t.noScenes }) : scenes.map((scene) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex items-center gap-1.5 py-1 group border-b border-[hsl(var(--border)/0.3)] last:border-0", children: [
         /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Bookmark, { size: 11, className: "text-[hsl(var(--brand))] shrink-0" }),
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex-1 min-w-0", children: [
-          /* @__PURE__ */ jsxRuntime.jsx(InlineEditSceneName, { value: scene.name, onSave: (name) => pmRef.current?.renameScene(scene.id, name) }),
+          /* @__PURE__ */ jsxRuntime.jsx(
+            InlineEdit,
+            {
+              value: scene.name,
+              onSave: (name) => pmRef.current?.renameScene(scene.id, name),
+              activateOn: "dblclick",
+              title: "Double-click to rename",
+              displayClassName: "font-mono text-foreground truncate text-[11px] cursor-pointer hover:text-[hsl(var(--brand))] transition-colors",
+              inputClassName: "font-mono text-foreground text-[11px] bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
+            }
+          ),
           /* @__PURE__ */ jsxRuntime.jsxs("p", { className: "text-[8px] text-muted-foreground font-mono", children: [
             new Date(scene.createdAt).toLocaleDateString(),
             scene.clipBoxes.length > 0 && ` \xB7 ${scene.clipBoxes.length} clip`
@@ -5814,7 +5872,7 @@ function AnimRow({ label, children }) {
   ] });
 }
 function Sidebar() {
-  const [tab, setTab] = React26.useState("layers");
+  const [tab, setTab] = React27.useState("layers");
   const t = useLocale().sidebar;
   const { uiMode } = useViewer();
   const { cameras } = useData();
@@ -5981,9 +6039,9 @@ function getPanoEngine(engine) {
 function PanoViewer() {
   const { selectedCamera, setSelectedCamera, panoEngine, setPanoEngine } = useViewer();
   const tPano = useLocale().panoViewer;
-  const containerRef = React26.useRef(null);
-  const instanceRef = React26.useRef(null);
-  React26.useEffect(() => {
+  const containerRef = React27.useRef(null);
+  const instanceRef = React27.useRef(null);
+  React27.useEffect(() => {
     const container = containerRef.current;
     if (!selectedCamera?.image || !container) return;
     let cancelled = false;
@@ -6050,7 +6108,7 @@ init_viewer_provider();
 init_viewer_provider();
 function useDisplayActions() {
   const { loader, colorMode, setColorMode, pointBudget, setPointBudget, pointSize, setPointSize } = useViewer();
-  const setQualityPreset = React26.useCallback((preset) => {
+  const setQualityPreset = React27.useCallback((preset) => {
     if (!loader) return;
     switch (preset) {
       case "performance":
@@ -6081,24 +6139,24 @@ function useDisplayActions() {
 // src/components/overlays/rendering-settings.tsx
 init_locale_context();
 function useDraggable(options) {
-  const [position, setPosition] = React26.useState({ x: 0, y: 0 });
-  const positionRef = React26.useRef({ x: 0, y: 0 });
-  const boundsRef = React26.useRef(options?.bounds);
+  const [position, setPosition] = React27.useState({ x: 0, y: 0 });
+  const positionRef = React27.useRef({ x: 0, y: 0 });
+  const boundsRef = React27.useRef(options?.bounds);
   boundsRef.current = options?.bounds;
-  const moveRef = React26.useRef(null);
-  const upRef = React26.useRef(null);
-  const endDrag = React26.useCallback(() => {
+  const moveRef = React27.useRef(null);
+  const upRef = React27.useRef(null);
+  const endDrag = React27.useCallback(() => {
     if (moveRef.current) window.removeEventListener("mousemove", moveRef.current);
     if (upRef.current) window.removeEventListener("mouseup", upRef.current);
     moveRef.current = null;
     upRef.current = null;
   }, []);
-  React26.useEffect(() => endDrag, [endDrag]);
-  const reset = React26.useCallback(() => {
+  React27.useEffect(() => endDrag, [endDrag]);
+  const reset = React27.useCallback(() => {
     positionRef.current = { x: 0, y: 0 };
     setPosition({ x: 0, y: 0 });
   }, []);
-  const onDragStart = React26.useCallback(
+  const onDragStart = React27.useCallback(
     (e) => {
       e.preventDefault();
       const startX = e.clientX;
@@ -6146,21 +6204,21 @@ function RenderingSettings({ open, onClose }) {
   const t = useLocale().renderingSettings;
   const pcvRoot = usePcvRoot();
   const { position, onDragStart, reset } = useDraggable({ bounds: pcvRoot ?? void 0 });
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
-  const [rgbGamma, setRgbGamma] = React26.useState(1);
-  const [rgbBrightness, setRgbBrightness] = React26.useState(0);
-  const [rgbContrast, setRgbContrast] = React26.useState(0);
-  const [intensityGamma, setIntensityGamma] = React26.useState(1);
-  const [intensityBrightness, setIntensityBrightness] = React26.useState(0);
-  const [intensityContrast, setIntensityContrast] = React26.useState(0);
-  const [intensityRange, setIntensityRange] = React26.useState([0, 65535]);
-  const [heightMin, setHeightMin] = React26.useState(0);
-  const [heightMax, setHeightMax] = React26.useState(100);
-  const [opacity, setOpacity] = React26.useState(1);
+  const [rgbGamma, setRgbGamma] = React27.useState(1);
+  const [rgbBrightness, setRgbBrightness] = React27.useState(0);
+  const [rgbContrast, setRgbContrast] = React27.useState(0);
+  const [intensityGamma, setIntensityGamma] = React27.useState(1);
+  const [intensityBrightness, setIntensityBrightness] = React27.useState(0);
+  const [intensityContrast, setIntensityContrast] = React27.useState(0);
+  const [intensityRange, setIntensityRange] = React27.useState([0, 65535]);
+  const [heightMin, setHeightMin] = React27.useState(0);
+  const [heightMax, setHeightMax] = React27.useState(100);
+  const [opacity, setOpacity] = React27.useState(1);
   const mat = () => loader?.getPointCloud() ? loader.getPointCloud().material : null;
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     if (!open) return;
     const m = mat();
     if (!m) return;
@@ -6470,8 +6528,7 @@ function Slider({ label, value, min, max, step, onChange, display }) {
     /* @__PURE__ */ jsxRuntime.jsx("span", { className: "w-12 text-right font-mono text-[10px] tabular-nums", children: display ? display(value) : value.toFixed(2) })
   ] });
 }
-var chromeScale = { zoom: "var(--pcv-scale, 1)" };
-var Viewport2 = React26.lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
+var Viewport2 = React27.lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
 function ViewportFallback() {
   const t = useLocale().viewport;
   return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-full h-full flex items-center justify-center bg-[hsl(var(--background))]", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex flex-col items-center gap-3", children: [
@@ -6495,10 +6552,10 @@ function GlassCard({ children, className }) {
 }
 function WorkspaceLayout({ className }) {
   const isMobile = useIsMobile();
-  const [sidebarOpen, setSidebarOpen] = React26.useState(
+  const [sidebarOpen, setSidebarOpen] = React27.useState(
     () => typeof window === "undefined" || window.innerWidth >= 768
   );
-  const [renderSettingsOpen, setRenderSettingsOpen] = React26.useState(false);
+  const [renderSettingsOpen, setRenderSettingsOpen] = React27.useState(false);
   const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
   const { metadata } = useData();
   const t = useLocale().viewport;
@@ -6517,17 +6574,17 @@ function WorkspaceLayout({ className }) {
         className
       ),
       children: [
-        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute inset-0", children: /* @__PURE__ */ jsxRuntime.jsx(React26.Suspense, { fallback: /* @__PURE__ */ jsxRuntime.jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsxRuntime.jsx(Viewport2, {}) }) }),
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute inset-0", children: /* @__PURE__ */ jsxRuntime.jsx(React27.Suspense, { fallback: /* @__PURE__ */ jsxRuntime.jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsxRuntime.jsx(Viewport2, {}) }) }),
         selectedCamera && /* @__PURE__ */ jsxRuntime.jsx(PanoViewer, {}),
         /* @__PURE__ */ jsxRuntime.jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) }),
-        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[calc(100vw-1.5rem)]", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto max-w-full overflow-hidden", children: /* @__PURE__ */ jsxRuntime.jsx(
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[calc(100vw-1.5rem)]", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto max-w-full overflow-hidden", children: /* @__PURE__ */ jsxRuntime.jsx(
           MainToolbar,
           {
             onToggleRenderSettings: isPro ? () => setRenderSettingsOpen((o) => !o) : void 0,
             renderSettingsOpen
           }
         ) }) }),
-        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute left-[calc(0.75rem+env(safe-area-inset-left))] top-[calc(3.5rem+env(safe-area-inset-top))] bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 pointer-events-none flex items-center", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsxRuntime.jsx(ToolRail, {}) }) }),
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute left-[calc(0.75rem+env(safe-area-inset-left))] top-[calc(3.5rem+env(safe-area-inset-top))] bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 pointer-events-none flex items-center", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsxRuntime.jsx(ToolRail, {}) }) }),
         isMobile && sidebarOpen && /* @__PURE__ */ jsxRuntime.jsx(
           "div",
           {
@@ -6548,7 +6605,7 @@ function WorkspaceLayout({ className }) {
               "w-full max-w-sm md:w-72 xl:w-80",
               sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]"
             ),
-            style: chromeScale,
+            style: pcvChromeScaleStyle,
             children: [
               /* @__PURE__ */ jsxRuntime.jsx(
                 "button",
@@ -6571,8 +6628,8 @@ function WorkspaceLayout({ className }) {
             ]
           }
         ),
-        isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-[calc(3rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntime.jsx(ClipToolbar, {}) }) }),
-        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden md:block", style: chromeScale, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none", children: [
+        isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-[calc(3rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntime.jsx(ClipToolbar, {}) }) }),
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden md:block", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none", children: [
           metadata && /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
           /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
           /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusFps(fps) }),
@@ -6608,7 +6665,7 @@ var buttonVariants = classVarianceAuthority.cva(
     }
   }
 );
-var Button = React26__default.default.forwardRef(
+var Button = React27__default.default.forwardRef(
   ({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
     "button",
     {
@@ -6622,7 +6679,7 @@ Button.displayName = "Button";
 
 // src/ui/slider.tsx
 init_utils();
-var Slider2 = React26__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsxs(
+var Slider2 = React27__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsxs(
   SliderPrimitive__namespace.Root,
   {
     ref,
@@ -6644,7 +6701,7 @@ init_utils();
 var Dialog = DialogPrimitive__namespace.Root;
 var DialogTrigger = DialogPrimitive__namespace.Trigger;
 var DialogPortal = DialogPrimitive__namespace.Portal;
-var DialogOverlay = React26__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+var DialogOverlay = React27__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
   DialogPrimitive__namespace.Overlay,
   {
     ref,
@@ -6653,7 +6710,7 @@ var DialogOverlay = React26__default.default.forwardRef(({ className, ...props }
   }
 ));
 DialogOverlay.displayName = "DialogOverlay";
-var DialogContent = React26__default.default.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
+var DialogContent = React27__default.default.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
   const dx = dragOffset?.x ?? 0;
   const dy = dragOffset?.y ?? 0;
   return /* @__PURE__ */ jsxRuntime.jsxs(DialogPortal, { container: container ?? void 0, children: [
@@ -6691,7 +6748,7 @@ var DialogHeader = ({
   }
 );
 DialogHeader.displayName = "DialogHeader";
-var DialogTitle = React26__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+var DialogTitle = React27__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
   DialogPrimitive__namespace.Title,
   {
     ref,
@@ -6700,7 +6757,7 @@ var DialogTitle = React26__default.default.forwardRef(({ className, ...props }, 
   }
 ));
 DialogTitle.displayName = "DialogTitle";
-var DialogClose = React26__default.default.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+var DialogClose = React27__default.default.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
   DialogPrimitive__namespace.Close,
   {
     ref,
@@ -6717,7 +6774,7 @@ DialogClose.displayName = "DialogClose";
 // src/ui/tabs.tsx
 init_utils();
 var Tabs = TabsPrimitive__namespace.Root;
-var TabsList = React26__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+var TabsList = React27__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
   TabsPrimitive__namespace.List,
   {
     ref,
@@ -6729,7 +6786,7 @@ var TabsList = React26__default.default.forwardRef(({ className, ...props }, ref
   }
 ));
 TabsList.displayName = "TabsList";
-var TabsTrigger = React26__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+var TabsTrigger = React27__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
   TabsPrimitive__namespace.Trigger,
   {
     ref,
@@ -6744,7 +6801,7 @@ var TabsTrigger = React26__default.default.forwardRef(({ className, ...props }, 
   }
 ));
 TabsTrigger.displayName = "TabsTrigger";
-var TabsContent = React26__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+var TabsContent = React27__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
   TabsPrimitive__namespace.Content,
   {
     ref,
@@ -6762,7 +6819,7 @@ init_utils();
 var Popover = PopoverPrimitive__namespace.Root;
 var PopoverTrigger = PopoverPrimitive__namespace.Trigger;
 var PopoverAnchor = PopoverPrimitive__namespace.Anchor;
-var PopoverContent = React26__default.default.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(PopoverPrimitive__namespace.Portal, { children: /* @__PURE__ */ jsxRuntime.jsx(
+var PopoverContent = React27__default.default.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(PopoverPrimitive__namespace.Portal, { children: /* @__PURE__ */ jsxRuntime.jsx(
   PopoverPrimitive__namespace.Content,
   {
     ref,
@@ -6787,7 +6844,7 @@ init_utils();
 var TooltipProvider = TooltipPrimitive__namespace.Provider;
 var Tooltip = TooltipPrimitive__namespace.Root;
 var TooltipTrigger = TooltipPrimitive__namespace.Trigger;
-var TooltipContent = React26__default.default.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(TooltipPrimitive__namespace.Portal, { children: /* @__PURE__ */ jsxRuntime.jsx(
+var TooltipContent = React27__default.default.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(TooltipPrimitive__namespace.Portal, { children: /* @__PURE__ */ jsxRuntime.jsx(
   TooltipPrimitive__namespace.Content,
   {
     ref,
@@ -6827,7 +6884,7 @@ var toggleVariants = classVarianceAuthority.cva(
     }
   }
 );
-var Toggle = React26__default.default.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+var Toggle = React27__default.default.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
   TogglePrimitive__namespace.Root,
   {
     ref,
@@ -6842,7 +6899,7 @@ init_utils();
 var Select = SelectPrimitive__namespace.Root;
 var SelectGroup = SelectPrimitive__namespace.Group;
 var SelectValue = SelectPrimitive__namespace.Value;
-var SelectTrigger = React26__default.default.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsxs(
+var SelectTrigger = React27__default.default.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsxs(
   SelectPrimitive__namespace.Trigger,
   {
     ref,
@@ -6862,7 +6919,7 @@ var SelectTrigger = React26__default.default.forwardRef(({ className, children, 
   }
 ));
 SelectTrigger.displayName = "SelectTrigger";
-var SelectScrollUpButton = React26__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+var SelectScrollUpButton = React27__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
   SelectPrimitive__namespace.ScrollUpButton,
   {
     ref,
@@ -6875,7 +6932,7 @@ var SelectScrollUpButton = React26__default.default.forwardRef(({ className, ...
   }
 ));
 SelectScrollUpButton.displayName = "SelectScrollUpButton";
-var SelectScrollDownButton = React26__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+var SelectScrollDownButton = React27__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
   SelectPrimitive__namespace.ScrollDownButton,
   {
     ref,
@@ -6888,7 +6945,7 @@ var SelectScrollDownButton = React26__default.default.forwardRef(({ className, .
   }
 ));
 SelectScrollDownButton.displayName = "SelectScrollDownButton";
-var SelectContent = React26__default.default.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(SelectPrimitive__namespace.Portal, { children: /* @__PURE__ */ jsxRuntime.jsxs(
+var SelectContent = React27__default.default.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(SelectPrimitive__namespace.Portal, { children: /* @__PURE__ */ jsxRuntime.jsxs(
   SelectPrimitive__namespace.Content,
   {
     ref,
@@ -6921,7 +6978,7 @@ var SelectContent = React26__default.default.forwardRef(({ className, children, 
   }
 ) }));
 SelectContent.displayName = "SelectContent";
-var SelectLabel = React26__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+var SelectLabel = React27__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
   SelectPrimitive__namespace.Label,
   {
     ref,
@@ -6933,7 +6990,7 @@ var SelectLabel = React26__default.default.forwardRef(({ className, ...props }, 
   }
 ));
 SelectLabel.displayName = "SelectLabel";
-var SelectItem = React26__default.default.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsxs(
+var SelectItem = React27__default.default.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsxs(
   SelectPrimitive__namespace.Item,
   {
     ref,
@@ -6951,7 +7008,7 @@ var SelectItem = React26__default.default.forwardRef(({ className, children, ...
   }
 ));
 SelectItem.displayName = "SelectItem";
-var SelectSeparator = React26__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+var SelectSeparator = React27__default.default.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
   SelectPrimitive__namespace.Separator,
   {
     ref,
@@ -6990,30 +7047,31 @@ var defaultComponents = {
   SelectItem,
   SelectSeparator
 };
-var ComponentsContext = React26.createContext(defaultComponents);
+var ComponentsContext = React27.createContext(defaultComponents);
 function ComponentsProvider({
   components,
   children
 }) {
-  const merged = React26.useMemo(
+  const merged = React27.useMemo(
     () => components ? { ...defaultComponents, ...components } : defaultComponents,
     [components]
   );
   return /* @__PURE__ */ jsxRuntime.jsx(ComponentsContext.Provider, { value: merged, children });
 }
 function useComponents() {
-  return React26.useContext(ComponentsContext);
+  return React27.useContext(ComponentsContext);
 }
 
 // src/components/pano-cloud-viewer.tsx
 init_dist();
 init_utils();
-var Viewport4 = React26.lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
-var PcvRootContext = React26.createContext(null);
+init_utils();
+var Viewport4 = React27.lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
+var PcvRootContext = React27.createContext(null);
 function usePcvRoot() {
-  return React26.useContext(PcvRootContext);
+  return React27.useContext(PcvRootContext);
 }
-var UiScaleContext = React26.createContext(1);
+var UiScaleContext = React27.createContext(1);
 function ViewportFallback2() {
   return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-full h-full flex items-center justify-center bg-[hsl(var(--background))]", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex flex-col items-center gap-3", children: [
     /* @__PURE__ */ jsxRuntime.jsx("div", { className: "w-8 h-8 border-2 border-[hsl(var(--brand))] border-t-transparent rounded-full animate-spin" }),
@@ -7027,7 +7085,7 @@ function PanoOverlayBridge() {
 }
 function PcvRoot({ className, uiScale = 1, children }) {
   const { resolvedTheme } = useTheme();
-  const rootRef = React26.useRef(null);
+  const rootRef = React27.useRef(null);
   const rootStyle = { "--pcv-scale": uiScale };
   return /* @__PURE__ */ jsxRuntime.jsx(PcvRootContext.Provider, { value: rootRef, children: /* @__PURE__ */ jsxRuntime.jsx(UiScaleContext.Provider, { value: uiScale, children: /* @__PURE__ */ jsxRuntime.jsx(
     "div",
@@ -7041,11 +7099,11 @@ function PcvRoot({ className, uiScale = 1, children }) {
   ) }) });
 }
 function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, uiScale = 1, children, components }) {
-  const adapter = createAdapter(source);
-  const config = { source, uiMode, panoEngine };
+  const adapter = React27.useMemo(() => createAdapter(source), [source]);
+  const config = React27.useMemo(() => ({ source, uiMode, panoEngine }), [source, uiMode, panoEngine]);
   return /* @__PURE__ */ jsxRuntime.jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsxRuntime.jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsxRuntime.jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsxRuntime.jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsxRuntime.jsx(ComponentsProvider, { components, children: /* @__PURE__ */ jsxRuntime.jsx(PcvRoot, { className, uiScale, children: children ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
     children(
-      /* @__PURE__ */ jsxRuntime.jsx(React26.Suspense, { fallback: /* @__PURE__ */ jsxRuntime.jsx(ViewportFallback2, {}), children: /* @__PURE__ */ jsxRuntime.jsx(Viewport4, {}) })
+      /* @__PURE__ */ jsxRuntime.jsx(React27.Suspense, { fallback: /* @__PURE__ */ jsxRuntime.jsx(ViewportFallback2, {}), children: /* @__PURE__ */ jsxRuntime.jsx(Viewport4, {}) })
     ),
     /* @__PURE__ */ jsxRuntime.jsx(PanoOverlayBridge, {})
   ] }) : /* @__PURE__ */ jsxRuntime.jsx(WorkspaceLayout, {}) }) }) }) }) }) });
@@ -7053,12 +7111,15 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "b59da72 \xB7 2026-06-30 00:51Z" ;
+var PCV_BUILD = "0353a97 \xB7 2026-07-01 09:21Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
 init_viewer_provider();
 init_data_provider();
+
+// src/layouts/minimal/minimal-layout.tsx
+init_utils();
 
 // src/layouts/minimal/minimal-toolbar.tsx
 init_utils();
@@ -7073,42 +7134,6 @@ var COLOR_MODES3 = [
   { value: "intensity", label: "Intensity" },
   { value: "classification", label: "Classification" }
 ];
-function ToggleRow({
-  icon,
-  label,
-  active,
-  onClick
-}) {
-  return /* @__PURE__ */ jsxRuntime.jsxs(
-    "button",
-    {
-      onClick,
-      className: "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg hover:bg-muted transition-colors",
-      children: [
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: cn("text-muted-foreground", active && "text-[hsl(var(--brand))]"), children: icon }),
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-xs text-foreground flex-1 text-left", children: label }),
-        /* @__PURE__ */ jsxRuntime.jsx(
-          "div",
-          {
-            className: cn(
-              "w-7 h-4 rounded-full transition-colors flex items-center px-0.5",
-              active ? "bg-[hsl(var(--brand)/0.6)]" : "bg-muted"
-            ),
-            children: /* @__PURE__ */ jsxRuntime.jsx(
-              "div",
-              {
-                className: cn(
-                  "w-3 h-3 rounded-full bg-foreground transition-transform",
-                  active && "translate-x-3"
-                )
-              }
-            )
-          }
-        )
-      ]
-    }
-  );
-}
 function MinimalSettingsPopover({ onClose }) {
   const {
     showMarkers,
@@ -7141,7 +7166,7 @@ function MinimalSettingsPopover({ onClose }) {
               icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Camera, { size: 14 }),
               label: "Panoramas",
               active: showMarkers,
-              onClick: () => setShowMarkers(!showMarkers)
+              onToggle: () => setShowMarkers(!showMarkers)
             }
           ),
           /* @__PURE__ */ jsxRuntime.jsx(
@@ -7150,7 +7175,7 @@ function MinimalSettingsPopover({ onClose }) {
               icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Ruler, { size: 14 }),
               label: "Measurements",
               active: showMeasurements,
-              onClick: () => setShowMeasurements(!showMeasurements)
+              onToggle: () => setShowMeasurements(!showMeasurements)
             }
           ),
           /* @__PURE__ */ jsxRuntime.jsx(
@@ -7159,7 +7184,7 @@ function MinimalSettingsPopover({ onClose }) {
               icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Map, { size: 14 }),
               label: "Minimap",
               active: showMinimap,
-              onClick: () => setShowMinimap(!showMinimap)
+              onToggle: () => setShowMinimap(!showMinimap)
             }
           )
         ] }),
@@ -7243,14 +7268,14 @@ function MinimalToolbar() {
     sceneManager,
     loader
   } = useViewer();
-  const [settingsOpen, setSettingsOpen] = React26.useState(false);
-  const toggleMeasure = React26.useCallback(
+  const [settingsOpen, setSettingsOpen] = React27.useState(false);
+  const toggleMeasure = React27.useCallback(
     (tool) => {
       setActiveTool(activeTool === tool ? "none" : tool);
     },
     [activeTool, setActiveTool]
   );
-  const fitToView = React26.useCallback(() => {
+  const fitToView = React27.useCallback(() => {
     if (!sceneManager || !loader) return;
     const wb = loader.worldBox;
     if (!wb.isEmpty()) sceneManager.fitToBox(wb);
@@ -7359,22 +7384,22 @@ function MinimalToolbar() {
     settingsOpen && /* @__PURE__ */ jsxRuntime.jsx(MinimalSettingsPopover, { onClose: () => setSettingsOpen(false) })
   ] });
 }
-var chromeScale2 = { zoom: "var(--pcv-scale, 1)" };
 function MinimalLayout({ viewport }) {
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "relative w-full h-full overflow-hidden", children: [
     /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute inset-0", children: viewport }),
-    /* @__PURE__ */ jsxRuntime.jsx("div", { style: chromeScale2, children: /* @__PURE__ */ jsxRuntime.jsx(MinimalToolbar, {}) })
+    /* @__PURE__ */ jsxRuntime.jsx("div", { style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsxRuntime.jsx(MinimalToolbar, {}) })
   ] });
 }
 
 // src/layouts/workstation/workstation-layout.tsx
+init_utils();
 init_viewer_provider();
 init_data_provider();
 
 // src/layouts/workstation/collapsible-sidebar.tsx
 init_utils();
 function CollapsibleSidebar({ side, children, defaultOpen = true, width = "w-60" }) {
-  const [open, setOpen] = React26.useState(defaultOpen);
+  const [open, setOpen] = React27.useState(defaultOpen);
   const isLeft = side === "left";
   const ChevronIcon = open ? isLeft ? lucideReact.ChevronLeft : lucideReact.ChevronRight : isLeft ? lucideReact.ChevronRight : lucideReact.ChevronLeft;
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: cn(
@@ -7412,7 +7437,7 @@ init_viewer_provider();
 // src/layouts/workstation/floating-palette.tsx
 init_utils();
 function FloatingPalette({ title, icon, children, defaultCollapsed = false, className }) {
-  const [collapsed, setCollapsed] = React26.useState(defaultCollapsed);
+  const [collapsed, setCollapsed] = React27.useState(defaultCollapsed);
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: cn(
     "rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg overflow-hidden",
     "min-w-[220px]",
@@ -7463,22 +7488,22 @@ var MEASURE_TOOLS = [
 ];
 function ToolsPalette() {
   const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, clipBoxEntries } = useViewer();
-  const toggle = React26.useCallback((tool) => {
+  const toggle = React27.useCallback((tool) => {
     setActiveTool(activeTool === tool ? "none" : tool);
   }, [activeTool, setActiveTool]);
   const hasClipBox = clipBoxEntries.length > 0;
   const clipMode = clipBoxEntries[0]?.mode ?? "outside";
-  const addClipBox = React26.useCallback(() => {
+  const addClipBox = React27.useCallback(() => {
     if (!clipManager || !loader) return;
     if (loader.worldBox.isEmpty()) return;
     const entry = clipManager.addDefaultBox(loader.worldBox);
     clipManager.selectBox(entry.id);
   }, [clipManager, loader]);
-  const clearClipBox = React26.useCallback(() => {
+  const clearClipBox = React27.useCallback(() => {
     clipManager?.clear();
     if (activeTool === "section-box") setActiveTool("none");
   }, [clipManager, activeTool, setActiveTool]);
-  const toggleClipMode = React26.useCallback(() => {
+  const toggleClipMode = React27.useCallback(() => {
     const next = clipMode === "outside" ? "inside" : "outside";
     for (const b of clipBoxEntries) clipManager?.setBoxMode(b.id, next);
   }, [clipManager, clipBoxEntries, clipMode]);
@@ -7653,12 +7678,12 @@ var VIEWS = [
 ];
 function ExportPalette() {
   const { exporter } = useViewer();
-  const [view, setView] = React26.useState("top");
-  const [scale, setScale] = React26.useState(2);
-  const [format, setFormat] = React26.useState("png");
-  const [bg, setBg] = React26.useState("white");
-  const [exporting, setExporting] = React26.useState(false);
-  const doExport = React26.useCallback(async () => {
+  const [view, setView] = React27.useState("top");
+  const [scale, setScale] = React27.useState(2);
+  const [format, setFormat] = React27.useState("png");
+  const [bg, setBg] = React27.useState("white");
+  const [exporting, setExporting] = React27.useState(false);
+  const doExport = React27.useCallback(async () => {
     if (!exporter) return;
     setExporting(true);
     try {
@@ -7708,13 +7733,12 @@ function ExportPalette() {
     )
   ] });
 }
-var chromeScale3 = { zoom: "var(--pcv-scale, 1)" };
 function WorkstationLayout({ viewport, sidebarSide = "left" }) {
   const { fps, pointBudget, activeTool } = useViewer();
   const { metadata } = useData();
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "relative w-full h-full overflow-hidden bg-[hsl(var(--background))]", children: [
     /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute inset-0", children: viewport }),
-    /* @__PURE__ */ jsxRuntime.jsx("div", { style: chromeScale3, children: /* @__PURE__ */ jsxRuntime.jsxs(CollapsibleSidebar, { side: sidebarSide, children: [
+    /* @__PURE__ */ jsxRuntime.jsx("div", { style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsxRuntime.jsxs(CollapsibleSidebar, { side: sidebarSide, children: [
       /* @__PURE__ */ jsxRuntime.jsx(ToolsPalette, {}),
       /* @__PURE__ */ jsxRuntime.jsx(DisplayPalette, {}),
       /* @__PURE__ */ jsxRuntime.jsx(ViewSettingsPalette, {}),
@@ -7724,7 +7748,7 @@ function WorkstationLayout({ viewport, sidebarSide = "left" }) {
       "div",
       {
         className: "absolute bottom-0 left-0 right-0 z-10 px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground/70 bg-[hsl(var(--card)/0.8)] backdrop-blur-sm border-t border-[hsl(var(--border)/0.5)]",
-        style: chromeScale3,
+        style: pcvChromeScaleStyle,
         children: [
           metadata && /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
             (metadata.points / 1e6).toFixed(1),
@@ -7979,11 +8003,8 @@ function DisplaySettingsDialog({
     TabsTrigger: TabsTrigger2,
     TabsContent: TabsContent2
   } = useComponents();
-  const [localSettings, setLocalSettings] = React26.useState(
-    exports.DISPLAY_PRESETS.standard
-  );
-  const settings = viewer.displaySettings ?? localSettings;
-  const setSettings = viewer.setDisplaySettings ?? setLocalSettings;
+  const settings = viewer.displaySettings;
+  const setSettings = viewer.setDisplaySettings;
   const t = useLocale().displaySettings;
   const tx = t;
   const isDe = t.advancedTab === "Erweitert";
@@ -7995,7 +8016,7 @@ function DisplaySettingsDialog({
   };
   const pcvRoot = usePcvRoot();
   const { position, onDragStart, reset } = useDraggable();
-  React26.useEffect(() => {
+  React27.useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
   const applyPreset = (preset) => {
@@ -8135,12 +8156,12 @@ function DisplaySettingsDialog({
 init_viewer_provider();
 function useNavigationActions() {
   const { sceneManager, loader, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
-  const fitToView = React26.useCallback(() => {
+  const fitToView = React27.useCallback(() => {
     if (!sceneManager || !loader) return;
     const wb = loader.worldBox;
     if (!wb.isEmpty()) sceneManager.fitToBox(wb);
   }, [sceneManager, loader]);
-  const flyToView = React26.useCallback((preset) => {
+  const flyToView = React27.useCallback((preset) => {
     if (!sceneManager || !loader) return;
     const wb = loader.worldBox;
     if (wb.isEmpty()) return;
@@ -8181,24 +8202,24 @@ init_viewer_provider();
 init_utils();
 function useMeasurementActions() {
   const { activeTool, setActiveTool, measurementManager, measurementList, setMeasurementList } = useViewer();
-  const startTool = React26.useCallback((type) => {
+  const startTool = React27.useCallback((type) => {
     const tool = `measure-${type}`;
     setActiveTool(activeTool === tool ? "none" : tool);
   }, [activeTool, setActiveTool]);
-  const cancelTool = React26.useCallback(() => {
+  const cancelTool = React27.useCallback(() => {
     setActiveTool("none");
   }, [setActiveTool]);
-  const clearAll = React26.useCallback(() => {
+  const clearAll = React27.useCallback(() => {
     measurementManager?.clearAll();
     setMeasurementList([]);
   }, [measurementManager, setMeasurementList]);
-  const remove = React26.useCallback((id) => {
+  const remove = React27.useCallback((id) => {
     measurementManager?.remove(id);
   }, [measurementManager]);
-  const rename = React26.useCallback((id, name) => {
+  const rename = React27.useCallback((id, name) => {
     measurementManager?.rename(id, name);
   }, [measurementManager]);
-  const exportCSV = React26.useCallback(() => {
+  const exportCSV = React27.useCallback(() => {
     exportMeasurementsCSV(measurementList);
   }, [measurementList]);
   return {
@@ -8218,11 +8239,11 @@ init_viewer_provider();
 init_dist();
 function useExportActions() {
   const { exporter } = useViewer();
-  const capture = React26.useCallback(async (options) => {
+  const capture = React27.useCallback(async (options) => {
     if (!exporter) return null;
     return exporter.capture(options);
   }, [exporter]);
-  const download = React26.useCallback((dataUrl, filename) => {
+  const download = React27.useCallback((dataUrl, filename) => {
     exports.ExportManager.download(dataUrl, filename);
   }, []);
   return { capture, download };
@@ -8232,10 +8253,10 @@ function useExportActions() {
 init_viewer_provider();
 function useVisibilityActions() {
   const { showMarkers, setShowMarkers, showMinimap, setShowMinimap } = useViewer();
-  const toggleMarkers = React26.useCallback(() => {
+  const toggleMarkers = React27.useCallback(() => {
     setShowMarkers(!showMarkers);
   }, [showMarkers, setShowMarkers]);
-  const toggleMinimap = React26.useCallback(() => {
+  const toggleMinimap = React27.useCallback(() => {
     setShowMinimap(!showMinimap);
   }, [showMinimap, setShowMinimap]);
   return {
@@ -8250,16 +8271,13 @@ function useVisibilityActions() {
 init_viewer_provider();
 init_dist();
 function useDisplaySettings() {
-  const viewer = useViewer();
-  const [localSettings, setLocalSettings] = React26.useState(exports.DISPLAY_PRESETS.standard);
-  const settings = viewer.displaySettings ?? localSettings;
-  const setSettings = viewer.setDisplaySettings ?? setLocalSettings;
-  const applyPreset = React26.useCallback((preset) => {
-    setSettings({ ...exports.DISPLAY_PRESETS[preset] });
-  }, [setSettings]);
-  const updateSetting = React26.useCallback((key, value) => {
-    setSettings({ ...settings, preset: "standard", [key]: value });
-  }, [settings, setSettings]);
+  const { displaySettings: settings, setDisplaySettings } = useViewer();
+  const applyPreset = React27.useCallback((preset) => {
+    setDisplaySettings({ ...exports.DISPLAY_PRESETS[preset] });
+  }, [setDisplaySettings]);
+  const updateSetting = React27.useCallback((key, value) => {
+    setDisplaySettings({ ...settings, preset: "standard", [key]: value });
+  }, [settings, setDisplaySettings]);
   return {
     settings,
     presets: exports.DISPLAY_PRESETS,

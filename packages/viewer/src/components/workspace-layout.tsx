@@ -2,7 +2,7 @@
 
 import React, { useState, lazy, Suspense } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { cn } from "../lib/utils";
+import { cn, pcvChromeScaleStyle as chromeScale } from "../lib/utils";
 import { useViewer } from "../providers/viewer-provider";
 import { useData } from "../providers/data-provider";
 import { useLocale } from "../i18n/locale-context";
@@ -13,14 +13,6 @@ import { ClipToolbar } from "./toolbar/clip-toolbar";
 import { Sidebar } from "./sidebar/sidebar";
 import { PanoViewer } from "./overlays/pano-viewer";
 import { RenderingSettings } from "./overlays/rendering-settings";
-
-/**
- * Inline style that scales UI chrome via the `--pcv-scale` CSS custom property
- * (set on the `.pcv` root by `PanoCloudViewer`'s `uiScale` prop). Applied to
- * non-viewport chrome containers only — the viewport/canvas stays at native size.
- * `zoom` isn't in React's CSSProperties, so the object is cast.
- */
-const chromeScale = { zoom: "var(--pcv-scale, 1)" } as React.CSSProperties;
 
 const Viewport = lazy(() => import("./viewport").then(m => ({ default: m.Viewport })));
 

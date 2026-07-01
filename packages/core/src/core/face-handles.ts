@@ -62,10 +62,13 @@ export class FaceHandleController {
     this.createHandles();
   }
 
+  /** Shared sphere geometry for all 6 handles — disposed exactly once in dispose(). */
+  private handleGeometry = new THREE.SphereGeometry(1, 12, 8);
+
   private createHandles(): void {
     const axes: FaceAxis[] = ["x", "y", "z"];
     const signs: FaceSign[] = [1, -1];
-    const geo = new THREE.SphereGeometry(1, 12, 8);
+    const geo = this.handleGeometry;
 
     for (const axis of axes) {
       for (const sign of signs) {
@@ -267,8 +270,9 @@ export class FaceHandleController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    // All handles share one geometry — dispose it once, then each material.
+    this.handleGeometry.dispose();
     for (const h of this.handles) {
-      h.mesh.geometry.dispose();
       (h.mesh.material as THREE.Material).dispose();
     }
     this.scene.remove(this.group);

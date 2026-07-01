@@ -29,7 +29,8 @@ var SceneManager = class {
     this.onPointsUpdate = onPointsUpdate;
     this.scene = new THREE5.Scene();
     this.scene.background = new THREE5.Color(657930);
-    const { clientWidth: w, clientHeight: h } = canvas;
+    const w = Math.max(canvas.clientWidth, 1);
+    const h = Math.max(canvas.clientHeight, 1);
     this.camera = new THREE5.PerspectiveCamera(60, w / h, 0.01, 1e5);
     this.camera.up.set(0, 0, 1);
     this.camera.position.set(0, -50, 30);
@@ -44,7 +45,7 @@ var SceneManager = class {
     canvas.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.touchAction = "none";
     this.renderer.domElement.style.userSelect = "none";
-    this.renderer.domElement.addEventListener("dragstart", (e) => e.preventDefault());
+    this.renderer.domElement.addEventListener("dragstart", this.preventDragStart);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
@@ -67,9 +68,11 @@ var SceneManager = class {
     this.resizeObserver.observe(canvas);
     this.fpsInterval = performance.now();
   }
+  /** Bound so it can be removed in dispose(); blocks native drag/ghost-image. */
+  preventDragStart = (e) => e.preventDefault();
   onResize(canvas) {
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
+    const w = Math.max(canvas.clientWidth, 1);
+    const h = Math.max(canvas.clientHeight, 1);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
@@ -216,6 +219,7 @@ var SceneManager = class {
   dispose() {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
     this.resizeObserver.disconnect();
+    this.renderer.domElement.removeEventListener("dragstart", this.preventDragStart);
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -413,10 +417,14 @@ var PointCloudLoader = class {
   getGeoInfo() {
     return { georeferenced: this.isGeoreferenced, projection: this._projection };
   }
-  /** Remove all loaded point clouds from scene */
+  /** Remove all loaded point clouds from scene, releasing their GPU buffers. */
   clear() {
     for (const cloud of this.currentClouds) {
       this.sceneManager.scene.remove(cloud);
+      try {
+        cloud.dispose?.();
+      } catch {
+      }
     }
     this.currentClouds = [];
     this.sceneManager.pointClouds = [];
@@ -524,6 +532,12 @@ var CameraAnimator = class {
     );
     return this.flyTo({ position: viewerPos, target: pos, duration });
   }
+  /**
+   * Stop any in-flight animation. Note: the Promise returned by the interrupted
+   * `flyTo()` is abandoned (never resolves) — callers awaiting it should not rely
+   * on cancel() to settle it. Starting a new `flyTo()` cancels the previous one
+   * the same way; that path is fine because the old promise is simply discarded.
+   */
   cancel() {
     if (this.animId !== null) {
       cancelAnimationFrame(this.animId);
@@ -1279,7 +1293,10 @@ var MeasurementManager = class {
         if (m.type === "area" && pts.length >= 3) {
           const geo = new THREE5.BufferGeometry().setFromPoints([pts[pts.length - 1], pts[0]]);
           const mat = new THREE5.LineBasicMaterial({ color, depthTest: false });
-          this.group.add(new THREE5.Line(geo, mat));
+          const closingLine = new THREE5.Line(geo, mat);
+          closingLine.renderOrder = 1;
+          this.group.add(closingLine);
+          objects.push(closingLine);
         }
       }
     }
@@ -1309,7 +1326,9 @@ var MeasurementManager = class {
       }
       if (text) {
         const sprite = this.makeTextSprite(text, m.color);
-        const mid = pts.reduce((a, b) => a.clone().add(b), new THREE5.Vector3()).divideScalar(pts.length);
+        const mid = new THREE5.Vector3();
+        for (const p of pts) mid.add(p);
+        mid.divideScalar(pts.length);
         sprite.position.copy(mid).add(new THREE5.Vector3(0, 0, 1));
         const ls = this._displaySettings.measurementLabelScale;
         sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
@@ -1399,7 +1418,7 @@ function loadMp4Muxer() {
   }
   return _muxerPromise;
 }
-var ExportManager = class {
+var ExportManager = class _ExportManager {
   sceneManager;
   constructor(sceneManager) {
     this.sceneManager = sceneManager;
@@ -1468,8 +1487,6 @@ var ExportManager = class {
     c2d.height = height;
     const ctx = c2d.getContext("2d");
     const pixels = new Uint8Array(width * height * 4);
-    const flipped = new Uint8ClampedArray(width * height * 4);
-    const row = width * 4;
     const frameDur = Math.round(1e6 / fps);
     const total = Math.max(1, Math.round(durationSec * fps));
     try {
@@ -1484,11 +1501,7 @@ var ExportManager = class {
         renderer.render(scene, cam);
         renderer.setRenderTarget(null);
         renderer.readRenderTargetPixels(rt, 0, 0, width, height, pixels);
-        for (let y = 0; y < height; y++) {
-          const s = (height - 1 - y) * row;
-          flipped.set(pixels.subarray(s, s + row), y * row);
-        }
-        ctx.putImageData(new ImageData(flipped, width, height), 0, 0);
+        ctx.putImageData(new ImageData(_ExportManager.flipY(pixels, width, height), width, height), 0, 0);
         const frame = new w.VideoFrame(c2d, { timestamp: f * frameDur, duration: frameDur });
         encoder.encode(frame, { keyFrame: f % (fps * 2) === 0 });
         frame.close();
@@ -1499,12 +1512,30 @@ var ExportManager = class {
       muxer.finalize();
       return new Blob([muxer.target.buffer], { type: "video/mp4" });
     } finally {
+      try {
+        encoder.close();
+      } catch {
+      }
       renderer.setRenderTarget(null);
       renderer.setPixelRatio(prevPR);
       renderer.setSize(prevSize.x, prevSize.y, false);
       scene.background = prevBg;
       rt.dispose();
     }
+  }
+  /**
+   * Flip a bottom-up WebGL pixel buffer into top-down image order.
+   * `readRenderTargetPixels` returns rows starting at the bottom of the frame;
+   * ImageData / canvas expect the top row first.
+   */
+  static flipY(pixels, width, height) {
+    const flipped = new Uint8ClampedArray(width * height * 4);
+    const row = width * 4;
+    for (let y = 0; y < height; y++) {
+      const src = (height - 1 - y) * row;
+      flipped.set(pixels.subarray(src, src + row), y * row);
+    }
+    return flipped;
   }
   /** World-space bounds of the loaded point clouds (potree octrees aren't Meshes). */
   cloudBounds() {
@@ -1587,12 +1618,7 @@ var ExportManager = class {
     const pixels = new Uint8Array(outW * outH * 4);
     renderer.readRenderTargetPixels(rt, 0, 0, outW, outH, pixels);
     rt.dispose();
-    const flipped = new Uint8ClampedArray(outW * outH * 4);
-    for (let y = 0; y < outH; y++) {
-      const src = (outH - 1 - y) * outW * 4;
-      const dst = y * outW * 4;
-      flipped.set(pixels.subarray(src, src + outW * 4), dst);
-    }
+    const flipped = _ExportManager.flipY(pixels, outW, outH);
     const canvas = document.createElement("canvas");
     canvas.width = outW;
     canvas.height = outH;
@@ -1820,10 +1846,12 @@ var FaceHandleController = class {
     this.scene.add(this.group);
     this.createHandles();
   }
+  /** Shared sphere geometry for all 6 handles — disposed exactly once in dispose(). */
+  handleGeometry = new THREE5.SphereGeometry(1, 12, 8);
   createHandles() {
     const axes = ["x", "y", "z"];
     const signs = [1, -1];
-    const geo = new THREE5.SphereGeometry(1, 12, 8);
+    const geo = this.handleGeometry;
     for (const axis of axes) {
       for (const sign of signs) {
         const mat = new THREE5.MeshBasicMaterial({
@@ -1983,8 +2011,8 @@ var FaceHandleController = class {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.handleGeometry.dispose();
     for (const h of this.handles) {
-      h.mesh.geometry.dispose();
       h.mesh.material.dispose();
     }
     this.scene.remove(this.group);
@@ -2038,8 +2066,33 @@ var ClipManager = class {
   constructor(sm) {
     this.sm = sm;
   }
-  async initTransformControls() {
-    if (this.tcMove && this.tcRotate) return;
+  /**
+   * Remove a Box3Helper from the scene and dispose BOTH its geometry and its
+   * internally-created LineBasicMaterial. Box3Helper owns its material, so
+   * disposing only the geometry (the easy-to-forget half) leaks it.
+   */
+  disposeBox3Helper(helper) {
+    if (!helper) return;
+    this.sm.scene.remove(helper);
+    helper.geometry.dispose();
+    helper.material.dispose();
+  }
+  /** Remove the invisible transform pivot mesh and dispose its geometry + material. */
+  disposePivot() {
+    if (!this.pivot) return;
+    this.sm.scene.remove(this.pivot);
+    this.pivot.geometry.dispose();
+    this.pivot.material.dispose();
+    this.pivot = null;
+  }
+  /** In-flight init promise — guards against concurrent selectBox() double-init. */
+  _initTcPromise = null;
+  initTransformControls() {
+    if (this.tcMove && this.tcRotate) return Promise.resolve();
+    if (!this._initTcPromise) this._initTcPromise = this._doInitTransformControls();
+    return this._initTcPromise;
+  }
+  async _doInitTransformControls() {
     const { TransformControls } = await import('three/examples/jsm/controls/TransformControls.js');
     const makeTc = (mode, size) => {
       const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement);
@@ -2135,11 +2188,7 @@ var ClipManager = class {
   async selectBox(id) {
     this._highlightHelper(this.selectedId, false);
     this._detachGizmos();
-    if (this.pivot) {
-      this.sm.scene.remove(this.pivot);
-      this.pivot.geometry.dispose();
-      this.pivot = null;
-    }
+    this.disposePivot();
     this._faceHandles?.detach();
     this.selectedId = id;
     this.onSelectChange?.(id);
@@ -2265,12 +2314,8 @@ var ClipManager = class {
     const idx = this.entries.findIndex((e) => e.id === id);
     if (idx === -1) return;
     this.entries.splice(idx, 1);
-    const helper = this.helpers.get(id);
-    if (helper) {
-      this.sm.scene.remove(helper);
-      helper.geometry.dispose();
-      this.helpers.delete(id);
-    }
+    this.disposeBox3Helper(this.helpers.get(id) ?? null);
+    this.helpers.delete(id);
     const fill = this.fills.get(id);
     if (fill) {
       this.sm.scene.remove(fill);
@@ -2281,11 +2326,7 @@ var ClipManager = class {
     if (this.selectedId === id) {
       this._detachGizmos();
       this._faceHandles?.detach();
-      if (this.pivot) {
-        this.sm.scene.remove(this.pivot);
-        this.pivot.geometry.dispose();
-        this.pivot = null;
-      }
+      this.disposePivot();
       this.selectedId = null;
       this.onSelectChange?.(null);
     }
@@ -2403,11 +2444,8 @@ var ClipManager = class {
   }
   /** Draft box — live drag preview, no clip applied */
   setDraft(box) {
-    if (this.draftHelper) {
-      this.sm.scene.remove(this.draftHelper);
-      this.draftHelper.geometry.dispose();
-      this.draftHelper = null;
-    }
+    this.disposeBox3Helper(this.draftHelper);
+    this.draftHelper = null;
     if (box && !box.isEmpty()) {
       this.draftHelper = new THREE5.Box3Helper(box, new THREE5.Color(14472518));
       this.draftHelper.material.transparent = true;
@@ -2419,15 +2457,8 @@ var ClipManager = class {
   clear() {
     this._detachGizmos();
     this._faceHandles?.detach();
-    if (this.pivot) {
-      this.sm.scene.remove(this.pivot);
-      this.pivot.geometry.dispose();
-      this.pivot = null;
-    }
-    for (const [, helper] of this.helpers) {
-      this.sm.scene.remove(helper);
-      helper.geometry.dispose();
-    }
+    this.disposePivot();
+    for (const [, helper] of this.helpers) this.disposeBox3Helper(helper);
     this.helpers.clear();
     for (const [, fill] of this.fills) {
       this.sm.scene.remove(fill);
@@ -2437,11 +2468,8 @@ var ClipManager = class {
     this.fills.clear();
     this.entries = [];
     this.selectedId = null;
-    if (this.draftHelper) {
-      this.sm.scene.remove(this.draftHelper);
-      this.draftHelper.geometry.dispose();
-      this.draftHelper = null;
-    }
+    this.disposeBox3Helper(this.draftHelper);
+    this.draftHelper = null;
     this.applyAll();
     this.onChange?.([]);
     this.onSelectChange?.(null);
@@ -2455,6 +2483,7 @@ var ClipManager = class {
     }
     this.tcMove = null;
     this.tcRotate = null;
+    this._initTcPromise = null;
     if (this._faceHandles) {
       this._faceHandles.dispose();
       this._faceHandles = null;
@@ -2706,7 +2735,8 @@ var PresentationManager = class {
     try {
       const raw = localStorage.getItem(this.storageKey);
       if (raw) this.scenes = JSON.parse(raw);
-    } catch {
+    } catch (err) {
+      console.warn("[PresentationManager] Failed to parse saved scenes, resetting.", err);
       this.scenes = [];
     }
   }
@@ -2754,7 +2784,7 @@ var PresentationManager = class {
       const existingIds = new Set(this.scenes.map((s) => s.id));
       let count = 0;
       for (const scene of imported) {
-        if (!scene.id || !scene.name || !scene.camera) continue;
+        if (!scene.id || !scene.name || !Array.isArray(scene.camera?.position) || !Array.isArray(scene.camera?.target)) continue;
         if (existingIds.has(scene.id)) {
           scene.id = genSceneId();
         }

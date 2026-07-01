@@ -85,6 +85,12 @@ export class CameraAnimator {
     return this.flyTo({ position: viewerPos, target: pos, duration });
   }
 
+  /**
+   * Stop any in-flight animation. Note: the Promise returned by the interrupted
+   * `flyTo()` is abandoned (never resolves) — callers awaiting it should not rely
+   * on cancel() to settle it. Starting a new `flyTo()` cancels the previous one
+   * the same way; that path is fine because the old promise is simply discarded.
+   */
   cancel() {
     if (this.animId !== null) {
       cancelAnimationFrame(this.animId);

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { pcvChromeScaleStyle as chromeScale } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useData } from "../../providers/data-provider";
 import { CollapsibleSidebar } from "./collapsible-sidebar";
@@ -14,13 +15,6 @@ interface WorkstationLayoutProps {
   /** Sidebar position. Default: "left" */
   sidebarSide?: "left" | "right";
 }
-
-/**
- * Scales UI chrome via the `--pcv-scale` CSS custom property (set on the `.pcv`
- * root by `PanoCloudViewer`'s `uiScale` prop). Applied to chrome only — never the
- * viewport. `zoom` isn't in React's CSSProperties, so the object is cast.
- */
-const chromeScale = { zoom: "var(--pcv-scale, 1)" } as React.CSSProperties;
 
 export function WorkstationLayout({ viewport, sidebarSide = "left" }: WorkstationLayoutProps) {
   const { fps, pointBudget, activeTool } = useViewer();

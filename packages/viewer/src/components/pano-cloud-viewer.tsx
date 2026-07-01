@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useRef, useCallback, Suspense, lazy } from "react";
+import React, { createContext, useContext, useRef, useCallback, useMemo, Suspense, lazy } from "react";
 import { ThemeProvider, useTheme } from "../providers/theme-provider";
 import { ViewerProvider, useViewer } from "../providers/viewer-provider";
 import { DataProvider } from "../providers/data-provider";
@@ -55,15 +55,11 @@ export function useUiScale(): number {
 }
 
 /**
- * Inline style helper that applies the chrome scale via the CSS `zoom` property,
- * reading the `--pcv-scale` custom property set on the `.pcv` root. Apply this to
- * non-viewport chrome containers (toolbars, sidebars, floating palettes, overlay
- * panels). The 3D `Viewport`/canvas must NOT receive this style so it stays at
- * native resolution and full size.
- *
- * `zoom` is not part of React's `CSSProperties` type, so the object is cast.
+ * Inline style helper that applies the chrome scale via the CSS `zoom` property.
+ * Canonical definition lives in `lib/utils`; re-exported here as part of the
+ * public API. Apply to non-viewport chrome only — never the 3D canvas.
  */
-export const pcvChromeScaleStyle = { zoom: "var(--pcv-scale, 1)" } as React.CSSProperties;
+export { pcvChromeScaleStyle } from "../lib/utils";
 
 export interface PanoCloudViewerProps {
   /** Data source: S3 bucket, local path, or Electron IPC */
@@ -216,8 +212,12 @@ function PcvRoot({ className, uiScale = 1, children }: PcvRootProps) {
  * ```
  */
 export function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, uiScale = 1, children, components }: PanoCloudViewerProps) {
-  const adapter = createAdapter(source);
-  const config = { source, uiMode, panoEngine };
+  // Memoize so a parent re-render doesn't hand DataProvider/ViewerProvider new
+  // object identities — otherwise DataProvider re-fetches cameras/metadata and
+  // managers see a "changed" config on every render. Callers passing an inline
+  // `source={{…}}` literal still churn identity; document that in the JSDoc.
+  const adapter = useMemo(() => createAdapter(source), [source]);
+  const config = useMemo(() => ({ source, uiMode, panoEngine }), [source, uiMode, panoEngine]);
 
   return (
     <LocaleProvider locale={locale}>

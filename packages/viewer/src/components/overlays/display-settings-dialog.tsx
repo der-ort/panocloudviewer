@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect } from "react";
 import { X, Minus, Circle, Plus } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
@@ -175,16 +175,8 @@ export function DisplaySettingsDialog({
     TabsContent,
   } = useComponents();
 
-  // Use provider displaySettings if available, otherwise local state
-  const [localSettings, setLocalSettings] = useState<DisplaySettings>(
-    DISPLAY_PRESETS.standard,
-  );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const settings: DisplaySettings =
-    (viewer as any).displaySettings ?? localSettings;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setSettings: (s: DisplaySettings) => void =
-    (viewer as any).setDisplaySettings ?? setLocalSettings;
+  const settings = viewer.displaySettings;
+  const setSettings = viewer.setDisplaySettings;
 
   const t = useLocale().displaySettings;
   // The marker-label-mode strings are not part of the strict ViewerLocale

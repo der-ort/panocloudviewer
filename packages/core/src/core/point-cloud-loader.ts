@@ -225,10 +225,15 @@ export class PointCloudLoader {
     return { georeferenced: this.isGeoreferenced, projection: this._projection };
   }
 
-  /** Remove all loaded point clouds from scene */
+  /** Remove all loaded point clouds from scene, releasing their GPU buffers. */
   clear() {
     for (const cloud of this.currentClouds) {
       this.sceneManager.scene.remove(cloud);
+      // Best-effort: potree octrees hold GPU geometry. dispose() isn't part of
+      // potree-core's typed surface, so guard the call; skipping it leaks VRAM
+      // across project switches.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      try { (cloud as any).dispose?.(); } catch { /* not all potree builds implement dispose */ }
     }
     this.currentClouds = [];
     this.sceneManager.pointClouds = [];

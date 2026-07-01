@@ -110,8 +110,6 @@ export class ExportManager {
     c2d.width = width; c2d.height = height;
     const ctx = c2d.getContext("2d")!;
     const pixels = new Uint8Array(width * height * 4);
-    const flipped = new Uint8ClampedArray(width * height * 4);
-    const row = width * 4;
     const frameDur = Math.round(1e6 / fps);
     const total = Math.max(1, Math.round(durationSec * fps));
 
@@ -127,12 +125,7 @@ export class ExportManager {
         renderer.render(scene, cam);
         renderer.setRenderTarget(null);
         renderer.readRenderTargetPixels(rt, 0, 0, width, height, pixels);
-        // Flip Y (WebGL is bottom-up).
-        for (let y = 0; y < height; y++) {
-          const s = (height - 1 - y) * row;
-          flipped.set(pixels.subarray(s, s + row), y * row);
-        }
-        ctx.putImageData(new ImageData(flipped, width, height), 0, 0);
+        ctx.putImageData(new ImageData(ExportManager.flipY(pixels, width, height), width, height), 0, 0);
         const frame = new w.VideoFrame(c2d, { timestamp: f * frameDur, duration: frameDur });
         encoder.encode(frame, { keyFrame: f % (fps * 2) === 0 });
         frame.close();
@@ -144,12 +137,29 @@ export class ExportManager {
       muxer.finalize();
       return new Blob([muxer.target.buffer], { type: "video/mp4" });
     } finally {
+      // Release the codec handle even if a frame threw mid-encode.
+      try { encoder.close(); } catch { /* already closed / errored */ }
       renderer.setRenderTarget(null);
       renderer.setPixelRatio(prevPR);
       renderer.setSize(prevSize.x, prevSize.y, false);
       scene.background = prevBg;
       rt.dispose();
     }
+  }
+
+  /**
+   * Flip a bottom-up WebGL pixel buffer into top-down image order.
+   * `readRenderTargetPixels` returns rows starting at the bottom of the frame;
+   * ImageData / canvas expect the top row first.
+   */
+  private static flipY(pixels: Uint8Array, width: number, height: number) {
+    const flipped = new Uint8ClampedArray(width * height * 4);
+    const row = width * 4;
+    for (let y = 0; y < height; y++) {
+      const src = (height - 1 - y) * row;
+      flipped.set(pixels.subarray(src, src + row), y * row);
+    }
+    return flipped;
   }
 
   /** World-space bounds of the loaded point clouds (potree octrees aren't Meshes). */
@@ -245,13 +255,7 @@ export class ExportManager {
     renderer.readRenderTargetPixels(rt, 0, 0, outW, outH, pixels);
     rt.dispose();
 
-    // Flip Y (WebGL is bottom-up)
-    const flipped = new Uint8ClampedArray(outW * outH * 4);
-    for (let y = 0; y < outH; y++) {
-      const src = (outH - 1 - y) * outW * 4;
-      const dst = y * outW * 4;
-      flipped.set(pixels.subarray(src, src + outW * 4), dst);
-    }
+    const flipped = ExportManager.flipY(pixels, outW, outH);
 
     const canvas = document.createElement("canvas");
     canvas.width = outW;

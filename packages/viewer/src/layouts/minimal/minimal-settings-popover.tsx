@@ -4,6 +4,7 @@ import React from "react";
 import { Camera, Map, Ruler } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
+import { ToggleRow } from "../../ui/toggle-row";
 import { PCV_VERSION, PCV_BUILD } from "../../version";
 import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
 
@@ -17,43 +18,6 @@ const COLOR_MODES: { value: ColorMode; label: string }[] = [
   { value: "intensity", label: "Intensity" },
   { value: "classification", label: "Classification" },
 ];
-
-function ToggleRow({
-  icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg hover:bg-muted transition-colors"
-    >
-      <span className={cn("text-muted-foreground", active && "text-[hsl(var(--brand))]")}>
-        {icon}
-      </span>
-      <span className="text-xs text-foreground flex-1 text-left">{label}</span>
-      <div
-        className={cn(
-          "w-7 h-4 rounded-full transition-colors flex items-center px-0.5",
-          active ? "bg-[hsl(var(--brand)/0.6)]" : "bg-muted",
-        )}
-      >
-        <div
-          className={cn(
-            "w-3 h-3 rounded-full bg-foreground transition-transform",
-            active && "translate-x-3",
-          )}
-        />
-      </div>
-    </button>
-  );
-}
 
 export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps) {
   const {
@@ -89,19 +53,19 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
             icon={<Camera size={14} />}
             label="Panoramas"
             active={showMarkers}
-            onClick={() => setShowMarkers(!showMarkers)}
+            onToggle={() => setShowMarkers(!showMarkers)}
           />
           <ToggleRow
             icon={<Ruler size={14} />}
             label="Measurements"
             active={showMeasurements}
-            onClick={() => setShowMeasurements(!showMeasurements)}
+            onToggle={() => setShowMeasurements(!showMeasurements)}
           />
           <ToggleRow
             icon={<Map size={14} />}
             label="Minimap"
             active={showMinimap}
-            onClick={() => setShowMinimap(!showMinimap)}
+            onToggle={() => setShowMinimap(!showMinimap)}
           />
         </div>
 

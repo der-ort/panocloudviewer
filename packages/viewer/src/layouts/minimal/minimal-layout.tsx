@@ -1,18 +1,12 @@
 "use client";
 
 import React from "react";
+import { pcvChromeScaleStyle as chromeScale } from "../../lib/utils";
 import { MinimalToolbar } from "./minimal-toolbar";
 
 interface MinimalLayoutProps {
   viewport: React.ReactNode;
 }
-
-/**
- * Scales UI chrome via the `--pcv-scale` CSS custom property (set on the `.pcv`
- * root by `PanoCloudViewer`'s `uiScale` prop). Applied to chrome only — never the
- * viewport. `zoom` isn't in React's CSSProperties, so the object is cast.
- */
-const chromeScale = { zoom: "var(--pcv-scale, 1)" } as React.CSSProperties;
 
 export function MinimalLayout({ viewport }: MinimalLayoutProps) {
   return (

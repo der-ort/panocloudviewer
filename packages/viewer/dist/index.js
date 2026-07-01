@@ -1,6 +1,6 @@
 import * as THREE5 from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import React26, { createContext, lazy, useContext, useState, useCallback, useEffect, useRef, useReducer, useMemo, Suspense } from 'react';
+import React27, { createContext, lazy, useContext, useState, useCallback, useEffect, useRef, useReducer, useMemo, Suspense } from 'react';
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -182,7 +182,8 @@ var init_dist = __esm({
         this.onPointsUpdate = onPointsUpdate;
         this.scene = new THREE5.Scene();
         this.scene.background = new THREE5.Color(657930);
-        const { clientWidth: w, clientHeight: h } = canvas;
+        const w = Math.max(canvas.clientWidth, 1);
+        const h = Math.max(canvas.clientHeight, 1);
         this.camera = new THREE5.PerspectiveCamera(60, w / h, 0.01, 1e5);
         this.camera.up.set(0, 0, 1);
         this.camera.position.set(0, -50, 30);
@@ -197,7 +198,7 @@ var init_dist = __esm({
         canvas.appendChild(this.renderer.domElement);
         this.renderer.domElement.style.touchAction = "none";
         this.renderer.domElement.style.userSelect = "none";
-        this.renderer.domElement.addEventListener("dragstart", (e) => e.preventDefault());
+        this.renderer.domElement.addEventListener("dragstart", this.preventDragStart);
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.06;
@@ -220,9 +221,11 @@ var init_dist = __esm({
         this.resizeObserver.observe(canvas);
         this.fpsInterval = performance.now();
       }
+      /** Bound so it can be removed in dispose(); blocks native drag/ghost-image. */
+      preventDragStart = (e) => e.preventDefault();
       onResize(canvas) {
-        const w = canvas.clientWidth;
-        const h = canvas.clientHeight;
+        const w = Math.max(canvas.clientWidth, 1);
+        const h = Math.max(canvas.clientHeight, 1);
         this.camera.aspect = w / h;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(w, h);
@@ -369,6 +372,7 @@ var init_dist = __esm({
       dispose() {
         if (this.animationId !== null) cancelAnimationFrame(this.animationId);
         this.resizeObserver.disconnect();
+        this.renderer.domElement.removeEventListener("dragstart", this.preventDragStart);
         this.controls.dispose();
         this.renderer.dispose();
         this.renderer.domElement.remove();
@@ -566,10 +570,14 @@ var init_dist = __esm({
       getGeoInfo() {
         return { georeferenced: this.isGeoreferenced, projection: this._projection };
       }
-      /** Remove all loaded point clouds from scene */
+      /** Remove all loaded point clouds from scene, releasing their GPU buffers. */
       clear() {
         for (const cloud of this.currentClouds) {
           this.sceneManager.scene.remove(cloud);
+          try {
+            cloud.dispose?.();
+          } catch {
+          }
         }
         this.currentClouds = [];
         this.sceneManager.pointClouds = [];
@@ -677,6 +685,12 @@ var init_dist = __esm({
         );
         return this.flyTo({ position: viewerPos, target: pos, duration });
       }
+      /**
+       * Stop any in-flight animation. Note: the Promise returned by the interrupted
+       * `flyTo()` is abandoned (never resolves) — callers awaiting it should not rely
+       * on cancel() to settle it. Starting a new `flyTo()` cancels the previous one
+       * the same way; that path is fine because the old promise is simply discarded.
+       */
       cancel() {
         if (this.animId !== null) {
           cancelAnimationFrame(this.animId);
@@ -1339,7 +1353,10 @@ var init_dist = __esm({
             if (m.type === "area" && pts.length >= 3) {
               const geo = new THREE5.BufferGeometry().setFromPoints([pts[pts.length - 1], pts[0]]);
               const mat = new THREE5.LineBasicMaterial({ color, depthTest: false });
-              this.group.add(new THREE5.Line(geo, mat));
+              const closingLine = new THREE5.Line(geo, mat);
+              closingLine.renderOrder = 1;
+              this.group.add(closingLine);
+              objects.push(closingLine);
             }
           }
         }
@@ -1369,7 +1386,9 @@ var init_dist = __esm({
           }
           if (text) {
             const sprite = this.makeTextSprite(text, m.color);
-            const mid = pts.reduce((a, b) => a.clone().add(b), new THREE5.Vector3()).divideScalar(pts.length);
+            const mid = new THREE5.Vector3();
+            for (const p of pts) mid.add(p);
+            mid.divideScalar(pts.length);
             sprite.position.copy(mid).add(new THREE5.Vector3(0, 0, 1));
             const ls = this._displaySettings.measurementLabelScale;
             sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
@@ -1452,7 +1471,7 @@ var init_dist = __esm({
       custom: { pos: new THREE5.Vector3(0, 0, 1), up: new THREE5.Vector3(0, 1, 0) }
     };
     _muxerPromise = null;
-    ExportManager = class {
+    ExportManager = class _ExportManager {
       sceneManager;
       constructor(sceneManager) {
         this.sceneManager = sceneManager;
@@ -1521,8 +1540,6 @@ var init_dist = __esm({
         c2d.height = height;
         const ctx = c2d.getContext("2d");
         const pixels = new Uint8Array(width * height * 4);
-        const flipped = new Uint8ClampedArray(width * height * 4);
-        const row = width * 4;
         const frameDur = Math.round(1e6 / fps);
         const total = Math.max(1, Math.round(durationSec * fps));
         try {
@@ -1537,11 +1554,7 @@ var init_dist = __esm({
             renderer.render(scene, cam);
             renderer.setRenderTarget(null);
             renderer.readRenderTargetPixels(rt, 0, 0, width, height, pixels);
-            for (let y = 0; y < height; y++) {
-              const s = (height - 1 - y) * row;
-              flipped.set(pixels.subarray(s, s + row), y * row);
-            }
-            ctx.putImageData(new ImageData(flipped, width, height), 0, 0);
+            ctx.putImageData(new ImageData(_ExportManager.flipY(pixels, width, height), width, height), 0, 0);
             const frame = new w.VideoFrame(c2d, { timestamp: f * frameDur, duration: frameDur });
             encoder.encode(frame, { keyFrame: f % (fps * 2) === 0 });
             frame.close();
@@ -1552,12 +1565,30 @@ var init_dist = __esm({
           muxer.finalize();
           return new Blob([muxer.target.buffer], { type: "video/mp4" });
         } finally {
+          try {
+            encoder.close();
+          } catch {
+          }
           renderer.setRenderTarget(null);
           renderer.setPixelRatio(prevPR);
           renderer.setSize(prevSize.x, prevSize.y, false);
           scene.background = prevBg;
           rt.dispose();
         }
+      }
+      /**
+       * Flip a bottom-up WebGL pixel buffer into top-down image order.
+       * `readRenderTargetPixels` returns rows starting at the bottom of the frame;
+       * ImageData / canvas expect the top row first.
+       */
+      static flipY(pixels, width, height) {
+        const flipped = new Uint8ClampedArray(width * height * 4);
+        const row = width * 4;
+        for (let y = 0; y < height; y++) {
+          const src = (height - 1 - y) * row;
+          flipped.set(pixels.subarray(src, src + row), y * row);
+        }
+        return flipped;
       }
       /** World-space bounds of the loaded point clouds (potree octrees aren't Meshes). */
       cloudBounds() {
@@ -1640,12 +1671,7 @@ var init_dist = __esm({
         const pixels = new Uint8Array(outW * outH * 4);
         renderer.readRenderTargetPixels(rt, 0, 0, outW, outH, pixels);
         rt.dispose();
-        const flipped = new Uint8ClampedArray(outW * outH * 4);
-        for (let y = 0; y < outH; y++) {
-          const src = (outH - 1 - y) * outW * 4;
-          const dst = y * outW * 4;
-          flipped.set(pixels.subarray(src, src + outW * 4), dst);
-        }
+        const flipped = _ExportManager.flipY(pixels, outW, outH);
         const canvas = document.createElement("canvas");
         canvas.width = outW;
         canvas.height = outH;
@@ -1873,10 +1899,12 @@ var init_dist = __esm({
         this.scene.add(this.group);
         this.createHandles();
       }
+      /** Shared sphere geometry for all 6 handles — disposed exactly once in dispose(). */
+      handleGeometry = new THREE5.SphereGeometry(1, 12, 8);
       createHandles() {
         const axes = ["x", "y", "z"];
         const signs = [1, -1];
-        const geo = new THREE5.SphereGeometry(1, 12, 8);
+        const geo = this.handleGeometry;
         for (const axis of axes) {
           for (const sign of signs) {
             const mat = new THREE5.MeshBasicMaterial({
@@ -2036,8 +2064,8 @@ var init_dist = __esm({
       dispose() {
         if (this.disposed) return;
         this.disposed = true;
+        this.handleGeometry.dispose();
         for (const h of this.handles) {
-          h.mesh.geometry.dispose();
           h.mesh.material.dispose();
         }
         this.scene.remove(this.group);
@@ -2086,8 +2114,33 @@ var init_dist = __esm({
       constructor(sm) {
         this.sm = sm;
       }
-      async initTransformControls() {
-        if (this.tcMove && this.tcRotate) return;
+      /**
+       * Remove a Box3Helper from the scene and dispose BOTH its geometry and its
+       * internally-created LineBasicMaterial. Box3Helper owns its material, so
+       * disposing only the geometry (the easy-to-forget half) leaks it.
+       */
+      disposeBox3Helper(helper) {
+        if (!helper) return;
+        this.sm.scene.remove(helper);
+        helper.geometry.dispose();
+        helper.material.dispose();
+      }
+      /** Remove the invisible transform pivot mesh and dispose its geometry + material. */
+      disposePivot() {
+        if (!this.pivot) return;
+        this.sm.scene.remove(this.pivot);
+        this.pivot.geometry.dispose();
+        this.pivot.material.dispose();
+        this.pivot = null;
+      }
+      /** In-flight init promise — guards against concurrent selectBox() double-init. */
+      _initTcPromise = null;
+      initTransformControls() {
+        if (this.tcMove && this.tcRotate) return Promise.resolve();
+        if (!this._initTcPromise) this._initTcPromise = this._doInitTransformControls();
+        return this._initTcPromise;
+      }
+      async _doInitTransformControls() {
         const { TransformControls } = await import('three/examples/jsm/controls/TransformControls.js');
         const makeTc = (mode, size) => {
           const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement);
@@ -2183,11 +2236,7 @@ var init_dist = __esm({
       async selectBox(id) {
         this._highlightHelper(this.selectedId, false);
         this._detachGizmos();
-        if (this.pivot) {
-          this.sm.scene.remove(this.pivot);
-          this.pivot.geometry.dispose();
-          this.pivot = null;
-        }
+        this.disposePivot();
         this._faceHandles?.detach();
         this.selectedId = id;
         this.onSelectChange?.(id);
@@ -2313,12 +2362,8 @@ var init_dist = __esm({
         const idx = this.entries.findIndex((e) => e.id === id);
         if (idx === -1) return;
         this.entries.splice(idx, 1);
-        const helper = this.helpers.get(id);
-        if (helper) {
-          this.sm.scene.remove(helper);
-          helper.geometry.dispose();
-          this.helpers.delete(id);
-        }
+        this.disposeBox3Helper(this.helpers.get(id) ?? null);
+        this.helpers.delete(id);
         const fill = this.fills.get(id);
         if (fill) {
           this.sm.scene.remove(fill);
@@ -2329,11 +2374,7 @@ var init_dist = __esm({
         if (this.selectedId === id) {
           this._detachGizmos();
           this._faceHandles?.detach();
-          if (this.pivot) {
-            this.sm.scene.remove(this.pivot);
-            this.pivot.geometry.dispose();
-            this.pivot = null;
-          }
+          this.disposePivot();
           this.selectedId = null;
           this.onSelectChange?.(null);
         }
@@ -2451,11 +2492,8 @@ var init_dist = __esm({
       }
       /** Draft box — live drag preview, no clip applied */
       setDraft(box) {
-        if (this.draftHelper) {
-          this.sm.scene.remove(this.draftHelper);
-          this.draftHelper.geometry.dispose();
-          this.draftHelper = null;
-        }
+        this.disposeBox3Helper(this.draftHelper);
+        this.draftHelper = null;
         if (box && !box.isEmpty()) {
           this.draftHelper = new THREE5.Box3Helper(box, new THREE5.Color(14472518));
           this.draftHelper.material.transparent = true;
@@ -2467,15 +2505,8 @@ var init_dist = __esm({
       clear() {
         this._detachGizmos();
         this._faceHandles?.detach();
-        if (this.pivot) {
-          this.sm.scene.remove(this.pivot);
-          this.pivot.geometry.dispose();
-          this.pivot = null;
-        }
-        for (const [, helper] of this.helpers) {
-          this.sm.scene.remove(helper);
-          helper.geometry.dispose();
-        }
+        this.disposePivot();
+        for (const [, helper] of this.helpers) this.disposeBox3Helper(helper);
         this.helpers.clear();
         for (const [, fill] of this.fills) {
           this.sm.scene.remove(fill);
@@ -2485,11 +2516,8 @@ var init_dist = __esm({
         this.fills.clear();
         this.entries = [];
         this.selectedId = null;
-        if (this.draftHelper) {
-          this.sm.scene.remove(this.draftHelper);
-          this.draftHelper.geometry.dispose();
-          this.draftHelper = null;
-        }
+        this.disposeBox3Helper(this.draftHelper);
+        this.draftHelper = null;
         this.applyAll();
         this.onChange?.([]);
         this.onSelectChange?.(null);
@@ -2503,6 +2531,7 @@ var init_dist = __esm({
         }
         this.tcMove = null;
         this.tcRotate = null;
+        this._initTcPromise = null;
         if (this._faceHandles) {
           this._faceHandles.dispose();
           this._faceHandles = null;
@@ -2749,7 +2778,8 @@ var init_dist = __esm({
         try {
           const raw = localStorage.getItem(this.storageKey);
           if (raw) this.scenes = JSON.parse(raw);
-        } catch {
+        } catch (err) {
+          console.warn("[PresentationManager] Failed to parse saved scenes, resetting.", err);
           this.scenes = [];
         }
       }
@@ -2797,7 +2827,7 @@ var init_dist = __esm({
           const existingIds = new Set(this.scenes.map((s) => s.id));
           let count = 0;
           for (const scene of imported) {
-            if (!scene.id || !scene.name || !scene.camera) continue;
+            if (!scene.id || !scene.name || !Array.isArray(scene.camera?.position) || !Array.isArray(scene.camera?.target)) continue;
             if (existingIds.has(scene.id)) {
               scene.id = genSceneId();
             }
@@ -3290,9 +3320,79 @@ var init_locale_context = __esm({
 function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
+var pcvChromeScaleStyle;
 var init_utils = __esm({
   "src/lib/utils.ts"() {
     init_dist();
+    pcvChromeScaleStyle = { zoom: "var(--pcv-scale, 1)" };
+  }
+});
+function useMinimapResize(minimapRef, initialSize = 176) {
+  const [minimapSize, setMinimapSize] = useState(initialSize);
+  const sizeRef = useRef(initialSize);
+  sizeRef.current = minimapSize;
+  const draggingRef = useRef(false);
+  const removeListenersRef = useRef(null);
+  const handleMinimapResizeStart = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    draggingRef.current = true;
+    const startY = e.clientY;
+    const startSize = sizeRef.current;
+    const onMove = (ev) => {
+      if (!draggingRef.current) return;
+      const delta = startY - ev.clientY;
+      setMinimapSize(Math.max(120, Math.min(400, startSize + delta)));
+      minimapRef.current?.resize();
+    };
+    const onUp = () => {
+      draggingRef.current = false;
+      removeListenersRef.current?.();
+      removeListenersRef.current = null;
+      setTimeout(() => minimapRef.current?.resize(), 0);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    removeListenersRef.current = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [minimapRef]);
+  useEffect(() => () => removeListenersRef.current?.(), []);
+  return { minimapSize, handleMinimapResizeStart };
+}
+var init_use_minimap_resize = __esm({
+  "src/hooks/use-minimap-resize.ts"() {
+    "use client";
+  }
+});
+function useSnapThrottle(pick) {
+  const rafRef = useRef(null);
+  const ndcRef = useRef(null);
+  const pickRef = useRef(pick);
+  pickRef.current = pick;
+  const scheduleSnap = useCallback((nx, ny) => {
+    ndcRef.current = { nx, ny };
+    if (rafRef.current == null) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const p = ndcRef.current;
+        if (p) pickRef.current(p.nx, p.ny);
+      });
+    }
+  }, []);
+  const cancelSnap = useCallback(() => {
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  }, []);
+  useEffect(() => cancelSnap, [cancelSnap]);
+  return { scheduleSnap, cancelSnap };
+}
+var init_use_snap_throttle = __esm({
+  "src/hooks/use-snap-throttle.ts"() {
+    "use client";
   }
 });
 
@@ -3305,7 +3405,6 @@ function Viewport({ className }) {
   const containerRef = useRef(null);
   const minimapContainerRef = useRef(null);
   const initialized = useRef(false);
-  const [minimapSize, setMinimapSize] = React26.useState(176);
   const t = useLocale().viewport;
   const {
     config,
@@ -3348,10 +3447,9 @@ function Viewport({ className }) {
   const measureRef = useRef(null);
   const minimapRef = useRef(null);
   const clipRef = useRef(null);
-  const snapRafRef = useRef(null);
-  const snapNdcRef = useRef(null);
   const animRef = useRef(null);
   const axisRef = useRef(null);
+  const { minimapSize, handleMinimapResizeStart } = useMinimapResize(minimapRef);
   const clipDraftRef = useRef(null);
   const clipDownRef = useRef(null);
   const volumeDragRef = useRef(null);
@@ -3448,28 +3546,6 @@ function Viewport({ className }) {
     cam.position.set(world.x + offset.x, world.y + offset.y, cam.position.z);
     sm.controls.update();
   }, []);
-  const minimapResizeRef = useRef(false);
-  const handleMinimapResizeStart = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    minimapResizeRef.current = true;
-    const startY = e.clientY;
-    const startSize = minimapSize;
-    const onMove = (ev) => {
-      if (!minimapResizeRef.current) return;
-      const delta = startY - ev.clientY;
-      setMinimapSize(Math.max(120, Math.min(400, startSize + delta)));
-      minimapRef.current?.resize();
-    };
-    const onUp = () => {
-      minimapResizeRef.current = false;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      setTimeout(() => minimapRef.current?.resize(), 0);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [minimapSize]);
   useEffect(() => {
     if (markerRef.current && cameras.length > 0) {
       const wb = loaderRef.current?.worldBox;
@@ -3531,6 +3607,10 @@ function Viewport({ className }) {
     }
     return projectToPlaneZ(nx, ny, sm.controls.target.z);
   }, [projectToPlaneZ]);
+  const { scheduleSnap, cancelSnap } = useSnapThrottle((nx, ny) => {
+    const hit = pickVisiblePoint(nx, ny);
+    if (hit) measureRef.current?.updateSnap(hit);
+  });
   const buildClipDraftAt = useCallback((nx, ny) => {
     const sm = smRef.current;
     if (!sm) return null;
@@ -3627,7 +3707,7 @@ function Viewport({ className }) {
         const deltaY = vd.startClientY - e.clientY;
         const sensitivity = 0.1;
         const zExtent = Math.max(0.1, Math.abs(deltaY) * sensitivity);
-        const midZ = (vd.baseZMin + vd.baseZMax) / 2;
+        const midZ = ((vd.baseZMin ?? 0) + (vd.baseZMax ?? 0)) / 2;
         const box = vd.footprintBox.clone();
         box.min.z = midZ - zExtent / 2;
         box.max.z = midZ + zExtent / 2;
@@ -3645,18 +3725,9 @@ function Viewport({ className }) {
     }
     if (activeTool.startsWith("measure-") && smRef.current) {
       const { nx, ny } = getNDC(e);
-      snapNdcRef.current = { nx, ny };
-      if (snapRafRef.current == null) {
-        snapRafRef.current = requestAnimationFrame(() => {
-          snapRafRef.current = null;
-          const p = snapNdcRef.current;
-          if (!p || !measureRef.current) return;
-          const hit = pickVisiblePoint(p.nx, p.ny);
-          if (hit) measureRef.current.updateSnap(hit);
-        });
-      }
+      scheduleSnap(nx, ny);
     }
-  }, [activeTool, pickVisiblePoint, buildClipDraftAt]);
+  }, [activeTool, scheduleSnap, buildClipDraftAt]);
   const handleMouseUp = useCallback((e) => {
     const sm = smRef.current;
     const fh = clipRef.current?.faceHandles;
@@ -3738,8 +3809,9 @@ function Viewport({ className }) {
     }
   }, [activeTool, cameras, config, pickVisiblePoint, showMarkers]);
   const handleMouseLeave = useCallback(() => {
+    cancelSnap();
     measureRef.current?.clearSnap();
-  }, []);
+  }, [cancelSnap]);
   const handleContextMenu = useCallback((e) => {
     e.preventDefault();
     if (volumeDragRef.current) {
@@ -3845,6 +3917,8 @@ var init_viewport = __esm({
     init_dist();
     init_dist();
     init_dist();
+    init_use_minimap_resize();
+    init_use_snap_throttle();
   }
 });
 
@@ -4567,10 +4641,10 @@ init_locale_context();
 function ClipToolbar() {
   const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible, resetRotation, setTransformMode } = useClipActions();
   const t = useLocale().clipToolbar;
-  const [enabled, setEnabledLocal] = React26.useState(isEnabled);
-  const [outlines, setOutlinesLocal] = React26.useState(outlinesVisible);
-  const [mode, setMode] = React26.useState("scale");
-  React26.useEffect(() => {
+  const [enabled, setEnabledLocal] = React27.useState(isEnabled);
+  const [outlines, setOutlinesLocal] = React27.useState(outlinesVisible);
+  const [mode, setMode] = React27.useState("scale");
+  React27.useEffect(() => {
     setEnabledLocal(isEnabled);
     setOutlinesLocal(outlinesVisible);
   }, [isEnabled, outlinesVisible, boxes]);
@@ -4825,14 +4899,11 @@ function ClassificationPanel() {
     ] }, cls.code))
   ] });
 }
-function LayerRow({
-  icon,
-  label,
-  active,
-  onToggle,
-  disabled,
-  hint
-}) {
+
+// src/ui/toggle-row.tsx
+init_utils();
+function ToggleRow({ icon, label, active, onToggle, disabled, hint }) {
+  const on = active && !disabled;
   return /* @__PURE__ */ jsxs(
     "button",
     {
@@ -4844,7 +4915,7 @@ function LayerRow({
         disabled ? "opacity-40 cursor-not-allowed" : "hover:bg-muted"
       ),
       children: [
-        /* @__PURE__ */ jsx("span", { className: cn("text-muted-foreground", active && !disabled && "text-[hsl(var(--brand))]"), children: icon }),
+        /* @__PURE__ */ jsx("span", { className: cn("text-muted-foreground", on && "text-[hsl(var(--brand))]"), children: icon }),
         /* @__PURE__ */ jsxs("span", { className: "flex-1 min-w-0", children: [
           /* @__PURE__ */ jsx("span", { className: "block text-xs text-foreground truncate", children: label }),
           hint && /* @__PURE__ */ jsx("span", { className: "block text-[10px] text-muted-foreground/60 truncate", children: hint })
@@ -4854,14 +4925,14 @@ function LayerRow({
           {
             className: cn(
               "w-7 h-4 rounded-full transition-colors flex items-center px-0.5 shrink-0",
-              active && !disabled ? "bg-[hsl(var(--brand)/0.6)]" : "bg-muted"
+              on ? "bg-[hsl(var(--brand)/0.6)]" : "bg-muted"
             ),
             children: /* @__PURE__ */ jsx(
               "div",
               {
                 className: cn(
                   "w-3 h-3 rounded-full bg-foreground transition-transform",
-                  active && !disabled && "translate-x-3"
+                  on && "translate-x-3"
                 )
               }
             )
@@ -4885,7 +4956,7 @@ function LayersPanel() {
   return /* @__PURE__ */ jsxs("div", { className: "p-3 space-y-1 overflow-y-auto h-full", children: [
     /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60 px-1 mb-1", children: "Layers" }),
     hasPanoramas && /* @__PURE__ */ jsx(
-      LayerRow,
+      ToggleRow,
       {
         icon: /* @__PURE__ */ jsx(Camera, { size: 15 }),
         label: "Panoramas",
@@ -4894,7 +4965,7 @@ function LayersPanel() {
       }
     ),
     /* @__PURE__ */ jsx(
-      LayerRow,
+      ToggleRow,
       {
         icon: /* @__PURE__ */ jsx(Ruler, { size: 15 }),
         label: "Measurements",
@@ -4903,7 +4974,7 @@ function LayersPanel() {
       }
     ),
     /* @__PURE__ */ jsx(
-      LayerRow,
+      ToggleRow,
       {
         icon: /* @__PURE__ */ jsx(Map$1, { size: 15 }),
         label: "Minimap",
@@ -4915,7 +4986,7 @@ function LayersPanel() {
   ] });
 }
 function ClassificationSection() {
-  const [open, setOpen] = React26.useState(false);
+  const [open, setOpen] = React27.useState(false);
   return /* @__PURE__ */ jsxs("div", { className: "mt-1 border-t border-border pt-1", children: [
     /* @__PURE__ */ jsxs(
       "button",
@@ -5150,6 +5221,57 @@ function ScenePanel() {
 init_viewer_provider();
 init_locale_context();
 init_utils();
+function InlineEdit({
+  value,
+  onSave,
+  activateOn = "click",
+  displayClassName,
+  inputClassName,
+  title
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef(null);
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+  const begin = () => {
+    setDraft(value);
+    setEditing(true);
+  };
+  const save = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== value) onSave(trimmed);
+    setEditing(false);
+  };
+  if (!editing) {
+    return /* @__PURE__ */ jsx(
+      "p",
+      {
+        className: displayClassName,
+        onClick: activateOn === "click" ? begin : void 0,
+        onDoubleClick: activateOn === "dblclick" ? begin : void 0,
+        title,
+        children: value
+      }
+    );
+  }
+  return /* @__PURE__ */ jsx(
+    "input",
+    {
+      ref: inputRef,
+      type: "text",
+      value: draft,
+      onChange: (e) => setDraft(e.target.value),
+      onKeyDown: (e) => {
+        if (e.key === "Enter") save();
+        if (e.key === "Escape") setEditing(false);
+      },
+      onBlur: save,
+      className: inputClassName
+    }
+  );
+}
 function formatValue(m) {
   if (m.value === void 0) return "\u2014";
   switch (m.type) {
@@ -5168,48 +5290,6 @@ function formatValue(m) {
     default:
       return m.value.toFixed(3);
   }
-}
-function InlineEditName({ value, onSave }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef(null);
-  useEffect(() => {
-    if (editing) inputRef.current?.select();
-  }, [editing]);
-  if (!editing) {
-    return /* @__PURE__ */ jsx(
-      "p",
-      {
-        className: "text-[10px] font-semibold text-foreground cursor-pointer hover:text-[hsl(var(--brand))] transition-colors truncate",
-        onClick: () => {
-          setDraft(value);
-          setEditing(true);
-        },
-        title: "Click to rename",
-        children: value
-      }
-    );
-  }
-  const save = () => {
-    const trimmed = draft.trim();
-    if (trimmed && trimmed !== value) onSave(trimmed);
-    setEditing(false);
-  };
-  return /* @__PURE__ */ jsx(
-    "input",
-    {
-      ref: inputRef,
-      type: "text",
-      value: draft,
-      onChange: (e) => setDraft(e.target.value),
-      onKeyDown: (e) => {
-        if (e.key === "Enter") save();
-        if (e.key === "Escape") setEditing(false);
-      },
-      onBlur: save,
-      className: "text-[10px] font-semibold text-foreground bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
-    }
-  );
 }
 function MeasurementsPanel() {
   const { measurementList, measurementManager, setMeasurementList } = useViewer();
@@ -5270,7 +5350,17 @@ function MeasurementsPanel() {
     /* @__PURE__ */ jsx("div", { className: "flex-1 overflow-y-auto", children: measurementList.map((m) => /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 px-2 py-2 border-b border-[hsl(var(--border)/0.4)] hover:bg-muted group transition-colors", children: [
       /* @__PURE__ */ jsx("div", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: m.color ?? "hsl(var(--brand))" } }),
       /* @__PURE__ */ jsxs("div", { className: "flex-1 min-w-0", children: [
-        /* @__PURE__ */ jsx(InlineEditName, { value: m.label, onSave: (name) => handleRename(m.id, name) }),
+        /* @__PURE__ */ jsx(
+          InlineEdit,
+          {
+            value: m.label,
+            onSave: (name) => handleRename(m.id, name),
+            activateOn: "click",
+            title: "Click to rename",
+            displayClassName: "text-[10px] font-semibold text-foreground cursor-pointer hover:text-[hsl(var(--brand))] transition-colors truncate",
+            inputClassName: "text-[10px] font-semibold text-foreground bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
+          }
+        ),
         /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono text-[hsl(var(--brand))]", children: formatValue(m) })
       ] }),
       /* @__PURE__ */ jsx(
@@ -5290,48 +5380,6 @@ init_utils();
 init_viewer_provider();
 init_locale_context();
 init_dist();
-function InlineEditSceneName({ value, onSave }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef(null);
-  useEffect(() => {
-    if (editing) inputRef.current?.select();
-  }, [editing]);
-  if (!editing) {
-    return /* @__PURE__ */ jsx(
-      "p",
-      {
-        className: "font-mono text-foreground truncate text-[11px] cursor-pointer hover:text-[hsl(var(--brand))] transition-colors",
-        onDoubleClick: () => {
-          setDraft(value);
-          setEditing(true);
-        },
-        title: "Double-click to rename",
-        children: value
-      }
-    );
-  }
-  const save = () => {
-    const trimmed = draft.trim();
-    if (trimmed && trimmed !== value) onSave(trimmed);
-    setEditing(false);
-  };
-  return /* @__PURE__ */ jsx(
-    "input",
-    {
-      ref: inputRef,
-      type: "text",
-      value: draft,
-      onChange: (e) => setDraft(e.target.value),
-      onKeyDown: (e) => {
-        if (e.key === "Enter") save();
-        if (e.key === "Escape") setEditing(false);
-      },
-      onBlur: save,
-      className: "font-mono text-foreground text-[11px] bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
-    }
-  );
-}
 function ScenesPanel() {
   const {
     sceneManager,
@@ -5615,7 +5663,17 @@ function ScenesPanel() {
       scenes.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-[10px] text-muted-foreground", children: t.noScenes }) : scenes.map((scene) => /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1.5 py-1 group border-b border-[hsl(var(--border)/0.3)] last:border-0", children: [
         /* @__PURE__ */ jsx(Bookmark, { size: 11, className: "text-[hsl(var(--brand))] shrink-0" }),
         /* @__PURE__ */ jsxs("div", { className: "flex-1 min-w-0", children: [
-          /* @__PURE__ */ jsx(InlineEditSceneName, { value: scene.name, onSave: (name) => pmRef.current?.renameScene(scene.id, name) }),
+          /* @__PURE__ */ jsx(
+            InlineEdit,
+            {
+              value: scene.name,
+              onSave: (name) => pmRef.current?.renameScene(scene.id, name),
+              activateOn: "dblclick",
+              title: "Double-click to rename",
+              displayClassName: "font-mono text-foreground truncate text-[11px] cursor-pointer hover:text-[hsl(var(--brand))] transition-colors",
+              inputClassName: "font-mono text-foreground text-[11px] bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
+            }
+          ),
           /* @__PURE__ */ jsxs("p", { className: "text-[8px] text-muted-foreground font-mono", children: [
             new Date(scene.createdAt).toLocaleDateString(),
             scene.clipBoxes.length > 0 && ` \xB7 ${scene.clipBoxes.length} clip`
@@ -6438,7 +6496,6 @@ function Slider({ label, value, min, max, step, onChange, display }) {
     /* @__PURE__ */ jsx("span", { className: "w-12 text-right font-mono text-[10px] tabular-nums", children: display ? display(value) : value.toFixed(2) })
   ] });
 }
-var chromeScale = { zoom: "var(--pcv-scale, 1)" };
 var Viewport2 = lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
 function ViewportFallback() {
   const t = useLocale().viewport;
@@ -6488,14 +6545,14 @@ function WorkspaceLayout({ className }) {
         /* @__PURE__ */ jsx("div", { className: "absolute inset-0", children: /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback, {}), children: /* @__PURE__ */ jsx(Viewport2, {}) }) }),
         selectedCamera && /* @__PURE__ */ jsx(PanoViewer, {}),
         /* @__PURE__ */ jsx(RenderingSettings, { open: renderSettingsOpen, onClose: () => setRenderSettingsOpen(false) }),
-        /* @__PURE__ */ jsx("div", { className: "absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[calc(100vw-1.5rem)]", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto max-w-full overflow-hidden", children: /* @__PURE__ */ jsx(
+        /* @__PURE__ */ jsx("div", { className: "absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[calc(100vw-1.5rem)]", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto max-w-full overflow-hidden", children: /* @__PURE__ */ jsx(
           MainToolbar,
           {
             onToggleRenderSettings: isPro ? () => setRenderSettingsOpen((o) => !o) : void 0,
             renderSettingsOpen
           }
         ) }) }),
-        /* @__PURE__ */ jsx("div", { className: "absolute left-[calc(0.75rem+env(safe-area-inset-left))] top-[calc(3.5rem+env(safe-area-inset-top))] bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 pointer-events-none flex items-center", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsx(ToolRail, {}) }) }),
+        /* @__PURE__ */ jsx("div", { className: "absolute left-[calc(0.75rem+env(safe-area-inset-left))] top-[calc(3.5rem+env(safe-area-inset-top))] bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 pointer-events-none flex items-center", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsx(ToolRail, {}) }) }),
         isMobile && sidebarOpen && /* @__PURE__ */ jsx(
           "div",
           {
@@ -6516,7 +6573,7 @@ function WorkspaceLayout({ className }) {
               "w-full max-w-sm md:w-72 xl:w-80",
               sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]"
             ),
-            style: chromeScale,
+            style: pcvChromeScaleStyle,
             children: [
               /* @__PURE__ */ jsx(
                 "button",
@@ -6539,8 +6596,8 @@ function WorkspaceLayout({ className }) {
             ]
           }
         ),
-        isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsx("div", { className: "absolute bottom-[calc(3rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(ClipToolbar, {}) }) }),
-        /* @__PURE__ */ jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden md:block", style: chromeScale, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none", children: [
+        isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsx("div", { className: "absolute bottom-[calc(3rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(ClipToolbar, {}) }) }),
+        /* @__PURE__ */ jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden md:block", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none", children: [
           metadata && /* @__PURE__ */ jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
           /* @__PURE__ */ jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
           /* @__PURE__ */ jsx("span", { children: t.statusFps(fps) }),
@@ -6576,7 +6633,7 @@ var buttonVariants = cva(
     }
   }
 );
-var Button = React26.forwardRef(
+var Button = React27.forwardRef(
   ({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
     "button",
     {
@@ -6590,7 +6647,7 @@ Button.displayName = "Button";
 
 // src/ui/slider.tsx
 init_utils();
-var Slider2 = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxs(
+var Slider2 = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxs(
   SliderPrimitive.Root,
   {
     ref,
@@ -6612,7 +6669,7 @@ init_utils();
 var Dialog = DialogPrimitive.Root;
 var DialogTrigger = DialogPrimitive.Trigger;
 var DialogPortal = DialogPrimitive.Portal;
-var DialogOverlay = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogOverlay = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Overlay,
   {
     ref,
@@ -6621,7 +6678,7 @@ var DialogOverlay = React26.forwardRef(({ className, ...props }, ref) => /* @__P
   }
 ));
 DialogOverlay.displayName = "DialogOverlay";
-var DialogContent = React26.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
+var DialogContent = React27.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
   const dx = dragOffset?.x ?? 0;
   const dy = dragOffset?.y ?? 0;
   return /* @__PURE__ */ jsxs(DialogPortal, { container: container ?? void 0, children: [
@@ -6659,7 +6716,7 @@ var DialogHeader = ({
   }
 );
 DialogHeader.displayName = "DialogHeader";
-var DialogTitle = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogTitle = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Title,
   {
     ref,
@@ -6668,7 +6725,7 @@ var DialogTitle = React26.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 DialogTitle.displayName = "DialogTitle";
-var DialogClose = React26.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogClose = React27.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Close,
   {
     ref,
@@ -6685,7 +6742,7 @@ DialogClose.displayName = "DialogClose";
 // src/ui/tabs.tsx
 init_utils();
 var Tabs = TabsPrimitive.Root;
-var TabsList = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsList = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.List,
   {
     ref,
@@ -6697,7 +6754,7 @@ var TabsList = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__
   }
 ));
 TabsList.displayName = "TabsList";
-var TabsTrigger = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsTrigger = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.Trigger,
   {
     ref,
@@ -6712,7 +6769,7 @@ var TabsTrigger = React26.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 TabsTrigger.displayName = "TabsTrigger";
-var TabsContent = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsContent = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.Content,
   {
     ref,
@@ -6730,7 +6787,7 @@ init_utils();
 var Popover = PopoverPrimitive.Root;
 var PopoverTrigger = PopoverPrimitive.Trigger;
 var PopoverAnchor = PopoverPrimitive.Anchor;
-var PopoverContent = React26.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(PopoverPrimitive.Portal, { children: /* @__PURE__ */ jsx(
+var PopoverContent = React27.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(PopoverPrimitive.Portal, { children: /* @__PURE__ */ jsx(
   PopoverPrimitive.Content,
   {
     ref,
@@ -6755,7 +6812,7 @@ init_utils();
 var TooltipProvider = TooltipPrimitive.Provider;
 var Tooltip = TooltipPrimitive.Root;
 var TooltipTrigger = TooltipPrimitive.Trigger;
-var TooltipContent = React26.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(TooltipPrimitive.Portal, { children: /* @__PURE__ */ jsx(
+var TooltipContent = React27.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(TooltipPrimitive.Portal, { children: /* @__PURE__ */ jsx(
   TooltipPrimitive.Content,
   {
     ref,
@@ -6795,7 +6852,7 @@ var toggleVariants = cva(
     }
   }
 );
-var Toggle = React26.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
+var Toggle = React27.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
   TogglePrimitive.Root,
   {
     ref,
@@ -6810,7 +6867,7 @@ init_utils();
 var Select = SelectPrimitive.Root;
 var SelectGroup = SelectPrimitive.Group;
 var SelectValue = SelectPrimitive.Value;
-var SelectTrigger = React26.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+var SelectTrigger = React27.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
   SelectPrimitive.Trigger,
   {
     ref,
@@ -6830,7 +6887,7 @@ var SelectTrigger = React26.forwardRef(({ className, children, ...props }, ref) 
   }
 ));
 SelectTrigger.displayName = "SelectTrigger";
-var SelectScrollUpButton = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectScrollUpButton = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.ScrollUpButton,
   {
     ref,
@@ -6843,7 +6900,7 @@ var SelectScrollUpButton = React26.forwardRef(({ className, ...props }, ref) => 
   }
 ));
 SelectScrollUpButton.displayName = "SelectScrollUpButton";
-var SelectScrollDownButton = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectScrollDownButton = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.ScrollDownButton,
   {
     ref,
@@ -6856,7 +6913,7 @@ var SelectScrollDownButton = React26.forwardRef(({ className, ...props }, ref) =
   }
 ));
 SelectScrollDownButton.displayName = "SelectScrollDownButton";
-var SelectContent = React26.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Portal, { children: /* @__PURE__ */ jsxs(
+var SelectContent = React27.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Portal, { children: /* @__PURE__ */ jsxs(
   SelectPrimitive.Content,
   {
     ref,
@@ -6889,7 +6946,7 @@ var SelectContent = React26.forwardRef(({ className, children, position = "poppe
   }
 ) }));
 SelectContent.displayName = "SelectContent";
-var SelectLabel = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectLabel = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.Label,
   {
     ref,
@@ -6901,7 +6958,7 @@ var SelectLabel = React26.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 SelectLabel.displayName = "SelectLabel";
-var SelectItem = React26.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+var SelectItem = React27.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
   SelectPrimitive.Item,
   {
     ref,
@@ -6919,7 +6976,7 @@ var SelectItem = React26.forwardRef(({ className, children, ...props }, ref) => 
   }
 ));
 SelectItem.displayName = "SelectItem";
-var SelectSeparator = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectSeparator = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.Separator,
   {
     ref,
@@ -6976,6 +7033,7 @@ function useComponents() {
 // src/components/pano-cloud-viewer.tsx
 init_dist();
 init_utils();
+init_utils();
 var Viewport4 = lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
 var PcvRootContext = createContext(null);
 function usePcvRoot() {
@@ -7009,8 +7067,8 @@ function PcvRoot({ className, uiScale = 1, children }) {
   ) }) });
 }
 function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, uiScale = 1, children, components }) {
-  const adapter = createAdapter(source);
-  const config = { source, uiMode, panoEngine };
+  const adapter = useMemo(() => createAdapter(source), [source]);
+  const config = useMemo(() => ({ source, uiMode, panoEngine }), [source, uiMode, panoEngine]);
   return /* @__PURE__ */ jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsx(ComponentsProvider, { components, children: /* @__PURE__ */ jsx(PcvRoot, { className, uiScale, children: children ? /* @__PURE__ */ jsxs(Fragment, { children: [
     children(
       /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback2, {}), children: /* @__PURE__ */ jsx(Viewport4, {}) })
@@ -7021,12 +7079,15 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "b59da72 \xB7 2026-06-30 00:51Z" ;
+var PCV_BUILD = "0353a97 \xB7 2026-07-01 09:21Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
 init_viewer_provider();
 init_data_provider();
+
+// src/layouts/minimal/minimal-layout.tsx
+init_utils();
 
 // src/layouts/minimal/minimal-toolbar.tsx
 init_utils();
@@ -7041,42 +7102,6 @@ var COLOR_MODES3 = [
   { value: "intensity", label: "Intensity" },
   { value: "classification", label: "Classification" }
 ];
-function ToggleRow({
-  icon,
-  label,
-  active,
-  onClick
-}) {
-  return /* @__PURE__ */ jsxs(
-    "button",
-    {
-      onClick,
-      className: "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg hover:bg-muted transition-colors",
-      children: [
-        /* @__PURE__ */ jsx("span", { className: cn("text-muted-foreground", active && "text-[hsl(var(--brand))]"), children: icon }),
-        /* @__PURE__ */ jsx("span", { className: "text-xs text-foreground flex-1 text-left", children: label }),
-        /* @__PURE__ */ jsx(
-          "div",
-          {
-            className: cn(
-              "w-7 h-4 rounded-full transition-colors flex items-center px-0.5",
-              active ? "bg-[hsl(var(--brand)/0.6)]" : "bg-muted"
-            ),
-            children: /* @__PURE__ */ jsx(
-              "div",
-              {
-                className: cn(
-                  "w-3 h-3 rounded-full bg-foreground transition-transform",
-                  active && "translate-x-3"
-                )
-              }
-            )
-          }
-        )
-      ]
-    }
-  );
-}
 function MinimalSettingsPopover({ onClose }) {
   const {
     showMarkers,
@@ -7109,7 +7134,7 @@ function MinimalSettingsPopover({ onClose }) {
               icon: /* @__PURE__ */ jsx(Camera, { size: 14 }),
               label: "Panoramas",
               active: showMarkers,
-              onClick: () => setShowMarkers(!showMarkers)
+              onToggle: () => setShowMarkers(!showMarkers)
             }
           ),
           /* @__PURE__ */ jsx(
@@ -7118,7 +7143,7 @@ function MinimalSettingsPopover({ onClose }) {
               icon: /* @__PURE__ */ jsx(Ruler, { size: 14 }),
               label: "Measurements",
               active: showMeasurements,
-              onClick: () => setShowMeasurements(!showMeasurements)
+              onToggle: () => setShowMeasurements(!showMeasurements)
             }
           ),
           /* @__PURE__ */ jsx(
@@ -7127,7 +7152,7 @@ function MinimalSettingsPopover({ onClose }) {
               icon: /* @__PURE__ */ jsx(Map$1, { size: 14 }),
               label: "Minimap",
               active: showMinimap,
-              onClick: () => setShowMinimap(!showMinimap)
+              onToggle: () => setShowMinimap(!showMinimap)
             }
           )
         ] }),
@@ -7327,15 +7352,15 @@ function MinimalToolbar() {
     settingsOpen && /* @__PURE__ */ jsx(MinimalSettingsPopover, { onClose: () => setSettingsOpen(false) })
   ] });
 }
-var chromeScale2 = { zoom: "var(--pcv-scale, 1)" };
 function MinimalLayout({ viewport }) {
   return /* @__PURE__ */ jsxs("div", { className: "relative w-full h-full overflow-hidden", children: [
     /* @__PURE__ */ jsx("div", { className: "absolute inset-0", children: viewport }),
-    /* @__PURE__ */ jsx("div", { style: chromeScale2, children: /* @__PURE__ */ jsx(MinimalToolbar, {}) })
+    /* @__PURE__ */ jsx("div", { style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsx(MinimalToolbar, {}) })
   ] });
 }
 
 // src/layouts/workstation/workstation-layout.tsx
+init_utils();
 init_viewer_provider();
 init_data_provider();
 
@@ -7676,13 +7701,12 @@ function ExportPalette() {
     )
   ] });
 }
-var chromeScale3 = { zoom: "var(--pcv-scale, 1)" };
 function WorkstationLayout({ viewport, sidebarSide = "left" }) {
   const { fps, pointBudget, activeTool } = useViewer();
   const { metadata } = useData();
   return /* @__PURE__ */ jsxs("div", { className: "relative w-full h-full overflow-hidden bg-[hsl(var(--background))]", children: [
     /* @__PURE__ */ jsx("div", { className: "absolute inset-0", children: viewport }),
-    /* @__PURE__ */ jsx("div", { style: chromeScale3, children: /* @__PURE__ */ jsxs(CollapsibleSidebar, { side: sidebarSide, children: [
+    /* @__PURE__ */ jsx("div", { style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsxs(CollapsibleSidebar, { side: sidebarSide, children: [
       /* @__PURE__ */ jsx(ToolsPalette, {}),
       /* @__PURE__ */ jsx(DisplayPalette, {}),
       /* @__PURE__ */ jsx(ViewSettingsPalette, {}),
@@ -7692,7 +7716,7 @@ function WorkstationLayout({ viewport, sidebarSide = "left" }) {
       "div",
       {
         className: "absolute bottom-0 left-0 right-0 z-10 px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground/70 bg-[hsl(var(--card)/0.8)] backdrop-blur-sm border-t border-[hsl(var(--border)/0.5)]",
-        style: chromeScale3,
+        style: pcvChromeScaleStyle,
         children: [
           metadata && /* @__PURE__ */ jsxs("span", { children: [
             (metadata.points / 1e6).toFixed(1),
@@ -7947,11 +7971,8 @@ function DisplaySettingsDialog({
     TabsTrigger: TabsTrigger2,
     TabsContent: TabsContent2
   } = useComponents();
-  const [localSettings, setLocalSettings] = useState(
-    DISPLAY_PRESETS.standard
-  );
-  const settings = viewer.displaySettings ?? localSettings;
-  const setSettings = viewer.setDisplaySettings ?? setLocalSettings;
+  const settings = viewer.displaySettings;
+  const setSettings = viewer.setDisplaySettings;
   const t = useLocale().displaySettings;
   const tx = t;
   const isDe = t.advancedTab === "Erweitert";
@@ -8218,16 +8239,13 @@ function useVisibilityActions() {
 init_viewer_provider();
 init_dist();
 function useDisplaySettings() {
-  const viewer = useViewer();
-  const [localSettings, setLocalSettings] = useState(DISPLAY_PRESETS.standard);
-  const settings = viewer.displaySettings ?? localSettings;
-  const setSettings = viewer.setDisplaySettings ?? setLocalSettings;
+  const { displaySettings: settings, setDisplaySettings } = useViewer();
   const applyPreset = useCallback((preset) => {
-    setSettings({ ...DISPLAY_PRESETS[preset] });
-  }, [setSettings]);
+    setDisplaySettings({ ...DISPLAY_PRESETS[preset] });
+  }, [setDisplaySettings]);
   const updateSetting = useCallback((key, value) => {
-    setSettings({ ...settings, preset: "standard", [key]: value });
-  }, [settings, setSettings]);
+    setDisplaySettings({ ...settings, preset: "standard", [key]: value });
+  }, [settings, setDisplaySettings]);
   return {
     settings,
     presets: DISPLAY_PRESETS,

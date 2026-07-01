@@ -6,56 +6,7 @@ import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useData } from "../../providers/data-provider";
 import { ClassificationPanel } from "./classification-panel";
-
-/** A single layer row — icon, label, and an on/off switch (or a disabled hint). */
-function LayerRow({
-  icon,
-  label,
-  active,
-  onToggle,
-  disabled,
-  hint,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active: boolean;
-  onToggle: () => void;
-  disabled?: boolean;
-  hint?: string;
-}) {
-  return (
-    <button
-      onClick={disabled ? undefined : onToggle}
-      disabled={disabled}
-      title={hint ?? label}
-      className={cn(
-        "flex items-center gap-2.5 w-full px-2 py-2 rounded-lg transition-colors text-left",
-        disabled ? "opacity-40 cursor-not-allowed" : "hover:bg-muted",
-      )}
-    >
-      <span className={cn("text-muted-foreground", active && !disabled && "text-[hsl(var(--brand))]")}>
-        {icon}
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className="block text-xs text-foreground truncate">{label}</span>
-        {hint && <span className="block text-[10px] text-muted-foreground/60 truncate">{hint}</span>}
-      </span>
-      <div
-        className={cn(
-          "w-7 h-4 rounded-full transition-colors flex items-center px-0.5 shrink-0",
-          active && !disabled ? "bg-[hsl(var(--brand)/0.6)]" : "bg-muted",
-        )}
-      >
-        <div
-          className={cn(
-            "w-3 h-3 rounded-full bg-foreground transition-transform",
-            active && !disabled && "translate-x-3",
-          )}
-        />
-      </div>
-    </button>
-  );
-}
+import { ToggleRow as LayerRow } from "../../ui/toggle-row";
 
 /**
  * Layers panel — one place to toggle every overlay (panoramas, measurements,

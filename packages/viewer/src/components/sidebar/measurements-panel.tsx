@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React from "react";
 import { Trash2, Download } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
 import { formatLength, formatArea, formatVolume, formatAngle, formatCoord, exportMeasurementsCSV } from "../../lib/utils";
+import { InlineEdit } from "./inline-edit";
 import type { Measurement } from "@der-ort/pano-cloud-viewer-core";
 
 // Resolved at runtime inside the component — see TYPE_LABELS below
@@ -20,46 +21,6 @@ function formatValue(m: Measurement): string {
       return "—";
     default: return m.value.toFixed(3);
   }
-}
-
-function InlineEditName({ value, onSave }: { value: string; onSave: (v: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (editing) inputRef.current?.select();
-  }, [editing]);
-
-  if (!editing) {
-    return (
-      <p
-        className="text-[10px] font-semibold text-foreground cursor-pointer hover:text-[hsl(var(--brand))] transition-colors truncate"
-        onClick={() => { setDraft(value); setEditing(true); }}
-        title="Click to rename"
-      >
-        {value}
-      </p>
-    );
-  }
-
-  const save = () => {
-    const trimmed = draft.trim();
-    if (trimmed && trimmed !== value) onSave(trimmed);
-    setEditing(false);
-  };
-
-  return (
-    <input
-      ref={inputRef}
-      type="text"
-      value={draft}
-      onChange={e => setDraft(e.target.value)}
-      onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-      onBlur={save}
-      className="text-[10px] font-semibold text-foreground bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
-    />
-  );
 }
 
 export function MeasurementsPanel() {
@@ -124,7 +85,14 @@ export function MeasurementsPanel() {
           <div key={m.id} className="flex items-center gap-2 px-2 py-2 border-b border-[hsl(var(--border)/0.4)] hover:bg-muted group transition-colors">
             <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: m.color ?? "hsl(var(--brand))" }} />
             <div className="flex-1 min-w-0">
-              <InlineEditName value={m.label} onSave={(name) => handleRename(m.id, name)} />
+              <InlineEdit
+                value={m.label}
+                onSave={(name) => handleRename(m.id, name)}
+                activateOn="click"
+                title="Click to rename"
+                displayClassName="text-[10px] font-semibold text-foreground cursor-pointer hover:text-[hsl(var(--brand))] transition-colors truncate"
+                inputClassName="text-[10px] font-semibold text-foreground bg-muted/60 border border-[hsl(var(--border))] rounded px-1 py-0 w-full outline-none focus:ring-1 focus:ring-[hsl(var(--brand))]"
+              />
               <p className="text-[10px] font-mono text-[hsl(var(--brand))]">{formatValue(m)}</p>
             </div>
             <button

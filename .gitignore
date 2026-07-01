@@ -31,3 +31,7 @@ input_files/
 # Local point-cloud datasets dropped into the demo for verification — never commit
 apps/web/public/hahnensteig/
 apps/*/public/_local/
+# Real capture datasets dropped into the example app (point clouds + panoramas).
+# Every subfolder of the example's public dir is local verification data — none
+# of it should be committed. Keep the folder itself with a .gitkeep if needed.
+apps/example/public/*/

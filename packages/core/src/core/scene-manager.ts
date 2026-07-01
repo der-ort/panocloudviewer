@@ -40,8 +40,10 @@ export class SceneManager {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0a0a0a);
 
-    // Camera
-    const { clientWidth: w, clientHeight: h } = canvas;
+    // Camera — floor dimensions to 1px so a hidden/zero-size container at init
+    // (SSR hydration flash, display:none) can't produce an Infinity aspect ratio.
+    const w = Math.max(canvas.clientWidth, 1);
+    const h = Math.max(canvas.clientHeight, 1);
     this.camera = new THREE.PerspectiveCamera(60, w / h, 0.01, 100000);
     // Point clouds are Z-up — make Z the camera's up axis so OrbitControls
     // orbits around Z and the horizon stays level (no roll). Start at an
@@ -69,7 +71,7 @@ export class SceneManager {
     // OrbitControls instead of starting a text selection or ghost-image drag.
     this.renderer.domElement.style.touchAction = "none";
     this.renderer.domElement.style.userSelect = "none";
-    this.renderer.domElement.addEventListener("dragstart", (e) => e.preventDefault());
+    this.renderer.domElement.addEventListener("dragstart", this.preventDragStart);
 
     // Controls — orbit mode is the default (CAD/Blender-style turntable)
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -106,9 +108,13 @@ export class SceneManager {
     this.fpsInterval = performance.now();
   }
 
+  /** Bound so it can be removed in dispose(); blocks native drag/ghost-image. */
+  private preventDragStart = (e: Event) => e.preventDefault();
+
   private onResize(canvas: HTMLElement) {
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
+    // Floor to 1px — a hidden container reports 0 and would break the aspect ratio.
+    const w = Math.max(canvas.clientWidth, 1);
+    const h = Math.max(canvas.clientHeight, 1);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
@@ -295,6 +301,7 @@ export class SceneManager {
   dispose() {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
     this.resizeObserver.disconnect();
+    this.renderer.domElement.removeEventListener("dragstart", this.preventDragStart);
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

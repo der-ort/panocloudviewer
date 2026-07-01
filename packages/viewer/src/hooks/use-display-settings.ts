@@ -1,26 +1,26 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useViewer } from "../providers/viewer-provider";
 import { DISPLAY_PRESETS } from "@der-ort/pano-cloud-viewer-core";
 import type { DisplayPreset, DisplaySettings } from "@der-ort/pano-cloud-viewer-core";
 
+/**
+ * Read/update the viewer's display settings (color mode, point size, marker
+ * label mode, …). Thin wrapper over the `ViewerProvider` context that adds
+ * preset application and single-key updates.
+ */
 export function useDisplaySettings() {
-  const viewer = useViewer();
-
-  // Use provider state if available (added by foundation worker), otherwise local state
-  const [localSettings, setLocalSettings] = useState<DisplaySettings>(DISPLAY_PRESETS.standard);
-
-  const settings: DisplaySettings = (viewer as any).displaySettings ?? localSettings;
-  const setSettings: (s: DisplaySettings) => void = (viewer as any).setDisplaySettings ?? setLocalSettings;
+  const { displaySettings: settings, setDisplaySettings } = useViewer();
 
   const applyPreset = useCallback((preset: DisplayPreset) => {
-    setSettings({ ...DISPLAY_PRESETS[preset] });
-  }, [setSettings]);
+    setDisplaySettings({ ...DISPLAY_PRESETS[preset] });
+  }, [setDisplaySettings]);
 
   const updateSetting = useCallback(<K extends keyof DisplaySettings>(key: K, value: DisplaySettings[K]) => {
-    setSettings({ ...settings, preset: "standard" as DisplayPreset, [key]: value });
-  }, [settings, setSettings]);
+    // Any manual tweak drops the "which preset" label to "standard" (custom).
+    setDisplaySettings({ ...settings, preset: "standard" as DisplayPreset, [key]: value });
+  }, [settings, setDisplaySettings]);
 
   return {
     settings,
