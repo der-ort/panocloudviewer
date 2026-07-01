@@ -2,6 +2,10 @@
 
 PanoCloudViewer gives you full control over the UI. You can replace the default shell entirely, use packaged alternative layouts, or compose your own from action hooks and individual components.
 
+![Demo gallery showing the Professional, Minimal, and Workstation layout options](/screenshots/gallery.png)
+
+*The demo gallery lets you switch between the three packaged layouts — Professional (`WorkspaceLayout`), Minimal, and Workstation.*
+
 ---
 
 ## How it works
@@ -59,9 +63,9 @@ import { PanoCloudViewer, WorkstationLayout } from '@der-ort/pano-cloud-viewer';
 </PanoCloudViewer>
 ```
 
-### `<WorkspaceLayout>`
+### `<WorkspaceLayout>` (default, professional)
 
-The default full-feature layout used when no `children` prop is passed. You can also render it explicitly inside the render prop if you only want to wrap it with extra elements:
+The default full-feature layout, rendered automatically when no `children` prop is passed. It composes a top toolbar, a left tool rail (measure / section tools), the viewport, and a right collapsible sidebar. It is fully responsive — on phones the sidebar becomes a tap-to-close overlay. You can also render it explicitly inside the render prop if you only want to wrap it with extra elements:
 
 ```tsx
 import { PanoCloudViewer, WorkspaceLayout } from '@der-ort/pano-cloud-viewer';
@@ -70,6 +74,18 @@ import { PanoCloudViewer, WorkspaceLayout } from '@der-ort/pano-cloud-viewer';
   {(_viewport) => <WorkspaceLayout />}
 </PanoCloudViewer>
 ```
+
+`WorkspaceLayout` takes no `viewport` prop — unlike the other two layouts, it renders its own `<Viewport>` internally.
+
+---
+
+## Built-in panels
+
+The default layout's sidebar and toolbar are assembled from three panels you can also reuse in a custom UI:
+
+- **Settings panel** (`RenderingSettings`, top-left, draggable) — the single unified settings surface: color mode, point size, point budget, quality preset, RGB / intensity / elevation / opacity sliders, and theme. Opened by the toolbar's gear/sliders button.
+- **Layers panel** (`LayersPanel`, first sidebar tab) — toggles overlay visibility: panoramas, measurements, minimap, and a collapsible classification section.
+- **Scenes panel** (`ScenesPanel`) — saves named viewer scenes (camera + clip boxes + display settings), plays a keyframe fly-through of them, and exports one pass to a **1080p MP4** (rendered frame-by-frame via `ExportManager.recordAnimation`; requires WebCodecs — Chrome/Edge).
 
 ---
 
@@ -97,7 +113,7 @@ import {
 |---|---|
 | `useNavigationActions()` | `fitToView`, `flyToView(preset)`, `navigationMode`, `setNavigationMode`, `projection`, `setProjection` |
 | `useMeasurementActions()` | `startTool(type)`, `cancelTool`, `measurements`, `clearAll`, `remove(id)`, `rename(id, name)`, `exportCSV` |
-| `useClipActions()` | `addBox`, `clearAll`, `toggleMode`, `selectBox(id)`, `setTransformMode(mode)`, `boxes`, `clipMode` |
+| `useClipActions()` | `addBox`, `clearAll`, `toggleMode`, `setModeAll(mode)`, `selectBox(id)`, `setTransformMode(mode)`, `resetRotation(id?)`, `removeBox(id)`, `setBoxVisible(id, v)`, `setEnabled(v)`, `setOutlinesVisible(v)`, `boxes`, `selectedBoxId`, `clipMode`, `hasClipBox`, `isEnabled`, `outlinesVisible` |
 | `useDisplayActions()` | `colorMode`, `setColorMode`, `pointBudget`, `setPointBudget`, `pointSize`, `setPointSize`, `setQualityPreset` |
 | `useExportActions()` | `capture(options)`, `download(dataUrl, filename)` |
 | `useVisibilityActions()` | `showMarkers`, `toggleMarkers`, `showMinimap`, `toggleMinimap` |
@@ -132,9 +148,9 @@ function MyToolbar() {
     <div className="absolute top-4 left-4 z-10 flex gap-2 p-2 rounded-lg bg-black/60 backdrop-blur">
       <button onClick={fitToView}>Fit</button>
       <button
-        onClick={() => setNavigationMode(navigationMode === 'orbit' ? 'fly' : 'orbit')}
+        onClick={() => setNavigationMode(navigationMode === 'orbit' ? 'pan' : 'orbit')}
       >
-        {navigationMode === 'orbit' ? 'Fly' : 'Orbit'}
+        {navigationMode === 'orbit' ? 'Pan' : 'Orbit'}
       </button>
       <button onClick={() => startTool('distance')}>Measure</button>
       <button onClick={toggleMinimap}>{showMinimap ? 'Hide map' : 'Show map'}</button>
@@ -266,11 +282,10 @@ function AdvancedControl() {
 
   const addClipBox = () => {
     if (!clipManager || !loader) return;
-    const box = loader.worldBox.clone();
-    // Shrink to half the scene
-    box.min.add(box.max.clone().sub(box.min).multiplyScalar(0.25));
-    box.max.sub(box.max.clone().sub(box.min).multiplyScalar(0.25));
-    const entry = clipManager.addBox(box, 'My section');
+    // addDefaultBox sizes the section to the current viewport (centered on the
+    // orbit target, clamped to the cloud) so it is always fully visible and easy
+    // to grab. Prefer this over addBox(worldBox.clone()), which spans the whole cloud.
+    const entry = clipManager.addDefaultBox(loader.worldBox, 'My section');
     clipManager.selectBox(entry.id);
   };
 

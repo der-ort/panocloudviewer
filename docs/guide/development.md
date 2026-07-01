@@ -46,10 +46,14 @@ pnpm dev:example      # builds viewer first, then starts apps/example
 ## 3. Build
 
 ```sh
-pnpm build            # build everything (viewer library + Next.js app)
+pnpm build            # build everything (core → viewer → apps), in dependency order
 pnpm build:viewer     # build viewer library only → packages/viewer/dist/
 pnpm build:web        # build Next.js static export → apps/web/out/
 ```
+
+`pnpm build` runs `pnpm -r build`, which respects workspace dependencies: **`packages/core` builds first, then `packages/viewer`** (which imports it). Building the viewer alone (`build:viewer`) also builds core first if it's stale.
+
+**Self-contained dist:** the viewer's tsup config bundles `core` into `packages/viewer/dist` (`noExternal` + `dts.resolve`), so the published artifact resolves core internally — consumers of the git dependency never install `@der-ort/pano-cloud-viewer-core` separately.
 
 ---
 
@@ -79,22 +83,35 @@ pnpm preview          # preview the build → http://localhost:4173
 
 ## Monorepo structure
 
+The library is split into **two packages**:
+
 ```
-packages/viewer/        → Main library source (React + Three.js + potree-core)
+packages/core/          → Headless engine — no React, no UI
+  src/
+    core/               → Manager classes (SceneManager, PointCloudLoader, …)
+    data/               → FileSourceAdapter and implementations
+    format.ts           → Format helpers (lengths, areas, volumes)
+    types.ts            → All exported TypeScript types
+    index.ts            → Core public exports
+
+packages/viewer/        → React UI library (depends on core)
   src/
     components/         → React UI (toolbar, sidebar, overlays, viewport)
-    core/               → Manager classes (Three.js, no React)
+    hooks/              → Action hooks (useNavigationActions, …)
+    layouts/            → MinimalLayout, WorkstationLayout, palettes
     providers/          → React context providers
-    data/               → FileSourceAdapter and implementations
     i18n/               → ViewerLocale interface, en/de locales
     themes/             → CSS custom property themes
-    types.ts            → All exported TypeScript types
-    index.ts            → Public package exports
+    index.ts            → Public exports (re-exports core + viewer UI)
 
 apps/web/               → Next.js demo / documentation app
+apps/example/           → Standalone example app (consumes the built viewer)
 apps/electron/          → Electron desktop wrapper
 docs/                   → VitePress documentation site
 ```
+
+- **`@der-ort/pano-cloud-viewer-core`** — the headless engine: Three.js manager classes, data adapters, shared types, format helpers. Zero React / UI dependencies.
+- **`@der-ort/pano-cloud-viewer`** — the React UI: providers, hooks, components, layouts, themes, i18n. Re-exports everything from core, so consumers import only this package.
 
 ---
 
@@ -131,13 +148,14 @@ See [`/architecture`](/architecture) for the full deep-dive.
 
 ## Adding a feature — checklist
 
-1. **Three.js logic** → add a method to the relevant manager class in `core/`, or create a new manager.
-2. **UI state** → if the feature needs React state, add it to `ViewerProvider` (state + setter) and its context interface.
-3. **Wiring** → sync provider state to the manager in `Viewport` via a `useEffect`.
-4. **UI components** → add toolbar buttons, sidebar panels, or overlays in `components/`.
-5. **Types** → export any new public types from `types.ts` and re-export from `index.ts`.
-6. **i18n** → add all UI strings to `ViewerLocale` in `i18n/types.ts`, then to `i18n/en.ts` and `i18n/de.ts`.
-7. **Type-check** → run `pnpm lint` and fix all errors before committing.
+1. **Three.js logic** → add a method to the relevant manager class in `packages/core/src/core/`, or create a new manager (export it from `packages/core/src/index.ts`).
+2. **Types** → add / export any new public types from `packages/core/src/types.ts`; they re-export through the viewer package automatically.
+3. **UI state** → if the feature needs React state, add it to `ViewerProvider` (state + setter) and its context interface.
+4. **Wiring** → sync provider state to the manager in `Viewport` via a `useEffect`.
+5. **UI components** → add toolbar buttons, sidebar panels, or overlays in `packages/viewer/src/components/`.
+6. **Action hook** → for custom-UI consumers, expose the feature through a hook in `packages/viewer/src/hooks/`.
+7. **i18n** → add all UI strings to `ViewerLocale` in `i18n/types.ts`, then to `i18n/en.ts` and `i18n/de.ts`.
+8. **Type-check** → run `pnpm lint` and fix all errors before committing.
 
 ---
 
@@ -146,5 +164,7 @@ See [`/architecture`](/architecture) for the full deep-dive.
 - **Never import potree-core at the top level** — always `await import("potree-core")` inside async functions.
 - **After any `setColorMode()` call**, re-apply `mat.outputColorEncoding = 1` or RGB clouds show incorrect brightness. See [architecture docs](/architecture#color-rendering) for the full explanation.
 - **`renderer.outputColorSpace` must stay `THREE.LinearSRGBColorSpace`**. Changing to `SRGBColorSpace` whitewashes the point cloud.
-- **`SceneManager.flySpeed`** is auto-set proportional to the cloud bounding box after `PointCloudLoader.load()` completes. Don't set it before load or it will be overwritten.
-- **Marker sprites** use `depthTest=false` — they always render on top. Do not change this or they will disappear behind the point cloud.
+- **`SceneManager.flySpeed`** is a legacy field kept for API compatibility — it no longer drives navigation (orbit/free/pan all run on a single `OrbitControls`). Don't rely on it.
+- **Navigation uses one `OrbitControls`** — don't add a second controller per mode. `controls.target` is shared by clipping, the minimap, `CameraAnimator.flyTo`, and the ortho-camera sync, so a separate target would desync them.
+- **Marker sprites** use `sizeAttenuation:false` (constant on-screen pin size) and `depthTest=false` (always render on top). Don't re-enable `sizeAttenuation` (pins would scale with zoom) or remove `depthTest=false` (pins would hide behind the cloud).
+- **`TransformControls` (three r170)** is not an `Object3D` — add its gizmo with `scene.add(tc.getHelper())`, never `scene.add(tc)`.

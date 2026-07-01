@@ -41,7 +41,7 @@ setNavigationMode('pan');
 
 ## Orbit mode (default)
 
-CAD-style turntable. The camera rotates around a fixed **target point** that stays at the center of the screen, with the Z axis kept up. Full-sphere rotation is allowed (`maxPolarAngle = π`).
+CAD-style turntable. The camera rotates around a fixed **target point** that stays at the center of the screen, with the Z axis kept up. Near-full-sphere rotation is allowed (`maxPolarAngle = π − 0.01`, clamped just shy of the pole to avoid the Z-up singularity flipping the view).
 
 ### Mouse mappings
 
@@ -81,6 +81,37 @@ Map / top-down workflow. `maxPolarAngle = π / 2.05` (just under 90°) keeps the
 | Middle-drag | Dolly (zoom) |
 | Right-drag | Rotate (limited tilt, horizon-locked) |
 | Scroll wheel | Zoom toward cursor |
+
+---
+
+## Touch (mobile / tablet)
+
+3D navigation works out of the box on touch devices — `SceneManager` sets `renderer.domElement.style.touchAction = "none"` and OrbitControls has touch enabled by default:
+
+| Gesture | Action |
+|---|---|
+| One-finger drag | Rotate (orbit) |
+| Two-finger drag | Pan |
+| Two-finger pinch | Zoom (dolly) |
+
+Single taps place measurement / clip-box points (via synthesized mouse events), so the measurement and section tools are fully usable on a phone or tablet.
+
+---
+
+## Projection: perspective vs. orthographic
+
+Projection is a **separate axis** from navigation mode — you can combine any navigation mode with either projection. Orthographic derives its frustum from the perspective camera's FOV and current orbit distance each frame, so switching is seamless and keeps the same framing.
+
+```tsx
+import { useNavigationActions } from '@der-ort/pano-cloud-viewer';
+
+const { projection, setProjection } = useNavigationActions();
+
+setProjection('orthographic');  // parallel projection — good for plans / elevations
+setProjection('perspective');   // default
+```
+
+The view-preset buttons (`flyToView('top' | 'front' | ...)`) switch to orthographic automatically so plan and elevation shots are true parallel projections.
 
 ---
 

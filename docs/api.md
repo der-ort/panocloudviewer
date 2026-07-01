@@ -1,6 +1,6 @@
 # PanoCloudViewer — API Reference
 
-Complete reference for `@der-ort/pano-cloud-viewer`. All types and exports are verified against the actual source code.
+Complete reference for `@der-ort/pano-cloud-viewer` (React UI) and `@der-ort/pano-cloud-viewer-core` (headless engine). Managers, types, adapters, and format helpers live in **core** and are re-exported from the React package (`export * from "@der-ort/pano-cloud-viewer-core"`), so importing them from `@der-ort/pano-cloud-viewer` works too. React-only exports (components, providers, hooks, `cn`, i18n, `PanoCloudViewer`) come from the React package only. All signatures are verified against the source.
 
 ---
 
@@ -23,6 +23,8 @@ Complete reference for `@der-ort/pano-cloud-viewer`. All types and exports are v
 15. [Source Adapters](#15-source-adapters)
 16. [i18n](#16-i18n)
 17. [Utilities](#17-utilities)
+18. [Version / Build Identity](#18-version--build-identity)
+19. [Component Slot System](#19-component-slot-system)
 
 ---
 
@@ -50,8 +52,17 @@ The component fills its container — give the container an explicit size.
 | `theme` | `"dark" \| "light"` | `"dark"` | Initial color theme |
 | `className` | `string` | `undefined` | Extra CSS class on the root `<div>` |
 | `locale` | `ViewerLocale` | `en` | UI language / string overrides |
+| `uiMode` | `UiMode` (`"professional" \| "lite"`) | `"professional"` | UI complexity. `"professional"` = full toolset; `"lite"` = beginner set (nav modes, basic measurements, panorama/minimap/theme toggles). |
+| `panoEngine` | `PanoEngine` (`"photo-sphere-viewer" \| "pannellum"`) | `"photo-sphere-viewer"` | Which 360° engine renders the panorama overlay. Both load lazily from CDN. Switchable at runtime via `useViewer().setPanoEngine`. |
 | `uiScale` | `number` | `1` | Scales the UI **chrome only** (toolbars, tool-rail, sidebar, floating palettes, dialogs) via a `--pcv-scale` CSS variable + `zoom`. The 3D viewport/canvas stays at full resolution. Use e.g. `1.25` to enlarge controls on large displays. |
+| `components` | `Partial<ViewerComponents>` | `undefined` | Override any of the default shadcn-style UI primitives (Dialog, Button, …). Shallow-merged over the built-in defaults. |
 | `children` | `(viewport: ReactNode) => ReactNode` | `undefined` | Custom UI render prop — replaces default `WorkspaceLayout`. Receives the Suspense-wrapped `<Viewport>` element. |
+
+### Related exports
+
+- `usePcvRoot()` — returns a `RefObject<HTMLDivElement>` to the `.pcv` root element. Pass its `.current` as the `container` for Radix `Portal` / `createPortal` so portalled content inherits the viewer's scoped CSS custom properties.
+- `useUiScale()` — returns the numeric `uiScale` factor (default `1`) for components needing the raw value.
+- `pcvChromeScaleStyle` — an inline style object (`{ zoom: "var(--pcv-scale, 1)" }`) to apply chrome scaling to a custom container. **Never apply it to the 3D canvas.**
 
 ### Custom UI via render prop
 
@@ -91,8 +102,14 @@ interface ViewerConfig {
   onMeasurementChange?: (measurements: Measurement[]) => void;
   /** Display settings overrides (marker/measurement sizing) */
   displaySettings?: Partial<DisplaySettings>;
+  /** UI complexity mode (default: "professional") */
+  uiMode?: UiMode;
+  /** 360° panorama engine (default: "photo-sphere-viewer") */
+  panoEngine?: PanoEngine;
 }
 ```
+
+> **Note:** `<PanoCloudViewer>` only forwards `source`, `uiMode`, and `panoEngine` into the `ViewerConfig` it builds. The remaining fields (`pointBudget`, `showMinimap`, `onCameraSelect`, `displaySettings`, …) are honoured when you construct a `ViewerConfig` yourself and pass it to `<ViewerProvider>`.
 
 ---
 
@@ -202,9 +219,10 @@ All toolbar components must be inside `ViewerProvider`. They read state via `use
 |---|---|
 | `<MainToolbar>` | Full top bar: logo, view preset buttons, display controls, navigation mode selector, theme toggle, sidebar toggle, about button |
 | `<ViewControls>` | View preset buttons (top, bottom, front, back, left, right) — flies camera to axis-aligned positions |
-| `<DisplayControls>` | Navigation mode buttons (orbit/fly/earth), color mode selector, quality preset selector, point budget slider, point size slider |
+| `<DisplayControls>` | Navigation mode buttons (orbit/free/pan), color mode selector, quality preset selector, point budget slider, point size slider |
 | `<MeasureTools>` | Measurement tool buttons (point, distance, height, area, volume, angle, profile) + clear all |
-| `<SectionTools>` | Clip box draw tool, mode toggle (keep inside / keep outside), remove box button |
+| `<SectionTools>` | Clip box create tool, mode toggle (keep inside / keep outside), remove box button |
+| `<ClipToolbar>` | Floating toolbar for the selected clip box: Move / Scale / Rotate transform-mode buttons, reset rotation, enable/outline toggles |
 | `<ExportTools>` | Export image panel — view selector, scale, background, format, download button |
 | `<ToolRail>` | Left-side vertical icon strip grouping `MeasureTools` and `SectionTools` with collapsible groups |
 
@@ -229,12 +247,12 @@ All sidebar components must be inside `ViewerProvider` and `DataProvider`.
 
 | Component | Description |
 |---|---|
-| `<Sidebar>` | Tabbed container for all sidebar panels; tabs: Panoramas, Scene, Measurements, Classification, Scenes |
+| `<Sidebar>` | Tabbed container. Tabs: **Layers**, **Panoramas** (pano-only), **Scene**, **Measurements**, **Scenes** (pro-only). Classification is folded into the Layers tab as a collapsible section — `ClassificationPanel` is still exported but is no longer a standalone tab. |
 | `<PanoPanel>` | Searchable list of panorama cameras with fly-to buttons |
 | `<ScenePanel>` | Point cloud visibility, measurement list, section list |
 | `<MeasurementsPanel>` | List of all measurements with values, CSV export, clear all |
-| `<ClassificationPanel>` | LAS classification filter checkboxes |
-| `<ScenesPanel>` | Save/restore named viewer scenes (camera + clip boxes + display settings), JSON import/export |
+| `<ClassificationPanel>` | LAS classification filter checkboxes (rendered inside the Layers tab) |
+| `<ScenesPanel>` | Save/restore named viewer scenes (camera + up + target + clip boxes + display settings), keyframe animation, 1080p MP4 video export, JSON import/export |
 
 ---
 
@@ -242,7 +260,7 @@ All sidebar components must be inside `ViewerProvider` and `DataProvider`.
 
 | Component | Description |
 |---|---|
-| `<PanoViewer>` | Full-screen 360° panorama viewer (Pannellum). Rendered by `WorkspaceLayout` when `selectedCamera` is set in `ViewerProvider`. |
+| `<PanoViewer>` | Full-screen 360° panorama overlay. Rendered when `selectedCamera` is set in `ViewerProvider`. Engine-pluggable via the `panoEngine` config field / `useViewer().setPanoEngine` — **Photo Sphere Viewer** (default) or **Pannellum** (fallback). Both load lazily from CDN; the overlay header has an A/B engine toggle. |
 | `<AboutDialog>` | Modal dialog showing library version, engine credits |
 | `<RenderingSettings>` | Slide-out panel for fine-grained rendering adjustments (gamma, brightness, contrast, elevation range, opacity) |
 | `<DisplaySettingsDialog>` | Dialog for choosing a display preset (compact / standard / prominent) affecting measurement and marker sizing |
@@ -307,6 +325,8 @@ function MyComponent() {
 | `setShowMarkers` | `(v: boolean) => void` | — | Toggle marker visibility |
 | `showMinimap` | `boolean` | `true` | Whether the minimap overlay is shown |
 | `setShowMinimap` | `(v: boolean) => void` | — | Toggle minimap |
+| `showMeasurements` | `boolean` | `true` | Whether measurement objects are visible (wired to `MeasurementManager.setVisible`) |
+| `setShowMeasurements` | `(v: boolean) => void` | — | Toggle measurement visibility |
 | `selectedCamera` | `CameraData \| null` | `null` | Currently selected panorama camera |
 | `setSelectedCamera` | `(cam: CameraData \| null) => void` | — | Select a camera (opens PanoViewer) |
 | `clipBoxEntries` | `ClipBoxEntry[]` | `[]` | All active clip boxes |
@@ -321,6 +341,9 @@ function MyComponent() {
 | `setProjection` | `(mode: CameraProjection) => void` | — | Switch camera projection |
 | `displaySettings` | `DisplaySettings` | `DISPLAY_PRESETS.standard` | Measurement and marker sizing settings |
 | `setDisplaySettings` | `(s: DisplaySettings) => void` | — | Update display settings |
+| `uiMode` | `UiMode` | `"professional"` | Resolved UI complexity mode (read-only; from `config.uiMode`) |
+| `panoEngine` | `PanoEngine` | `"photo-sphere-viewer"` | Active panorama engine (seeded from config) |
+| `setPanoEngine` | `(engine: PanoEngine) => void` | — | Switch the panorama engine at runtime |
 | `config` | `ViewerConfig` | — | The config object passed to ViewerProvider |
 
 ---
@@ -356,6 +379,10 @@ interface PointCloudMetadata {
   boundingBox: { min: [number, number, number]; max: [number, number, number] };
   spacing?: number;
   version?: string;
+  /** Coordinate reference system (proj4/WKT/EPSG). Empty/absent = not georeferenced. */
+  projection?: string;
+  offset?: [number, number, number];
+  scale?: [number, number, number];
 }
 ```
 
@@ -446,7 +473,11 @@ const { startTool, cancelTool, measurements, clearAll, remove, rename, exportCSV
 ```tsx
 import { useClipActions } from '@der-ort/pano-cloud-viewer';
 
-const { addBox, clearAll, toggleMode, selectBox, setTransformMode, boxes, clipMode, hasClipBox } = useClipActions();
+const {
+  boxes, selectedBoxId, hasClipBox, clipMode, isEnabled, outlinesVisible,
+  addBox, clearAll, toggleMode, setEnabled, setOutlinesVisible,
+  selectBox, resetRotation, setTransformMode, removeBox, setBoxVisible, setModeAll,
+} = useClipActions();
 ```
 
 | Return | Type | Description |
@@ -454,12 +485,20 @@ const { addBox, clearAll, toggleMode, selectBox, setTransformMode, boxes, clipMo
 | `boxes` | `ClipBoxEntry[]` | All active clip boxes |
 | `selectedBoxId` | `string \| null` | Currently selected box ID |
 | `hasClipBox` | `boolean` | Whether any clip boxes exist |
-| `clipMode` | `ClipMode` | Current clip mode (`"outside"` = keep inside, `"inside"` = remove inside) |
-| `addBox` | `() => void` | Add a new clip box sized to the point cloud world box |
+| `clipMode` | `ClipMode` | Current global clip mode, derived from the first **visible** box (`"outside"` = keep inside, `"inside"` = remove inside) |
+| `isEnabled` | `boolean` | Whether clipping is globally enabled |
+| `outlinesVisible` | `boolean` | Whether box outlines/fills/handles are shown |
+| `addBox` | `() => void` | Add a new clip box sized to fit the current viewport (`addDefaultBox`), then select it |
 | `clearAll` | `() => void` | Remove all clip boxes |
-| `toggleMode` | `() => void` | Toggle clip mode for all boxes |
+| `toggleMode` | `() => void` | Toggle the global clip mode for all boxes |
+| `setEnabled` | `(enabled: boolean) => void` | Globally enable/disable clipping without deleting boxes |
+| `setOutlinesVisible` | `(visible: boolean) => void` | Show/hide all outlines/fills/handles (clipping unaffected) |
 | `selectBox` | `(id: string \| null) => void` | Select a box for transform |
-| `setTransformMode` | `(mode: "translate" \| "scale" \| "rotate") => void` | Set TransformControls mode |
+| `resetRotation` | `(id?: string) => void` | Reset a box's orientation to axis-aligned (selected box when omitted) |
+| `setTransformMode` | `(mode: "translate" \| "scale" \| "rotate") => void` | Set the active TransformControls mode |
+| `removeBox` | `(id: string) => void` | Remove a single clip box |
+| `setBoxVisible` | `(id: string, visible: boolean) => void` | Show/hide a single box |
+| `setModeAll` | `(mode: ClipMode) => void` | Set the global clip mode on all boxes |
 
 ### `useDisplayActions()`
 
@@ -537,14 +576,24 @@ All manager classes are exported from both `@der-ort/pano-cloud-viewer` and `@de
 
 Manages the Three.js scene, camera, renderer, and animation loop.
 
+```typescript
+interface SceneManagerOptions {
+  canvas: HTMLElement;                       // container element for the WebGL canvas
+  onFpsUpdate?: (fps: number) => void;
+  onPointsUpdate?: (loaded: number) => void;
+}
+new SceneManager(options: SceneManagerOptions)
+```
+
 | Method | Signature | Description |
 |---|---|---|
 | `start` | `() => void` | Start the requestAnimationFrame render loop |
 | `dispose` | `() => void` | Stop loop, disconnect ResizeObserver, dispose renderer |
-| `setNavigationMode` | `(mode: NavigationMode) => void` | Switch between orbit / fly / earth navigation |
+| `setNavigationMode` | `(mode: NavigationMode) => void` | Switch between orbit / free / pan navigation |
 | `setProjection` | `(mode: CameraProjection) => void` | Switch perspective / orthographic projection |
 | `fitToBox` | `(box: THREE.Box3) => void` | Position camera to frame a bounding box |
 | `raycast` | `(nx: number, ny: number, objects: THREE.Object3D[]) => THREE.Intersection[]` | Screen-space raycast (nx/ny are NDC: -1 to 1) |
+| `pickPoint` | `(nx: number, ny: number) => THREE.Vector3 \| null` | potree-core GPU pick — front-most rendered point under the cursor (NDC coords) |
 | `addFrameCallback` | `(cb: () => void) => void` | Register a callback to run every frame before render |
 | `removeFrameCallback` | `(cb: () => void) => void` | Unregister a frame callback |
 | `addPostRenderCallback` | `(cb: () => void) => void` | Register a callback to run after the main render |
@@ -575,49 +624,66 @@ Loads Potree 2.0 point clouds via `potree-core`.
 | `setPointShape` | `(shape: number) => void` | 0=square, 1=circle, 2=paraboloid |
 | `setPointSizeType` | `(type: number) => void` | 0=fixed, 1=attenuated, 2=adaptive |
 | `readMetadata` | `(path?: string) => Promise<PointCloudMetadata \| null>` | Fetch and parse metadata.json |
+| `getGeoInfo` | `() => GeoInfo` | `{ georeferenced, projection }` — georeference status of the loaded cloud |
 | `clear` | `() => void` | Remove all loaded point clouds from scene |
 | `static calcOptimalBudget` | `(totalPoints: number) => number` | Heuristic budget: 30%/15%/8% of total, capped 500K–10M |
 
 | Property | Type | Description |
 |---|---|---|
 | `worldBox` | `THREE.Box3` | World-space bounding box (available after `load()`) |
-| `hasRgbData` | `boolean` | Whether the loaded cloud has RGB color attributes |
+| `hasRgbData` | `boolean` | Getter — whether the loaded cloud has RGB color attributes |
+| `projection` | `string` | Getter — CRS string from metadata (`""` when not georeferenced) |
+| `isGeoreferenced` | `boolean` | Getter — whether the cloud carries a non-empty CRS |
 
 ### `CameraAnimator`
 
-Smooth camera fly-to animations using quartic ease-out.
+Smooth camera fly-to animations, no external tween library.
 
 | Method | Signature | Description |
 |---|---|---|
-| `flyTo` | `(opts: { position: THREE.Vector3, target: THREE.Vector3, duration?: number }) => Promise<void>` | Animate camera to position/target over duration ms (default 800) |
+| `flyTo` | `(opts: { position: THREE.Vector3, target: THREE.Vector3, up?: THREE.Vector3, duration?: number, easing?: Easing }) => Promise<void>` | Animate camera position + target (and lerp `up` when given) over `duration` ms (default 800). Passing `up` prevents restored scenes from tilting. |
 | `flyToCamera` | `(camPos: THREE.Vector3 \| [number,number,number], yawDeg?: number, offset?: number, duration?: number) => Promise<void>` | Fly behind a panorama marker; offset=5 by default |
 | `cancel` | `() => void` | Cancel any in-progress animation |
 
+`Easing = "smooth" | "linear" | "easeInOut"` — `"smooth"` is quartic ease-out (default).
+
 ### `ClipManager`
 
-Manages named axis-aligned clip boxes with TransformControls. Default post-create transform mode is `scale` (axis-colored resize handles via `FaceHandleController`); `translate` shows move arrows; `rotate` shows a single world-Z ring. New section boxes default to a **flat slab centered at mid-height** (around the cursor / cloud center) rather than the full cloud height, so they stay in view.
+Manages named clip boxes with TransformControls. Each box stores a full `THREE.Quaternion` orientation. Default post-create transform mode is `scale` (6 axis-colored face-resize spheres via `FaceHandleController`); `translate` shows move arrows; `rotate` shows **full 3-axis** rotation rings. Only one mode's handles are shown at a time so they can't grab each other. New section boxes are sized to **fit the current viewport** (centered on the view target, clamped to the cloud bounds) so they stay in view and are easy to grab — see `makeViewportBox` / `addDefaultBox`.
 
-> **three r170 note:** `TransformControls` extends `Controls`/`EventDispatcher`, not `Object3D`. Its gizmo is added to the scene via `tc.getHelper()` (the internal `_root` Object3D), never `scene.add(tc)`. Raising the gizmo over the point cloud (`depthTest=false`/`renderOrder`) traverses `tc.getHelper()`, not the controls object.
+> **three r170 note:** `TransformControls` extends `Controls`/`EventDispatcher`, not `Object3D`. Each gizmo is added to the scene via `tc.getHelper()` (the internal `_root` Object3D), never `scene.add(tc)`. Raising the gizmo over the point cloud (`depthTest=false`/`renderOrder`) traverses `tc.getHelper()`, not the controls object.
 
-> **Single global clip mode:** potree-core exposes only one global `clipMode`, so all clip boxes share one mode (`"outside"` or `"inside"`). `setBoxMode` therefore applies the chosen mode to every box; per-box modes are not supported.
+> **Single global clip mode:** potree-core exposes only one global `clipMode`, so all clip boxes share one mode (`"outside"` or `"inside"`). Use `setModeAll` to change it consistently; per-box modes are not supported.
 
 | Method | Signature | Description |
 |---|---|---|
 | `addBox` | `(box: THREE.Box3, name?: string) => ClipBoxEntry` | Add a clip box; creates scene helper; applies clipping |
+| `makeViewportBox` | `(worldBox?: THREE.Box3) => THREE.Box3` | Build a box sized to fit the current viewport, clamped to the cloud bounds |
+| `addDefaultBox` | `(worldBox?: THREE.Box3, name?: string) => ClipBoxEntry` | `addBox(makeViewportBox(...))` — the preferred "create section box" call |
 | `setEnabled` | `(enabled: boolean) => void` | Globally enable/disable all clipping without deleting boxes (helpers stay visible) |
 | `isEnabled` | `() => boolean` | Whether clipping is currently enabled |
+| `setOutlinesVisible` | `(visible: boolean) => void` | Show/hide ALL outlines/fills/handles/gizmos without affecting clipping (clean screenshots) |
+| `areOutlinesVisible` | `() => boolean` | Whether outlines are globally shown |
 | `selectBox` | `(id: string \| null) => Promise<void>` | Select a box for transform (lazy-init TransformControls) |
 | `setTransformMode` | `(mode: "translate" \| "scale" \| "rotate") => void` | Switch TransformControls mode (default `scale`) |
+| `getTransformMode` | `() => "translate" \| "scale" \| "rotate"` | Current transform mode |
+| `resetRotation` | `(id?: string) => void` | Reset a box's orientation to identity (selected box when omitted) |
 | `removeBox` | `(id: string) => void` | Remove a clip box |
-| `setBoxMode` | `(id: string, mode: ClipMode) => void` | Set the single global clip mode: `"outside"` (keep inside) or `"inside"` (remove inside) — applies to all boxes |
+| `setBoxMode` | `(id: string, mode: ClipMode) => void` | Set one box's mode (prefer `setModeAll` — the mode is global) |
+| `setModeAll` | `(mode: ClipMode) => void` | Set the single global clip mode on every box: `"outside"` (keep inside) / `"inside"` (remove inside) |
 | `setBoxVisible` | `(id: string, visible: boolean) => void` | Show/hide a clip box helper |
 | `renameBox` | `(id: string, name: string) => void` | Rename a clip box |
+| `isPointVisible` | `(p: THREE.Vector3) => boolean` | Whether a world point survives the current clipping (used to cull markers / reject clipped picks) |
 | `setDraft` | `(box: THREE.Box3 \| null) => void` | Show a draft preview box (no clipping applied) |
-| `getBoxes` | `() => ClipBoxEntry[]` | Get all clip boxes |
+| `getBoxes` | `() => ClipBoxEntry[]` | Get all clip boxes (cloned) |
 | `getSelectedId` | `() => string \| null` | Get currently selected box ID |
 | `hasBox` | `() => boolean` | Whether any clip boxes exist |
 | `clear` | `() => void` | Remove all clip boxes |
 | `dispose` | `() => void` | Full cleanup including TransformControls |
+
+| Property | Type | Description |
+|---|---|---|
+| `faceHandles` | `FaceHandleController \| null` | Getter — the box-resize handle controller (for viewport event forwarding) |
 
 | Callback | Type | Description |
 |---|---|---|
@@ -626,12 +692,27 @@ Manages named axis-aligned clip boxes with TransformControls. Default post-creat
 
 ### `ExportManager`
 
-Renders orthographic views and exports as images.
+Renders views to images and records camera animations to MP4.
 
 | Method | Signature | Description |
 |---|---|---|
-| `capture` | `(options: ExportOptions) => Promise<string>` | Render and return a data URL |
+| `capture` | `(options: ExportOptions) => Promise<string>` | Render and return a data URL. `view: "current"` snapshots the live camera; `top/front/side/back` render an orthographic shot framed to the cloud bounds. |
+| `recordAnimation` | `(opts: RecordOptions) => Promise<Blob>` | Render a camera animation **frame by frame** to an MP4 Blob (default 1920×1080, H.264 via WebCodecs + mp4-muxer). Deterministic — no stutter. Requires WebCodecs (Chrome/Edge), throws otherwise. |
 | `static download` | `(dataUrl: string, filename: string) => void` | Trigger browser file download |
+
+```typescript
+interface RecordOptions {
+  /** Position the camera for absolute time `t` (seconds). Called once per frame. */
+  sampleCamera: (t: number) => void;
+  durationSec: number;
+  fps?: number;        // default 30
+  width?: number;      // default 1920
+  height?: number;     // default 1080
+  background?: "white" | "black" | "transparent" | "current"; // default "current"
+  bitrate?: number;    // default 12_000_000 (12 Mbps)
+  onProgress?: (fraction: number) => void;
+}
+```
 
 ### `MarkerManager`
 
@@ -644,6 +725,7 @@ Renders panorama camera markers as constant on-screen-size pins (`THREE.Sprite` 
 | `setHovered` | `(idx: number) => void` | Highlight a marker on hover (-1 = none); reveals its label when `markerLabelMode="hover"` |
 | `setSelected` | `(idx: number) => void` | Mark a marker as selected (-1 = none) |
 | `setVisible` | `(visible: boolean) => void` | Show/hide all markers |
+| `applyClipFilter` | `(predicate: ((pos: THREE.Vector3) => boolean) \| null) => void` | Hide markers whose camera position fails the predicate (typically `ClipManager.isPointVisible`). Pass `null` to show all. |
 | `clear` | `() => void` | Remove all markers (dispose textures) |
 | `dispose` | `() => void` | Full cleanup including scene group removal |
 
@@ -660,6 +742,9 @@ Interactive 3D measurement tool.
 | `rename` | `(id: string, name: string) => void` | Rename a measurement label |
 | `clearAll` | `() => void` | Remove all measurements |
 | `getAll` | `() => Measurement[]` | Get all completed measurements |
+| `updateSnap` | `(worldPos: THREE.Vector3, color?: string) => void` | Live cursor preview while measuring — constant on-screen crosshair sprite + dashed rubber-band line |
+| `clearSnap` | `() => void` | Clear the snap crosshair/rubber-band |
+| `setVisible` | `(visible: boolean) => void` | Show/hide all measurement objects |
 | `dispose` | `() => void` | Full cleanup |
 
 | Property | Type | Description |
@@ -710,9 +795,21 @@ captureScene(
   colorMode: string,
   pointSize: number,
   pointBudget: number,
+  cameraUp?: { x: number; y: number; z: number }, // default { x: 0, y: 0, z: 1 }
 ): Omit<ViewerScene, "id" | "createdAt">
 ```
 Assembles a `ViewerScene` payload from current viewer state. Pass the result to `presentationManager.addScene()`.
+
+### `AxisWidget`
+
+Renders a small always-visible XYZ orientation widget in the **bottom-left** corner of the viewport via a scissor-test post-render pass (flat `MeshBasicMaterial`, mirrors the main camera's rotation).
+
+| Method | Signature | Description |
+|---|---|---|
+| `constructor` | `(sm: SceneManager)` | Self-registers a post-render callback on the SceneManager |
+| `dispose` | `() => void` | Remove the widget and dispose its geometry/materials |
+
+> `FaceHandleController` and `FpsControls` also live in `packages/core/src/core/` but are **internal** — they are not part of the public exports.
 
 ---
 
@@ -789,13 +886,15 @@ interface ClipBoxEntry {
   box: THREE.Box3;
   mode: ClipMode;
   visible: boolean;
+  /** Full 3-axis box orientation. Defaults to identity. */
+  quaternion: THREE.Quaternion;
 }
 ```
 
 ### Export
 
 ```typescript
-type ExportView = "top" | "front" | "side" | "back" | "custom";
+type ExportView = "current" | "top" | "front" | "side" | "back" | "custom";
 type ExportFormat = "png" | "jpeg";
 
 interface ExportOptions {
@@ -812,6 +911,8 @@ interface ExportOptions {
 
 ```typescript
 type Theme = "dark" | "light" | "system";
+type UiMode = "professional" | "lite";
+type PanoEngine = "pannellum" | "photo-sphere-viewer";
 
 type NavigationMode = "orbit" | "free" | "pan";
 type CameraProjection = "perspective" | "orthographic";
@@ -824,6 +925,15 @@ type ActiveTool =
   | "annotate";
 
 type ColorMode = "rgb" | "height" | "intensity" | "intensity_gradient" | "classification" | "return_number" | "source";
+```
+
+### Georeference
+
+```typescript
+interface GeoInfo {
+  georeferenced: boolean; // true when the cloud carries a non-empty CRS
+  projection: string;     // raw CRS string (proj4/WKT/EPSG), "" when absent
+}
 ```
 
 ### Display settings
@@ -839,7 +949,7 @@ interface DisplaySettings {
   markerSphereScale: number;       // multiplier on pin size
   markerSphereOpacity: number;     // 0–1
   markerLabelScale: number;        // multiplier
-  markerLabelMode: "hover" | "always" | "hidden"; // when marker labels show
+  markerLabelMode?: "hover" | "always" | "hidden"; // when marker labels show (optional)
 }
 
 // Pre-defined presets — also exported as DISPLAY_PRESETS constant.
@@ -857,6 +967,8 @@ interface ViewerScene {
   camera: {
     position: [number, number, number];
     target: [number, number, number];
+    /** Camera up vector. Optional for backward compat with older saved scenes. */
+    up?: [number, number, number];
   };
   clipBoxes: Array<{
     name: string;
@@ -1032,9 +1144,9 @@ Exported from both `@der-ort/pano-cloud-viewer` and `@der-ort/pano-cloud-viewer-
 
 | Function | Signature | Description |
 |---|---|---|
-| `formatLength` | `(meters: number) => string` | e.g. `"1.23 m"` or `"123.4 cm"` |
-| `formatArea` | `(m2: number) => string` | e.g. `"4.56 m²"` |
-| `formatVolume` | `(m3: number) => string` | e.g. `"7.89 m³"` |
+| `formatLength` | `(meters: number) => string` | Always metric, 2 decimals — e.g. `"1.23 m"` |
+| `formatArea` | `(m2: number) => string` | e.g. `"4.56 m²"` (2 decimals) |
+| `formatVolume` | `(m3: number) => string` | e.g. `"7.89 m³"` (2 decimals) |
 | `formatAngle` | `(radians: number) => string` | e.g. `"45.0°"` |
 | `formatCoord` | `(x: number, y: number, z: number, decimals?: number) => string` | Formatted coordinate string, e.g. `"X: 1.23, Y: 4.56, Z: 7.89"` |
 | `exportMeasurementsCSV` | `(measurements: Measurement[]) => string` | Generate CSV string from measurements (does not download — call `ExportManager.download()` or use `useMeasurementActions().exportCSV()`) |
@@ -1046,3 +1158,49 @@ React-only, exported from `@der-ort/pano-cloud-viewer` only:
 | Function | Signature | Description |
 |---|---|---|
 | `cn` | `(...inputs: ClassValue[]) => string` | `clsx` + `tailwind-merge` for conditional class names |
+
+### `pcvChromeScaleStyle`
+
+Inline style object (`{ zoom: "var(--pcv-scale, 1)" }`) applying the `uiScale` chrome scaling to a container. Apply to non-viewport chrome only — never the 3D canvas.
+
+### `useDraggable()`
+
+React-only hook for making floating panels draggable. Returns a `DraggableState` (`UseDraggableOptions` configures the initial position / bounds).
+
+---
+
+## 18. Version / Build Identity
+
+The version and build identity are baked into the bundle at build time so a consuming app can confirm which viewer build actually shipped (updates ship via the git dependency, so the SHA + build time is the real "did it ship" signal).
+
+```typescript
+import { PCV_VERSION, PCV_BUILD, PCV_VERSION_STRING } from '@der-ort/pano-cloud-viewer';
+```
+
+| Export | Type | Description |
+|---|---|---|
+| `PCV_VERSION` | `string` | Package version (from `package.json`) |
+| `PCV_BUILD` | `string` | `<short-git-sha> · <UTC build time>` |
+| `PCV_VERSION_STRING` | `string` | Combined display string |
+
+These are also shown in the pro QuickSettingsPopover footer, the MinimalSettingsPopover footer, and the AboutDialog.
+
+---
+
+## 19. Component Slot System
+
+Override the built-in shadcn-style UI primitives (Dialog, Button, …) app-wide via the `components` prop on `<PanoCloudViewer>` or directly with `ComponentsProvider`.
+
+```typescript
+import { ComponentsProvider, useComponents, defaultComponents } from '@der-ort/pano-cloud-viewer';
+import type { ViewerComponents, ComponentsProviderProps } from '@der-ort/pano-cloud-viewer';
+```
+
+| Export | Description |
+|---|---|
+| `ComponentsProvider` | Provides a `Partial<ViewerComponents>` map, shallow-merged over `defaultComponents` |
+| `useComponents()` | Returns the resolved component map |
+| `defaultComponents` | The built-in primitive set |
+| `ViewerComponents` | The slot map type |
+
+All shadcn-style UI primitives are also re-exported from the package root (`export * from "./ui"`).

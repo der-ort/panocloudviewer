@@ -16,20 +16,20 @@ hero:
 features:
   - icon: ☁️
     title: Potree 2.0 Point Clouds
-    details: Full octree rendering powered by potree-core and Three.js. Adaptive point budget, Eye-Dome Lighting, and configurable shading.
+    details: Full octree streaming powered by potree-core and Three.js. Adaptive point budget, RGB / height / intensity / classification color modes, and configurable point size and shape.
   - icon: 🔭
     title: 360° Panorama Viewer
-    details: Embedded Pannellum integration with spherical, pinhole, and cylindrical support. Camera markers with smooth fly-to animation.
+    details: Photo Sphere Viewer by default (Pannellum as an optional fallback), switchable via the panoEngine prop. Camera markers rendered as constant-size pins with smooth fly-to animation.
   - icon: 📏
     title: Measurement Tools
-    details: Point, distance, height, area, volume, angle, and profile measurements. Color-coded, togglable, and selectable.
+    details: Point, distance, height, area, angle, and volume — all metric, in meters with two decimals. Color-coded, togglable, selectable, and CSV-exportable.
   - icon: ✂️
     title: Clipping & Sections
-    details: Box and plane clipping for cross-section analysis. Visual previews and adjustable geometry.
+    details: Multiple named section boxes with a global enable toggle and a single global clip mode (keep inside / outside). Move, scale, and rotate handles for each box.
   - icon: 🖼️
-    title: Orthographic Export
-    details: Capture top, front, side, and back views as PNG or JPEG. Configurable resolution scaling and scale bar overlay.
+    title: Views & Export
+    details: Save the live camera view or render orthographic top / front / side / back shots to PNG or JPEG. Save named scenes, play a keyframe tour, and record a 1080p MP4.
   - icon: 🎨
-    title: Fully Themeable
-    details: CSS custom properties throughout. Ships with a smart+agile brand theme, easily overridden with your own design tokens.
+    title: Themeable & Responsive
+    details: Dark / light / system themes via CSS custom properties, English and German locales, chrome-only uiScale, and a mobile-responsive layout with safe-area support.
 ---

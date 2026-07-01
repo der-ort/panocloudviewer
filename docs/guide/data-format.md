@@ -1,6 +1,6 @@
 # Data Format
 
-PanoCloudViewer expects data in the **Potree 2.0** format. This is the standard output of [PanoCloudConverter](/guide/point-cloud-preparation) and compatible with any Potree 2.0 pipeline.
+PanoCloudViewer expects data in the **Potree 2.0** format. This is the standard output of PanoCloudConverter and compatible with any Potree 2.0 pipeline (e.g. `PotreeConverter`).
 
 ---
 
@@ -28,7 +28,7 @@ No manual editing is required — this file is produced automatically.
 
 ## cameras.json
 
-An optional JSON array describing panoramic camera positions. When present, the viewer renders interactive camera markers in the 3D scene and enables the [panorama viewer](/features/panoramas).
+An optional JSON array describing panoramic camera positions. When present, the viewer renders interactive camera markers in the 3D scene and enables the 360° panorama overlay.
 
 ### Schema
 
@@ -40,17 +40,20 @@ interface CameraData {
   /** Zero-based ordering index */
   index: number;
 
-  /** URL of the panorama image (JPEG, PNG) */
-  image: string;
+  /** URL of the panorama image (JPEG, PNG), or null if unavailable */
+  image: string | null;
+
+  /** Optional low-res thumbnail URL for sidebar lists (falls back to image) */
+  thumbnail?: string | null;
 
   /** 3D position in the point cloud coordinate system */
-  position: { x: number; y: number; z: number };
+  position?: { x: number; y: number; z: number };
 
   /** Horizontal heading in degrees (0 = North / +Y axis) */
-  yaw_deg: number;
+  yaw_deg?: number;
 
-  /** Panorama type */
-  representation:
+  /** Panorama type (defaults to spherical when omitted) */
+  representation?:
     | 'sphericalRepresentation'
     | 'pinholeRepresentation'
     | 'cylindricalRepresentation';
@@ -61,10 +64,12 @@ interface CameraData {
   /** Optional human-readable description */
   description?: string;
 
-  /** Source of the position ('scan' | 'gps' | 'manual') */
-  position_source?: string;
+  /** Source of the position */
+  position_source?: 'scan' | 'image';
 }
 ```
+
+Only `name` and `index` are required. In practice you'll almost always supply `image` and `position` too — a marker with no `position` cannot be placed in the scene.
 
 ### Example
 
@@ -114,8 +119,24 @@ The `Content-Range` and `Accept-Ranges` headers are required for partial loading
 
 ---
 
+## Source types
+
+`cameras.json`, `metadata.json`, and the binary octree files are all fetched through a **source adapter**, selected by the `type` field of the `source` prop:
+
+```typescript
+type PointCloudSource =
+  | { type: 's3';       baseUrl: string;  headers?: Record<string, string> }
+  | { type: 'local';    basePath: string }    // served by the dev server
+  | { type: 'electron'; basePath: string };   // Electron file:// bridge
+```
+
+- **`s3`** (and `local`) use `S3SourceAdapter` — plain `fetch()` with optional auth headers, against `baseUrl`. This is the common web case; the whole folder lives under one base URL.
+- **`electron`** uses `ElectronSourceAdapter` — reads from the local filesystem over the `window.electronFS` IPC bridge exposed by the Electron preload script, resolving files as `file:///…`.
+
+---
+
 ## Coordinate System
 
 The viewer uses the coordinate system embedded in `metadata.json`. The `position` values in `cameras.json` must be in the **same coordinate system** as the point cloud.
 
-If your scanner exports in a geographic coordinate system (e.g. EPSG:25832), the converter handles the offset and scale automatically — no manual reprojection needed.
+The loader reads `metadata.json`'s `projection` field and exposes `isGeoreferenced` / `getGeoInfo()` (surfaced in the About dialog). Note that **most exports are not georeferenced** — E57 / LAS pipelines commonly drop the CRS, so `projection` comes out as an empty string. When a CRS *is* present, the converter handles the offset and scale automatically; no manual reprojection is needed either way.

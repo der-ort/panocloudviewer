@@ -2,6 +2,22 @@
 
 PanoCloudViewer uses CSS custom properties (CSS variables) for all colors, typography, and layout values. This makes it straightforward to match the viewer to any host application's design system.
 
+![The viewer in its light theme, alongside the demo gallery's Theme, Brand, and UI-scale controls](/screenshots/theme-light.png)
+
+*Light theme. The demo gallery exposes Theme (dark/light/system), Brand preset, and UI-scale controls so you can preview any combination live.*
+
+---
+
+## Token scoping
+
+All tokens are defined on the **`.pcv` root element** (the viewer's own wrapper), **not** on `:root`. This deliberately prevents collisions with a host app's CSS variables — the viewer never themes the host's `<body>` or `<html>`. When you override or map tokens, always target `.pcv`:
+
+```css
+.pcv { --brand: 220 90% 56%; }
+```
+
+Dark mode is applied as `.pcv.dark` (and the equivalent `.pcv[data-theme="dark"]`) — `PcvRoot` sets both simultaneously, so you only need one dark block.
+
 ---
 
 ## How themes work
@@ -10,8 +26,8 @@ The viewer ships two CSS files:
 
 | File | Contents |
 |---|---|
-| `@der-ort/pano-cloud-viewer/themes/base.css` | Token definitions only (includes Tailwind directives). Use this as a starting point for a fully custom theme. |
-| `@der-ort/pano-cloud-viewer/themes/smart-agile.css` | smart+agile brand theme — imports `base.css` and overrides tokens with the yellow-on-dark palette. |
+| `@der-ort/pano-cloud-viewer/themes/base.css` | Token definitions + Tailwind directives (`@tailwind base/components/utilities`). Use this as a starting point for a fully custom theme. |
+| `@der-ort/pano-cloud-viewer/themes/smart-agile.css` | smart+agile brand theme — imports `base.css` and overrides tokens with the yellow-on-dark / purple-on-light palette. |
 
 Import exactly one of these in your application's entry point:
 
@@ -41,13 +57,13 @@ All variables follow the [shadcn/ui](https://ui.shadcn.com/docs/theming) token n
 | `--primary-foreground` | Text on primary | `0 0% 98%` | `0 0% 9%` |
 | `--secondary` | Secondary / ghost buttons | `0 0% 94%` | `0 0% 13%` |
 | `--muted` | Muted backgrounds | `0 0% 94%` | `0 0% 13%` |
-| `--muted-foreground` | Muted text | `0 0% 45%` | `0 0% 55%` |
+| `--muted-foreground` | Muted text | `0 0% 45%` | `0 0% 67%` |
 | `--accent` | Hover / focus backgrounds | `0 0% 94%` | `0 0% 13%` |
-| `--destructive` | Destructive actions (red) | `0 84% 60%` | `0 84% 60%` |
-| `--border` | UI borders | `0 0% 89%` | `0 0% 18%` |
-| `--input` | Input field borders | `0 0% 89%` | `0 0% 18%` |
-| `--ring` | Focus ring | `0 0% 9%` | `0 0% 83%` |
-| `--brand` | Accent / highlight color | `220 90% 56%` | `220 90% 56%` |
+| `--destructive` | Destructive actions (red) | `0 84% 60%` | `0 70% 50%` |
+| `--border` | UI borders | `0 0% 89%` | `0 0% 16%` |
+| `--input` | Input field borders | `0 0% 89%` | `0 0% 16%` |
+| `--ring` | Focus ring | `0 0% 9%` | `0 0% 80%` |
+| `--brand` | Accent / highlight color | `220 90% 56%` | `220 90% 65%` |
 | `--brand-foreground` | Text on brand color | `0 0% 100%` | `0 0% 100%` |
 
 ### Viewer-specific tokens
@@ -82,21 +98,22 @@ All variables follow the [shadcn/ui](https://ui.shadcn.com/docs/theming) token n
 
 ## Dark and light mode
 
-Themes declare a `:root` block for light mode and a `.dark` block for dark mode:
+Themes declare a `.pcv` block for light mode and a `.pcv.dark` block for dark mode:
 
 ```css
-:root {
+.pcv {
   --background: 0 0% 100%;   /* light */
   --brand:      220 90% 56%;
 }
 
-.dark {
+.pcv.dark,
+.pcv[data-theme="dark"] {
   --background: 0 0% 5%;     /* dark */
   --brand:      55 72% 57%;  /* can differ in dark mode */
 }
 ```
 
-`ThemeProvider` toggles the `dark` class on `document.documentElement` when the theme switches. Pass an initial theme to `<PanoCloudViewer>` or call `setTheme()` from `useTheme()`:
+`ThemeProvider` applies both the `dark` class and a `data-theme` attribute to the viewer's `.pcv` root when the theme switches, and persists the choice to `localStorage` under the `pcv-theme` key. It supports `"dark"`, `"light"`, and `"system"` (follows the OS preference). Pass an initial theme to `<PanoCloudViewer>` (`"light" | "dark"`) or call `setTheme()` / `toggleTheme()` from `useTheme()`:
 
 ```tsx
 <PanoCloudViewer source={source} theme="dark" />
@@ -112,7 +129,7 @@ Themes declare a `:root` block for light mode and a `.dark` block for dark mode:
 /* my-theme.css */
 @import '@der-ort/pano-cloud-viewer/themes/base.css';
 
-:root {
+.pcv {
   --brand:      200 80% 50%;     /* teal accent */
   --background: 0 0% 97%;
   --foreground: 0 0% 8%;
@@ -120,7 +137,8 @@ Themes declare a `:root` block for light mode and a `.dark` block for dark mode:
   --font-sans:  'Inter', ui-sans-serif, system-ui, sans-serif;
 }
 
-.dark {
+.pcv.dark,
+.pcv[data-theme="dark"] {
   --brand:      200 70% 60%;
   --background: 220 15% 10%;
   --foreground: 0 0% 93%;
@@ -137,7 +155,7 @@ Import `smart-agile.css` first, then override specific tokens in your own styles
 
 ```css
 /* override.css */
-:root {
+.pcv {
   --brand: 200 80% 50%;   /* replace yellow with teal */
 }
 ```
@@ -157,10 +175,12 @@ If your application already uses [shadcn/ui](https://ui.shadcn.com), map your ex
 
 ```css
 /* shadcn-bridge.css */
-:root {
-  /* Map PanoCloudViewer tokens to your app's shadcn vars */
+.pcv {
+  /* Map PanoCloudViewer tokens (left) to your host app's shadcn vars (right).
+     Because the viewer's tokens live on .pcv, referencing the host's :root vars
+     here bridges the two without either clobbering the other. */
   --brand:      var(--primary);      /* or a specific accent color */
-  --background: var(--background);   /* same name — already defined */
+  --background: var(--background);
   --foreground: var(--foreground);
   --border:     var(--border);
   --card:       var(--card);
@@ -178,7 +198,9 @@ Import this bridge **after** your shadcn global styles and **instead of** the sm
 
 The bundled `smart-agile.css` theme uses:
 
-- **Dark mode**: yellow-green brand (`#DCD546`, HSL `55 72% 57%`) on near-black (`#0A0A0A`) background, Cabinet Grotesk font.
+- **Dark mode**: yellow-green brand (`#DCD546`, HSL `55 74% 57%`) on near-black (`#0A0A0A` / `0 0% 4%`) background, Cabinet Grotesk font.
 - **Light mode**: purple accent (`#9B94FF`-ish, HSL `250 100% 61%`) on warm off-white (`#EEF0E4` / `72 19% 92%`) background.
+
+It sets a complete token set (including `--card-foreground`, `--popover-foreground`, `--muted-foreground`, and the viewer-specific `--toolbar-bg` / `--sidebar-bg` / `--statusbar-bg` / `--viewport-bg`) in both blocks, satisfying the readability rule — a useful reference when writing your own brand preset.
 
 Font files (Cabinet Grotesk, Azeret Mono) are **not bundled** — the theme falls back to system fonts. To enable the custom fonts, place `CabinetGrotesk-Variable.woff2` and `AzeretMono-Variable.woff2` in `packages/viewer/src/assets/fonts/` and uncomment the `@font-face` declarations in `smart-agile.css`.

@@ -73,7 +73,7 @@ Because the committed `dist/` is self-contained (core bundled in), consumers **n
 │  MarkerManager      → 3D sprite markers for pano cameras      │
 │  MeasurementManager → interactive 3D measurement tools        │
 │  ClipManager        → clip boxes with TransformControls       │
-│  ExportManager      → orthographic capture to image           │
+│  ExportManager      → image capture + frame-by-frame MP4      │
 │  MinimapRenderer    → secondary WebGL renderer (bottom-right) │
 │  PresentationManager→ localStorage scene persistence          │
 │  AxisWidget         → world-axis indicator (bottom-left)      │
@@ -183,6 +183,8 @@ The only class that touches `potree-core`. It builds a `requestManager` object t
 
 The `worldBox` property is the reliable way to get scene bounds after load — it accounts for potree-core's internal coordinate offset (`pcoGeometry.offset`) which is applied to translate the cloud to a local coordinate system.
 
+It also reads `metadata.json`'s `projection` field and exposes `projection`, `isGeoreferenced`, and `getGeoInfo()` (surfaced in the About dialog). Note that most exports are **not** georeferenced — E57/LAS commonly drop the CRS, so `projection` often comes out `""`.
+
 ### CameraAnimator
 
 Uses a quartic ease-out curve (`1 - (1-t)^4`) that matches the feel of the original Potree application. The animation is pure `requestAnimationFrame` with no dependency on the SceneManager's render loop — it drives the camera directly and `OrbitControls.update()` is called inside the animation function to keep the controls in sync.
@@ -209,15 +211,17 @@ Area calculation uses the 2D shoelace formula on the XY plane. Volume is approxi
 
 Clip boxes are applied to potree-core's material via `mat.setClipBoxes()`. potree-core expects the clip box array in a specific format: each entry needs `{ box, inverse, matrix, position }`. The `inverse` matrix is what the shader uses to transform world-space points into box-local space for the inside/outside test.
 
-A **global enable flag** (`setEnabled(enabled)` / `isEnabled()`) turns all clipping on or off without deleting any boxes — the `Box3Helper`s remain visible so the sections stay editable while clipping is off. potree-core only exposes a **single global `clipMode`**, so all sections necessarily share one mode (`"outside"` or `"inside"`); the UI enforces this consistently rather than offering per-box modes. New section boxes default to a **flat slab centered at mid-height** (around the cursor / cloud center) rather than spanning the full cloud height, so they stay inside the viewport and are easy to grab.
+A **global enable flag** (`setEnabled(enabled)` / `isEnabled()`) turns all clipping on or off without deleting any boxes — the `Box3Helper`s remain visible so the sections stay editable while clipping is off. A separate **outlines toggle** (`setOutlinesVisible` / `areOutlinesVisible`) hides all outlines/fills/handles for clean screenshots without touching the actual clipping. potree-core only exposes a **single global `clipMode`**, so all sections necessarily share one mode (`"outside"` or `"inside"`); use `setModeAll` to keep them consistent rather than offering per-box modes. New section boxes are sized by `makeViewportBox` / `addDefaultBox` to **fit the current viewport** (centered on the view target, clamped to the cloud bounds), so they stay inside the viewport and are easy to grab. Each box carries a full `THREE.Quaternion` orientation; `isPointVisible(p)` runs the point-in-(rotated)-box test used to cull out-of-bounds panorama markers and reject picks on clipped-away points.
 
 `TransformControls` are lazy-initialised (only imported and created when the user first selects a clip box) because they are a moderately heavy module and most sessions never use them.
 
-**three r170 gotcha:** since r170 `TransformControls` extends `Controls`/`EventDispatcher` and is **not** an `Object3D`. The visual gizmo lives in an internal `_root` Object3D exposed by `tc.getHelper()`, so it is added to the scene with `scene.add(tc.getHelper())` — `scene.add(tc)` adds nothing visible. The `_raiseGizmo()` helper (forcing the handles to render over the dense cloud via `depthTest=false` + high `renderOrder`) must traverse `tc.getHelper()`; the controls object has no `traverse` method. The default post-create transform mode is `scale` (the `FaceHandleController` shows 6 axis-colored resize handles); Move shows translate arrows and Rotate a single world-Z ring.
+**three r170 gotcha:** since r170 `TransformControls` extends `Controls`/`EventDispatcher` and is **not** an `Object3D`. The visual gizmo lives in an internal `_root` Object3D exposed by `tc.getHelper()`, so it is added to the scene with `scene.add(tc.getHelper())` — `scene.add(tc)` adds nothing visible. The `_raiseGizmo()` helper (forcing the handles to render over the dense cloud via `depthTest=false` + high `renderOrder`) must traverse `tc.getHelper()`; the controls object has no `traverse` method. The default post-create transform mode is `scale` (the `FaceHandleController` shows 6 axis-colored resize handles); Move shows translate arrows and Rotate shows full **3-axis** rotation rings. Only one mode's handles are shown at a time so they can't grab each other.
 
 ### ExportManager
 
-The export pipeline temporarily hijacks the renderer — it sets a `WebGLRenderTarget`, renders at the requested scale, reads pixels, then restores the render target to `null`. The viewport is restored before the function returns, so the user sees no visual glitch in practice.
+The still-image export pipeline temporarily hijacks the renderer — it sets a `WebGLRenderTarget`, renders at the requested scale, reads pixels, then restores the render target to `null`. The viewport is restored before the function returns, so the user sees no visual glitch in practice. `view: "current"` snapshots the live camera; `top/front/side/back` render an orthographic shot framed to the cloud bounds (bounds come from `sceneManager.pointClouds`, since potree octrees aren't `THREE.Mesh`).
+
+`recordAnimation()` renders a camera animation **frame by frame** to an MP4 Blob (default 1920×1080, H.264 ~12 Mbps) via WebCodecs `VideoEncoder` muxed with **mp4-muxer** (lazy-loaded from CDN). For each frame the caller's `sampleCamera(t)` positions the camera, the frame renders to a render target, and the pixels are encoded. Because it is deterministic (not real-time) it never stutters regardless of per-frame cost. Requires WebCodecs (Chrome/Edge). The `ScenesPanel` "Video" button drives it with a keyframe sampler over the saved scenes.
 
 ### MinimapRenderer
 
@@ -338,6 +342,8 @@ All three navigation modes are implemented in `SceneManager.setNavigationMode()`
 
 ### Default `WorkspaceLayout`
 
+![Default WorkspaceLayout (dark theme)](/screenshots/workspace-dark.png)
+
 When `<PanoCloudViewer>` is used without a `children` render prop, it renders the built-in `WorkspaceLayout`: a full toolbar at the top, a left tool rail (measure/section), a right collapsible sidebar with tabs, and the 3D viewport in the center. This layout suits professional desktop-style workflows. The sidebar **starts below the toolbar** (it no longer overlaps it) and is collapsed/expanded with a **chevron toggle on its inner edge**. The toolbar also exposes a **gear button** that opens a **simple quick-settings popover** (panoramas/minimap toggles, color mode, point size — mirroring the minimal layout's settings) alongside the advanced "Rendering Settings" modal, so common tweaks don't require opening the full panel.
 
 ### Custom UI via render prop
@@ -429,11 +435,26 @@ pointCloud.material.outputColorEncoding = 1; // ColorEncoding.SRGB
 ```
 Tells potree-core's shader that its output is sRGB, which disables the `fromLinear()` conversion. sRGB data from the attribute buffer passes through to the output as-is.
 
-Both fixes are necessary.
+Both fixes are necessary. `outputColorEncoding=1` must also be re-applied after every `setColorMode()`, since potree-core may reset the material.
 
 ---
 
-## 12. i18n
+## 12. Panorama Overlay — Pluggable Engine
+
+When a camera marker is opened (`selectedCamera` is set), `<PanoViewer>` renders a full-screen 360° overlay. The rendering engine is **pluggable** via the `panoEngine` config field / prop (`"photo-sphere-viewer"` default, `"pannellum"` fallback), and is switchable at runtime through `useViewer().setPanoEngine` — the overlay header carries an A/B toggle.
+
+Engine adapters live in `packages/viewer/src/components/overlays/pano-engines/`. Each exports a `PanoEngineInit` — `(container, camera) => Promise<{ destroy() }>`; `getPanoEngine(engine)` maps the config value to its adapter.
+
+- **Photo Sphere Viewer (default)** — loaded from jsDelivr's `+esm` endpoint with on-screen zoom/move/fullscreen controls and mousewheel zoom. PSV requires `three@^0.184` while this project pins `three@0.170`, so PSV runs with its **own isolated Three.js** (the `+esm` endpoint resolves PSV's `three` to a separate CDN copy). This is safe because the panorama overlay is a fully separate scene sharing no Three.js objects with the potree viewport.
+- **Pannellum (fallback)** — UMD global injected via `<script>`/`<link>` from jsDelivr. The loader caches a single promise that resolves only once `window.pannellum` is actually defined (never on mere script-tag presence), avoiding a StrictMode / engine-switch race.
+
+Both engines load **lazily from CDN** — nothing ships in the SSR / initial bundle. The CDN ESM module is loaded through a `new Function("u","return import(u)")` indirection so esbuild/webpack/Next never statically resolve the absolute `https://` URL.
+
+> **Do not bundle Photo Sphere Viewer (or its `three`).** Its `three@^0.184` conflicts with the pinned `three@0.170`; bundling would force a project-wide Three.js upgrade and risk double-loading three into the potree scene.
+
+---
+
+## 13. i18n
 
 The i18n system is a simple context-provided dictionary, with no runtime locale detection or message formatting library.
 
@@ -477,7 +498,7 @@ const myLocale = createLocale(en, {
 
 ---
 
-## 13. Adding a New Feature — Developer Checklist
+## 14. Adding a New Feature — Developer Checklist
 
 Follow these steps to add a new feature (e.g. a new measurement type, a new panel, a new tool):
 
