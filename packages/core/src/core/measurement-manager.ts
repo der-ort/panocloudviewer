@@ -34,6 +34,8 @@ export class MeasurementManager {
   private _snapCross: THREE.Sprite | null = null;
   private _snapLine: THREE.Line | null = null;
   private _crossTexture?: THREE.CanvasTexture;
+  // Shared vertex-dot texture (white disc + dark ring, tinted per measurement).
+  private _dotTexture?: THREE.CanvasTexture;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -74,8 +76,11 @@ export class MeasurementManager {
         o.geometry.dispose();
         (o.material as THREE.Material).dispose();
       } else if (o instanceof THREE.Sprite) {
-        (o.material as THREE.SpriteMaterial).map?.dispose();
-        (o.material as THREE.Material).dispose();
+        const mat = o.material as THREE.SpriteMaterial;
+        // Label textures are per-sprite; the vertex-dot texture is SHARED
+        // across all measurements and must survive individual removals.
+        if (mat.map && mat.map !== this._dotTexture) mat.map.dispose();
+        mat.dispose();
       }
       this.group.remove(o);
     });
@@ -354,13 +359,11 @@ export class MeasurementManager {
     this.group.add(edges);
     objects.push(edges);
 
-    // Volume label
+    // Volume label — anchored to the box's top face, lifted in screen space.
     const text = formatVolume(m.value!);
     const sprite = this.makeTextSprite(text, m.color);
-    sprite.position.copy(center).add(new THREE.Vector3(0, 0, size.z / 2 + 0.5));
-    const ls = this._displaySettings.measurementLabelScale;
-    sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
-    sprite.renderOrder = 3;
+    sprite.position.copy(center).add(new THREE.Vector3(0, 0, size.z / 2));
+    sprite.center.set(0.5, -0.35);
     this.group.add(sprite);
     objects.push(sprite);
 
@@ -406,20 +409,57 @@ export class MeasurementManager {
     return size.x * size.y * size.z;
   }
 
+  /**
+   * Vertex marker: a constant screen-size dot sprite (like a map pin, not a
+   * world-sized ball) so markers stay small and precise at any zoom level.
+   * `measurementSphereRadius` acts as a size multiplier (0.15 = standard).
+   */
+  private makeVertexDot(position: THREE.Vector3, color: THREE.Color): THREE.Sprite {
+    const mat = new THREE.SpriteMaterial({
+      map: this._getDotTexture(),
+      color,
+      sizeAttenuation: false,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+    });
+    const dot = new THREE.Sprite(mat);
+    const s = 0.016 * (this._displaySettings.measurementSphereRadius / 0.15);
+    dot.scale.set(s, s, 1);
+    dot.position.copy(position);
+    dot.renderOrder = 2;
+    return dot;
+  }
+
+  /** Cached dot texture: white disc (tinted by material color) + dark outline ring. */
+  private _getDotTexture(): THREE.CanvasTexture {
+    if (this._dotTexture) return this._dotTexture;
+    const S = 32;
+    const canvas = document.createElement("canvas");
+    canvas.width = S; canvas.height = S;
+    const ctx = canvas.getContext("2d")!;
+    const c = S / 2;
+    // Dark ring stays dark after tinting (multiplied) → readable on any background.
+    ctx.beginPath(); ctx.arc(c, c, 13, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fill();
+    ctx.beginPath(); ctx.arc(c, c, 9, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff"; ctx.fill();
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    this._dotTexture = tex;
+    return tex;
+  }
+
   private buildObjects(m: Measurement): THREE.Object3D[] {
     const objects: THREE.Object3D[] = [];
     const color = new THREE.Color(m.color);
     const pts = m.points;
 
-    // Sphere at each point
+    // Constant screen-size dot at each vertex
     pts.forEach(p => {
-      const geo = new THREE.SphereGeometry(this._displaySettings.measurementSphereRadius, 8, 6);
-      const mat = new THREE.MeshBasicMaterial({ color, depthTest: false });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.copy(p);
-      mesh.renderOrder = 2;
-      this.group.add(mesh);
-      objects.push(mesh);
+      const dot = this.makeVertexDot(p, color);
+      this.group.add(dot);
+      objects.push(dot);
     });
 
     // Lines between points
@@ -455,7 +495,9 @@ export class MeasurementManager {
       }
     }
 
-    // Label
+    // Label — anchored ON the measured geometry (segment midpoint), not floated
+    // above it. Point/area/angle labels lift slightly in SCREEN space via
+    // sprite.center so they never cover their own vertex dot.
     if (m.value !== undefined) {
       let text = "";
       switch (m.type) {
@@ -471,14 +513,12 @@ export class MeasurementManager {
         }
       }
       if (text) {
+        const anchor = this.labelAnchor(m);
+        const onLine = m.type === "distance" || m.type === "height";
         const sprite = this.makeTextSprite(text, m.color);
-        const mid = new THREE.Vector3();
-        for (const p of pts) mid.add(p);
-        mid.divideScalar(pts.length);
-        sprite.position.copy(mid).add(new THREE.Vector3(0, 0, 1));
-        const ls = this._displaySettings.measurementLabelScale;
-        sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
-        sprite.renderOrder = 3;
+        sprite.position.copy(anchor);
+        // Screen-space lift for labels that would sit on a vertex dot.
+        if (!onLine) sprite.center.set(0.5, -0.35);
         this.group.add(sprite);
         objects.push(sprite);
       }
@@ -487,20 +527,64 @@ export class MeasurementManager {
     return objects;
   }
 
+  /** World anchor for a measurement's label. */
+  private labelAnchor(m: Measurement): THREE.Vector3 {
+    const pts = m.points;
+    if (m.type === "height" && pts.length >= 2) {
+      // Midpoint of the VERTICAL line actually drawn (pts[0] straight up/down).
+      return new THREE.Vector3(pts[0].x, pts[0].y, (pts[0].z + pts[1].z) / 2);
+    }
+    if (m.type === "angle" && pts.length >= 2) return pts[1].clone(); // the apex
+    const mid = new THREE.Vector3();
+    for (const p of pts) mid.add(p);
+    return mid.divideScalar(Math.max(pts.length, 1));
+  }
+
+  /**
+   * Value label: constant screen-size sprite (`sizeAttenuation:false`) so it is
+   * equally readable on a 5 m room and a 500 m site. White text on a dark card
+   * with the measurement color as accent bar + border — high contrast on both
+   * bright and dark point clouds. `measurementLabelScale` multiplies the size.
+   */
   private makeTextSprite(text: string, color: string): THREE.Sprite {
+    const W = 512, H = 96;
     const canvas = document.createElement("canvas");
-    canvas.width = 256; canvas.height = 48;
+    canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d")!;
-    ctx.fillStyle = "rgba(0,0,0,0.78)";
-    ctx.roundRect(2, 2, 252, 44, 6);
+    // Card (each roundRect needs its own beginPath — the path accumulates otherwise)
+    ctx.beginPath();
+    ctx.roundRect(3, 3, W - 6, H - 6, 14);
+    ctx.fillStyle = "rgba(10,10,12,0.88)";
     ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    // Colored accent bar on the left
+    ctx.beginPath();
+    ctx.roundRect(10, 16, 10, H - 32, 5);
     ctx.fillStyle = color;
-    ctx.font = "bold 28px -apple-system, 'Segoe UI', sans-serif";
+    ctx.fill();
+    // Value text in white (color is carried by accent + border)
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 52px -apple-system, 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, 128, 24);
+    ctx.fillText(text, W / 2 + 8, H / 2 + 2);
+
     const tex = new THREE.CanvasTexture(canvas);
-    return new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    tex.minFilter = THREE.LinearFilter;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      sizeAttenuation: false, // constant on-screen size at any zoom
+      depthTest: false,
+      depthWrite: false,
+    }));
+    const ls = this._displaySettings.measurementLabelScale;
+    // ~0.2 of NDC height at scale 1 ≈ compact readable card; keep W:H aspect.
+    sprite.scale.set(0.20 * ls, (0.20 * H / W) * ls, 1);
+    sprite.renderOrder = 4; // above lines (1) and dots (2)
+    return sprite;
   }
 
   private rebuildPreview() {
@@ -553,6 +637,8 @@ export class MeasurementManager {
     this.clearSnap();
     this._crossTexture?.dispose();
     this._crossTexture = undefined;
+    this._dotTexture?.dispose();
+    this._dotTexture = undefined;
     this.scene.remove(this.group);
   }
 }

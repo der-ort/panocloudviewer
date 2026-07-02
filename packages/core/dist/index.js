@@ -258,7 +258,9 @@ var SceneManager = class {
       const octree = pc;
       if (typeof octree.pick !== "function") continue;
       const result = octree.pick(this.renderer, this.camera, raycaster.ray, {
-        pickWindowSize: 17
+        // Generous window so thin structures (edges, poles, railings) are easy
+        // to hit — the pick still returns the point closest to the ray.
+        pickWindowSize: 31
       });
       if (result?.position) {
         return result.position.clone();
@@ -922,6 +924,8 @@ var MeasurementManager = class {
   _snapCross = null;
   _snapLine = null;
   _crossTexture;
+  // Shared vertex-dot texture (white disc + dark ring, tinted per measurement).
+  _dotTexture;
   constructor(scene) {
     this.scene = scene;
     this.group = new THREE5.Group();
@@ -955,8 +959,9 @@ var MeasurementManager = class {
         o.geometry.dispose();
         o.material.dispose();
       } else if (o instanceof THREE5.Sprite) {
-        o.material.map?.dispose();
-        o.material.dispose();
+        const mat = o.material;
+        if (mat.map && mat.map !== this._dotTexture) mat.map.dispose();
+        mat.dispose();
       }
       this.group.remove(o);
     });
@@ -1207,10 +1212,8 @@ var MeasurementManager = class {
     objects.push(edges);
     const text = formatVolume(m.value);
     const sprite = this.makeTextSprite(text, m.color);
-    sprite.position.copy(center).add(new THREE5.Vector3(0, 0, size.z / 2 + 0.5));
-    const ls = this._displaySettings.measurementLabelScale;
-    sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
-    sprite.renderOrder = 3;
+    sprite.position.copy(center).add(new THREE5.Vector3(0, 0, size.z / 2));
+    sprite.center.set(0.5, -0.35);
     this.group.add(sprite);
     objects.push(sprite);
     return objects;
@@ -1256,18 +1259,57 @@ var MeasurementManager = class {
     box.getSize(size);
     return size.x * size.y * size.z;
   }
+  /**
+   * Vertex marker: a constant screen-size dot sprite (like a map pin, not a
+   * world-sized ball) so markers stay small and precise at any zoom level.
+   * `measurementSphereRadius` acts as a size multiplier (0.15 = standard).
+   */
+  makeVertexDot(position, color) {
+    const mat = new THREE5.SpriteMaterial({
+      map: this._getDotTexture(),
+      color,
+      sizeAttenuation: false,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true
+    });
+    const dot = new THREE5.Sprite(mat);
+    const s = 0.016 * (this._displaySettings.measurementSphereRadius / 0.15);
+    dot.scale.set(s, s, 1);
+    dot.position.copy(position);
+    dot.renderOrder = 2;
+    return dot;
+  }
+  /** Cached dot texture: white disc (tinted by material color) + dark outline ring. */
+  _getDotTexture() {
+    if (this._dotTexture) return this._dotTexture;
+    const S = 32;
+    const canvas = document.createElement("canvas");
+    canvas.width = S;
+    canvas.height = S;
+    const ctx = canvas.getContext("2d");
+    const c = S / 2;
+    ctx.beginPath();
+    ctx.arc(c, c, 13, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.85)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(c, c, 9, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    const tex = new THREE5.CanvasTexture(canvas);
+    tex.minFilter = THREE5.LinearFilter;
+    this._dotTexture = tex;
+    return tex;
+  }
   buildObjects(m) {
     const objects = [];
     const color = new THREE5.Color(m.color);
     const pts = m.points;
     pts.forEach((p) => {
-      const geo = new THREE5.SphereGeometry(this._displaySettings.measurementSphereRadius, 8, 6);
-      const mat = new THREE5.MeshBasicMaterial({ color, depthTest: false });
-      const mesh = new THREE5.Mesh(geo, mat);
-      mesh.position.copy(p);
-      mesh.renderOrder = 2;
-      this.group.add(mesh);
-      objects.push(mesh);
+      const dot = this.makeVertexDot(p, color);
+      this.group.add(dot);
+      objects.push(dot);
     });
     if (pts.length >= 2) {
       const lineType = m.type === "height" ? "vertical" : "direct";
@@ -1325,35 +1367,70 @@ var MeasurementManager = class {
         }
       }
       if (text) {
+        const anchor = this.labelAnchor(m);
+        const onLine = m.type === "distance" || m.type === "height";
         const sprite = this.makeTextSprite(text, m.color);
-        const mid = new THREE5.Vector3();
-        for (const p of pts) mid.add(p);
-        mid.divideScalar(pts.length);
-        sprite.position.copy(mid).add(new THREE5.Vector3(0, 0, 1));
-        const ls = this._displaySettings.measurementLabelScale;
-        sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
-        sprite.renderOrder = 3;
+        sprite.position.copy(anchor);
+        if (!onLine) sprite.center.set(0.5, -0.35);
         this.group.add(sprite);
         objects.push(sprite);
       }
     }
     return objects;
   }
+  /** World anchor for a measurement's label. */
+  labelAnchor(m) {
+    const pts = m.points;
+    if (m.type === "height" && pts.length >= 2) {
+      return new THREE5.Vector3(pts[0].x, pts[0].y, (pts[0].z + pts[1].z) / 2);
+    }
+    if (m.type === "angle" && pts.length >= 2) return pts[1].clone();
+    const mid = new THREE5.Vector3();
+    for (const p of pts) mid.add(p);
+    return mid.divideScalar(Math.max(pts.length, 1));
+  }
+  /**
+   * Value label: constant screen-size sprite (`sizeAttenuation:false`) so it is
+   * equally readable on a 5 m room and a 500 m site. White text on a dark card
+   * with the measurement color as accent bar + border — high contrast on both
+   * bright and dark point clouds. `measurementLabelScale` multiplies the size.
+   */
   makeTextSprite(text, color) {
+    const W = 512, H = 96;
     const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 48;
+    canvas.width = W;
+    canvas.height = H;
     const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "rgba(0,0,0,0.78)";
-    ctx.roundRect(2, 2, 252, 44, 6);
+    ctx.beginPath();
+    ctx.roundRect(3, 3, W - 6, H - 6, 14);
+    ctx.fillStyle = "rgba(10,10,12,0.88)";
     ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.roundRect(10, 16, 10, H - 32, 5);
     ctx.fillStyle = color;
-    ctx.font = "bold 28px -apple-system, 'Segoe UI', sans-serif";
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 52px -apple-system, 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, 128, 24);
+    ctx.fillText(text, W / 2 + 8, H / 2 + 2);
     const tex = new THREE5.CanvasTexture(canvas);
-    return new THREE5.Sprite(new THREE5.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    tex.minFilter = THREE5.LinearFilter;
+    const sprite = new THREE5.Sprite(new THREE5.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      sizeAttenuation: false,
+      // constant on-screen size at any zoom
+      depthTest: false,
+      depthWrite: false
+    }));
+    const ls = this._displaySettings.measurementLabelScale;
+    sprite.scale.set(0.2 * ls, 0.2 * H / W * ls, 1);
+    sprite.renderOrder = 4;
+    return sprite;
   }
   rebuildPreview() {
     this.clearPreview();
@@ -1400,6 +1477,8 @@ var MeasurementManager = class {
     this.clearSnap();
     this._crossTexture?.dispose();
     this._crossTexture = void 0;
+    this._dotTexture?.dispose();
+    this._dotTexture = void 0;
     this.scene.remove(this.group);
   }
 };
@@ -1718,22 +1797,24 @@ var MinimapRenderer = class {
     if (render3D) this._render3D();
     if (this.frameCount % 2 === 0) this._drawOverlay();
   }
+  /** Sync canvas backing stores to the container's CSS size (no-op when equal). */
+  _syncSize() {
+    const c = this.container;
+    if (!c || !this.glCanvas) return;
+    const w = c.clientWidth;
+    const h = c.clientHeight;
+    if (this.glCanvas.width === w && this.glCanvas.height === h) return;
+    this.glCanvas.width = w;
+    this.glCanvas.height = h;
+    this.miniRenderer?.setSize(w, h, false);
+    if (this.overlayCanvas) {
+      this.overlayCanvas.width = w;
+      this.overlayCanvas.height = h;
+    }
+  }
   _render3D() {
     if (!this.miniRenderer || !this.bounds) return;
-    const c = this.container;
-    if (c && this.glCanvas) {
-      const w = c.clientWidth;
-      const h = c.clientHeight;
-      if (this.glCanvas.width !== w || this.glCanvas.height !== h) {
-        this.glCanvas.width = w;
-        this.glCanvas.height = h;
-        this.miniRenderer.setSize(w, h, false);
-        if (this.overlayCanvas) {
-          this.overlayCanvas.width = w;
-          this.overlayCanvas.height = h;
-        }
-      }
-    }
+    this._syncSize();
     this.miniRenderer.render(this.sceneManager.scene, this.orthoCamera);
   }
   _drawOverlay() {
@@ -1757,15 +1838,17 @@ var MinimapRenderer = class {
     const H = this.overlayCanvas?.height ?? 176;
     return (1 - (wy - this.worldBottom) / (this.worldTop - this.worldBottom)) * H;
   }
-  _drawCamera(ctx, _W, _H) {
+  _drawCamera(ctx, W, H) {
     const cam = this.sceneManager.camera;
     const dir = new THREE5.Vector3();
     cam.getWorldDirection(dir);
-    const cx = this._worldToCanvasX(cam.position.x);
-    const cy = this._worldToCanvasY(cam.position.y);
+    const cx = Math.min(Math.max(this._worldToCanvasX(cam.position.x), 5), W - 5);
+    const cy = Math.min(Math.max(this._worldToCanvasY(cam.position.y), 5), H - 5);
     const angle = Math.atan2(-dir.y, dir.x);
-    const fovLen = 28;
-    const halfFov = THREE5.MathUtils.degToRad(cam.fov * 0.5 * (1 / Math.max(cam.aspect, 0.1)));
+    const fovLen = Math.max(20, H * 0.16);
+    const halfFov = Math.atan(
+      Math.tan(THREE5.MathUtils.degToRad(cam.fov) / 2) * Math.max(cam.aspect, 0.1)
+    );
     const left = angle - halfFov;
     const right = angle + halfFov;
     ctx.beginPath();
@@ -1793,18 +1876,7 @@ var MinimapRenderer = class {
   }
   /** Handle resize (called by parent when container size changes) */
   resize() {
-    if (!this.container) return;
-    const w = this.container.clientWidth;
-    const h = this.container.clientHeight;
-    if (this.glCanvas) {
-      this.glCanvas.width = w;
-      this.glCanvas.height = h;
-    }
-    if (this.overlayCanvas) {
-      this.overlayCanvas.width = w;
-      this.overlayCanvas.height = h;
-    }
-    this.miniRenderer?.setSize(w, h, false);
+    this._syncSize();
   }
   dispose() {
     this.miniRenderer?.dispose();
@@ -2066,6 +2138,10 @@ var ClipManager = class {
   constructor(sm) {
     this.sm = sm;
   }
+  /** Look up a box entry by id. */
+  entryOf(id) {
+    return id ? this.entries.find((e) => e.id === id) : void 0;
+  }
   /**
    * Remove a Box3Helper from the scene and dispose BOTH its geometry and its
    * internally-created LineBasicMaterial. Box3Helper owns its material, so
@@ -2102,12 +2178,14 @@ var ClipManager = class {
       tc.addEventListener("change", () => this.syncFromPivot());
       tc.addEventListener("dragging-changed", (e) => {
         this.sm.controls.enabled = !e.value;
+        const sibling = tc === this.tcMove ? this.tcRotate : this.tcMove;
+        if (sibling) sibling.enabled = !e.value;
       });
       this.sm.scene.add(tc.getHelper());
       return tc;
     };
-    this.tcMove = makeTc("translate", 0.8);
-    this.tcRotate = makeTc("rotate", 1.1);
+    this.tcMove = makeTc("translate", 0.55);
+    this.tcRotate = makeTc("rotate", 1.25);
     this._raiseGizmo();
   }
   /**
@@ -2193,7 +2271,7 @@ var ClipManager = class {
     this.selectedId = id;
     this.onSelectChange?.(id);
     if (!id) return;
-    const entry = this.entries.find((e) => e.id === id);
+    const entry = this.entryOf(id);
     if (!entry) return;
     await this.initTransformControls();
     const center = new THREE5.Vector3();
@@ -2215,15 +2293,17 @@ var ClipManager = class {
         this.sm.renderer.domElement
       );
     }
-    this._applyTransformMode();
+    this._showSelectionHandles();
     this._applyOutlineVisibility();
     this._highlightHelper(id, true);
   }
-  /** Switch the active transform mode for the selected box (move/scale/rotate). */
-  setTransformMode(mode) {
-    this._transformMode = mode;
-    this._applyTransformMode();
+  /**
+   * @deprecated All handle sets (move / scale / rotate) now show simultaneously
+   * — there are no modes to switch. Kept as a no-op for API compatibility.
+   */
+  setTransformMode(_mode) {
   }
+  /** @deprecated See {@link setTransformMode}. Always returns "scale". */
   getTransformMode() {
     return this._transformMode;
   }
@@ -2250,42 +2330,32 @@ var ClipManager = class {
     });
   }
   /**
-   * Show only the handles for the active mode:
-   * - `scale` → 6 face-resize spheres (no gizmos),
-   * - `translate` → move arrows,
-   * - `rotate` → full XYZ rotation rings.
-   * Keeping a single set active avoids overlapping handles grabbing each other.
+   * Attach ALL handle sets to the selected box at once: move arrows, full-XYZ
+   * rotate rings, and the 6 face-resize spheres. Overlap conflicts are handled
+   * by size separation (arrows 0.55 inside rings 1.25, spheres off the faces)
+   * plus the mutual drag exclusion wired in _doInitTransformControls.
    */
-  _applyTransformMode() {
+  _showSelectionHandles() {
     if (!this.pivot || !this.selectedId) return;
     const move = this.tcMove;
     const rotate = this.tcRotate;
-    const entry = this.entries.find((e) => e.id === this.selectedId);
-    if (this._transformMode === "scale") {
-      move?.detach();
-      rotate?.detach();
-      if (entry) {
-        if (!this._faceHandles?.isAttached()) this._attachFaceHandles(entry);
-        this._faceHandles?.setGroupVisible(true);
-        this._faceHandles?.updatePositions();
-      }
-    } else if (this._transformMode === "translate") {
-      rotate?.detach();
-      this._faceHandles?.detach();
-      if (move) {
-        move.attach(this.pivot);
-        move.showX = move.showY = move.showZ = true;
-      }
-      this._raiseGizmo();
-    } else {
-      move?.detach();
-      this._faceHandles?.detach();
-      if (rotate) {
-        rotate.attach(this.pivot);
-        rotate.showX = rotate.showY = rotate.showZ = true;
-      }
-      this._raiseGizmo();
+    const entry = this.entryOf(this.selectedId);
+    if (entry) {
+      if (!this._faceHandles?.isAttached()) this._attachFaceHandles(entry);
+      this._faceHandles?.setGroupVisible(true);
+      this._faceHandles?.updatePositions();
     }
+    if (move) {
+      move.attach(this.pivot);
+      move.enabled = true;
+      move.showX = move.showY = move.showZ = true;
+    }
+    if (rotate) {
+      rotate.attach(this.pivot);
+      rotate.enabled = true;
+      rotate.showX = rotate.showY = rotate.showZ = true;
+    }
+    this._raiseGizmo();
   }
   /** Detach both gizmos. */
   _detachGizmos() {
@@ -2299,7 +2369,7 @@ var ClipManager = class {
   resetRotation(id) {
     const targetId = id ?? this.selectedId;
     if (!targetId) return;
-    const entry = this.entries.find((e) => e.id === targetId);
+    const entry = this.entryOf(targetId);
     if (!entry) return;
     entry.quaternion.identity();
     if (this.selectedId === targetId) {
@@ -2334,7 +2404,7 @@ var ClipManager = class {
     this.onChange?.(this.getBoxes());
   }
   setBoxMode(id, mode) {
-    const entry = this.entries.find((e) => e.id === id);
+    const entry = this.entryOf(id);
     if (!entry) return;
     entry.mode = mode;
     this.applyAll();
@@ -2410,14 +2480,14 @@ var ClipManager = class {
     }
     const selected = show && this.selectedId !== null;
     if (selected) {
-      this._applyTransformMode();
+      this._showSelectionHandles();
     } else {
       this._detachGizmos();
       this._faceHandles?.setGroupVisible(false);
     }
   }
   setBoxVisible(id, visible) {
-    const entry = this.entries.find((e) => e.id === id);
+    const entry = this.entryOf(id);
     if (!entry) return;
     entry.visible = visible;
     const helper = this.helpers.get(id);
@@ -2428,7 +2498,7 @@ var ClipManager = class {
     this.onChange?.(this.getBoxes());
   }
   renameBox(id, name) {
-    const entry = this.entries.find((e) => e.id === id);
+    const entry = this.entryOf(id);
     if (!entry) return;
     entry.name = name;
     this.onChange?.(this.getBoxes());
@@ -2491,7 +2561,7 @@ var ClipManager = class {
   }
   syncFromPivot() {
     if (!this.pivot || !this.selectedId) return;
-    const entry = this.entries.find((e) => e.id === this.selectedId);
+    const entry = this.entryOf(this.selectedId);
     if (!entry) return;
     const center = this.pivot.position.clone();
     const halfSize = new THREE5.Vector3(
@@ -2846,7 +2916,9 @@ var S3SourceAdapter = class {
     return res.arrayBuffer();
   }
   fetchWithHeaders(input, init) {
-    const mergedHeaders = { ...this.headers, ...init?.headers };
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const ours = url.startsWith(this.baseUrl);
+    const mergedHeaders = ours ? { ...this.headers, ...init?.headers } : init?.headers;
     return fetch(input, { ...init, headers: mergedHeaders });
   }
 };

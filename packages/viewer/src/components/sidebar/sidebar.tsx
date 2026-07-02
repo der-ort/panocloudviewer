@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Camera, Layers, Ruler, Bookmark, Box } from "lucide-react";
 import { useLocale } from "../../i18n/locale-context";
 import { useViewer } from "../../providers/viewer-provider";
@@ -16,8 +16,14 @@ type Tab = "layers" | "panoramas" | "scene" | "measurements" | "scenes";
 export function Sidebar() {
   const [tab, setTab] = useState<Tab>("layers");
   const t = useLocale().sidebar;
-  const { uiMode } = useViewer();
+  const { uiMode, activeTool } = useViewer();
   const { cameras } = useData();
+
+  // Picking a measurement tool jumps straight to the measurements list so new
+  // results appear where the user is already looking.
+  useEffect(() => {
+    if (activeTool.startsWith("measure-")) setTab("measurements");
+  }, [activeTool]);
 
   const isPro = uiMode === "professional";
   const hasPanoramas = cameras.length > 0;

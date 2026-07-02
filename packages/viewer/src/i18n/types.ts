@@ -148,6 +148,8 @@ export interface ViewerLocale {
     hintArea: string;
     hintAngle: string;
     hintSectionBox: string;
+    hintVolumeFootprint: string;
+    hintVolumeHeight: string;
     initialisingRenderer: string;
     statusPts: (millions: number) => string;
     statusBudget: (millions: number) => string;
@@ -218,9 +220,17 @@ export interface ViewerLocale {
     show: string;
     hide: string;
     delete: string;
+    /** @deprecated unused — handles show simultaneously (kept for locale compat) */
     move: string;
+    /** @deprecated unused — handles show simultaneously (kept for locale compat) */
     scale: string;
+    /** @deprecated unused — handles show simultaneously (kept for locale compat) */
     rotateZ: string;
+    clippingOn: string;
+    clippingOff: string;
+    outlinesOn: string;
+    outlinesOff: string;
+    resetRotation: string;
   };
   /** UI mode labels and related toolbar strings */
   uiModes: {

@@ -41,7 +41,17 @@ export class S3SourceAdapter implements FileSourceAdapter {
   }
 
   fetchWithHeaders(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    const mergedHeaders = { ...this.headers, ...(init?.headers as Record<string, string>) };
+    // Only attach the configured (potentially auth) headers to requests that
+    // target OUR base URL — never leak credentials to foreign origins that a
+    // crafted metadata/cameras file might point at.
+    const url =
+      typeof input === "string" ? input :
+      input instanceof URL ? input.href :
+      input.url;
+    const ours = url.startsWith(this.baseUrl);
+    const mergedHeaders = ours
+      ? { ...this.headers, ...(init?.headers as Record<string, string>) }
+      : init?.headers;
     return fetch(input, { ...init, headers: mergedHeaders });
   }
 }

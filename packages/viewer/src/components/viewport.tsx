@@ -182,20 +182,35 @@ export function Viewport({ className }: ViewportProps) {
     }
   }, [showMinimap]);
 
-  // Click-to-navigate on minimap
-  const handleMinimapClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  // Minimap navigation: move the orbit target (and camera, keeping its offset)
+  // to the world position under the given minimap pixel.
+  const navigateMinimap = useCallback((el: HTMLElement, clientX: number, clientY: number) => {
     const sm = smRef.current;
     const minimap = minimapRef.current;
     if (!sm || !minimap) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
-    const world = minimap.canvasToWorld(cx, cy);
+    const rect = el.getBoundingClientRect();
+    const world = minimap.canvasToWorld(clientX - rect.left, clientY - rect.top);
     const cam = sm.camera;
     const offset = new THREE.Vector3().subVectors(cam.position, sm.controls.target);
     sm.controls.target.set(world.x, world.y, sm.controls.target.z);
     cam.position.set(world.x + offset.x, world.y + offset.y, cam.position.z);
     sm.controls.update();
+  }, []);
+
+  // Click OR drag on the minimap to navigate — dragging pans the main view
+  // continuously, like scrubbing a map.
+  const minimapDragRef = useRef(false);
+  const handleMinimapPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    minimapDragRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    navigateMinimap(e.currentTarget, e.clientX, e.clientY);
+  }, [navigateMinimap]);
+  const handleMinimapPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (minimapDragRef.current) navigateMinimap(e.currentTarget, e.clientX, e.clientY);
+  }, [navigateMinimap]);
+  const handleMinimapPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    minimapDragRef.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
   }, []);
 
   // Rebuild markers when cameras load
@@ -229,6 +244,7 @@ export function Viewport({ className }: ViewportProps) {
 
   // Clear snap/draft preview when switching away from a measurement tool
   useEffect(() => {
+    lastSnapRef.current = null;
     if (!activeTool.startsWith("measure-")) {
       measureRef.current?.clearSnap();
     }
@@ -284,9 +300,13 @@ export function Viewport({ className }: ViewportProps) {
     return projectToPlaneZ(nx, ny, sm.controls.target.z);
   }, [projectToPlaneZ]);
 
-  // Live snap-crosshair preview, throttled to one GPU pick per frame.
+  // Live snap-crosshair preview, throttled to one GPU pick per frame. The last
+  // previewed point is kept so a click commits EXACTLY what the crosshair shows
+  // (WYSIWYG) instead of re-picking — re-picking could land on a different point.
+  const lastSnapRef = useRef<THREE.Vector3 | null>(null);
   const { scheduleSnap, cancelSnap } = useSnapThrottle((nx, ny) => {
     const hit = pickVisiblePoint(nx, ny);
+    lastSnapRef.current = hit;
     if (hit) measureRef.current?.updateSnap(hit);
   });
 
@@ -530,14 +550,15 @@ export function Viewport({ className }: ViewportProps) {
       }
     }
 
-    // Measurement clicks — snap to the front-most VISIBLE point (rejects points
-    // clipped away by a section box); volume uses drag, not clicks.
+    // Measurement clicks — commit the point the crosshair is previewing (WYSIWYG);
+    // fall back to a fresh pick when there is no preview (e.g. touch, no mousemove).
+    // Volume uses drag, not clicks.
     if (activeTool.startsWith("measure-") && activeTool !== "measure-volume" && measureRef.current) {
       const type = activeTool.replace("measure-", "") as import("@der-ort/pano-cloud-viewer-core").MeasurementType;
-      const hit = pickVisiblePoint(nx, ny);
+      const hit = lastSnapRef.current ?? pickVisiblePoint(nx, ny);
       if (hit) {
         if (!measureRef.current.activeMeasurement) measureRef.current.start(type);
-        measureRef.current.addPoint(hit);
+        measureRef.current.addPoint(hit.clone());
       }
     }
   }, [activeTool, cameras, config, pickVisiblePoint, showMarkers]);
@@ -545,6 +566,7 @@ export function Viewport({ className }: ViewportProps) {
   // Hide the snap crosshair (and drop any pending pick) when the cursor leaves.
   const handleMouseLeave = useCallback(() => {
     cancelSnap();
+    lastSnapRef.current = null; // a later click must not commit a stale preview
     measureRef.current?.clearSnap();
   }, [cancelSnap]);
 
@@ -607,7 +629,9 @@ export function Viewport({ className }: ViewportProps) {
             // Lift above the OS home indicator / browser nav bar on mobile.
             bottom: "calc(2.5rem + env(safe-area-inset-bottom))",
           }}
-          onClick={handleMinimapClick}
+          onPointerDown={handleMinimapPointerDown}
+          onPointerMove={handleMinimapPointerMove}
+          onPointerUp={handleMinimapPointerUp}
         >
           <div
             ref={minimapContainerRef}
@@ -616,9 +640,11 @@ export function Viewport({ className }: ViewportProps) {
           <div className="absolute top-1 left-2 text-[9px] text-white/40 font-mono pointer-events-none">
             {t.overview}
           </div>
-          {/* Resize handle — top-right corner */}
+          {/* Resize handle — top-right corner. stopPropagation on pointerdown so
+              starting a resize doesn't also trigger minimap navigation. */}
           <div
             onMouseDown={handleMinimapResizeStart}
+            onPointerDown={(e) => e.stopPropagation()}
             className="absolute top-0 right-0 w-4 h-4 cursor-nwse-resize flex items-center justify-center"
             title="Resize minimap"
           >
@@ -637,7 +663,7 @@ export function Viewport({ className }: ViewportProps) {
           {activeTool === "measure-height" && t.hintHeight}
           {activeTool === "measure-area" && t.hintArea}
           {activeTool === "measure-angle" && t.hintAngle}
-          {activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? "Move mouse up/down to set height, click to confirm" : "Drag to draw volume footprint")}
+          {activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? t.hintVolumeHeight : t.hintVolumeFootprint)}
           {activeTool === "section-box" && t.hintSectionBox}
         </div>
       )}

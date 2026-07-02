@@ -346,7 +346,9 @@ export class SceneManager {
       const octree = pc as any;
       if (typeof octree.pick !== "function") continue;
       const result = octree.pick(this.renderer, this.camera, raycaster.ray, {
-        pickWindowSize: 17,
+        // Generous window so thin structures (edges, poles, railings) are easy
+        // to hit — the pick still returns the point closest to the ray.
+        pickWindowSize: 31,
       });
       if (result?.position) {
         return result.position.clone();

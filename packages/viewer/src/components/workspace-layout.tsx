@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, lazy, Suspense } from "react";
+import React, { useState, useEffect, lazy, Suspense } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn, pcvChromeScaleStyle as chromeScale } from "../lib/utils";
 import { useViewer } from "../providers/viewer-provider";
@@ -64,6 +64,12 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
   const t = useLocale().viewport;
 
   const isPro = uiMode === "professional";
+
+  // Selecting a measurement tool opens the sidebar (which auto-switches to the
+  // measurements tab) — but not on mobile, where it would cover the viewport.
+  useEffect(() => {
+    if (activeTool.startsWith("measure-") && !isMobile) setSidebarOpen(true);
+  }, [activeTool, isMobile]);
 
   return (
     <div

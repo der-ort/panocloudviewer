@@ -113,26 +113,25 @@ export class MinimapRenderer {
     if (this.frameCount % 2 === 0) this._drawOverlay();
   }
 
+  /** Sync canvas backing stores to the container's CSS size (no-op when equal). */
+  private _syncSize() {
+    const c = this.container;
+    if (!c || !this.glCanvas) return;
+    const w = c.clientWidth;
+    const h = c.clientHeight;
+    if (this.glCanvas.width === w && this.glCanvas.height === h) return;
+    this.glCanvas.width = w;
+    this.glCanvas.height = h;
+    this.miniRenderer?.setSize(w, h, false);
+    if (this.overlayCanvas) {
+      this.overlayCanvas.width = w;
+      this.overlayCanvas.height = h;
+    }
+  }
+
   private _render3D() {
     if (!this.miniRenderer || !this.bounds) return;
-
-    // Resize if container changed
-    const c = this.container;
-    if (c && this.glCanvas) {
-      const w = c.clientWidth;
-      const h = c.clientHeight;
-      if (this.glCanvas.width !== w || this.glCanvas.height !== h) {
-        this.glCanvas.width = w;
-        this.glCanvas.height = h;
-        this.miniRenderer.setSize(w, h, false);
-        if (this.overlayCanvas) {
-          this.overlayCanvas.width = w;
-          this.overlayCanvas.height = h;
-        }
-      }
-    }
-
-    // Render main scene from top-down
+    this._syncSize(); // self-heal if the parent missed a resize() call
     this.miniRenderer.render(this.sceneManager.scene, this.orthoCamera);
   }
 
@@ -165,18 +164,23 @@ export class MinimapRenderer {
     return (1 - (wy - this.worldBottom) / (this.worldTop - this.worldBottom)) * H;
   }
 
-  private _drawCamera(ctx: CanvasRenderingContext2D, _W: number, _H: number) {
+  private _drawCamera(ctx: CanvasRenderingContext2D, W: number, H: number) {
     const cam = this.sceneManager.camera;
     const dir = new THREE.Vector3();
     cam.getWorldDirection(dir);
 
-    const cx = this._worldToCanvasX(cam.position.x);
-    const cy = this._worldToCanvasY(cam.position.y);
+    // Clamp the indicator to the minimap edge when the camera is outside the
+    // mapped world range — an off-canvas dot reads as "no camera at all".
+    const cx = Math.min(Math.max(this._worldToCanvasX(cam.position.x), 5), W - 5);
+    const cy = Math.min(Math.max(this._worldToCanvasY(cam.position.y), 5), H - 5);
 
-    // Frustum cone
+    // Frustum cone — horizontal half-FOV derived from the vertical FOV + aspect
+    // (hFov = 2·atan(tan(vFov/2)·aspect)); cone length scales with minimap size.
     const angle = Math.atan2(-dir.y, dir.x);
-    const fovLen = 28;
-    const halfFov = THREE.MathUtils.degToRad(cam.fov * 0.5 * (1 / Math.max(cam.aspect, 0.1)));
+    const fovLen = Math.max(20, H * 0.16);
+    const halfFov = Math.atan(
+      Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2) * Math.max(cam.aspect, 0.1)
+    );
     const left  = angle - halfFov;
     const right = angle + halfFov;
 
@@ -209,18 +213,7 @@ export class MinimapRenderer {
 
   /** Handle resize (called by parent when container size changes) */
   resize() {
-    if (!this.container) return;
-    const w = this.container.clientWidth;
-    const h = this.container.clientHeight;
-    if (this.glCanvas) {
-      this.glCanvas.width = w;
-      this.glCanvas.height = h;
-    }
-    if (this.overlayCanvas) {
-      this.overlayCanvas.width = w;
-      this.overlayCanvas.height = h;
-    }
-    this.miniRenderer?.setSize(w, h, false);
+    this._syncSize();
   }
 
   dispose() {

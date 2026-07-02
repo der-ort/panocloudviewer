@@ -52,11 +52,14 @@ export function useClipActions() {
     clipManager?.resetRotation(id);
   }, [clipManager]);
 
-  const setTransformMode = useCallback((mode: "translate" | "scale" | "rotate") => {
+  /**
+   * @deprecated Move/scale/rotate handles now show simultaneously on the
+   * selected box — there are no modes. Selecting a box is all that's needed;
+   * kept so existing custom UIs keep compiling.
+   */
+  const setTransformMode = useCallback((_mode: "translate" | "scale" | "rotate") => {
     if (!clipManager) return;
-    // Ensure a box is selected so the mode has something to act on.
     if (!clipManager.getSelectedId() && boxes[0]) clipManager.selectBox(boxes[0].id);
-    clipManager.setTransformMode(mode);
   }, [clipManager, boxes]);
 
   const removeBox = useCallback((id: string) => {

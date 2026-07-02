@@ -443,7 +443,9 @@ var init_dist = __esm({
           const octree = pc;
           if (typeof octree.pick !== "function") continue;
           const result = octree.pick(this.renderer, this.camera, raycaster.ray, {
-            pickWindowSize: 17
+            // Generous window so thin structures (edges, poles, railings) are easy
+            // to hit — the pick still returns the point closest to the ray.
+            pickWindowSize: 31
           });
           if (result?.position) {
             return result.position.clone();
@@ -1014,6 +1016,8 @@ var init_dist = __esm({
       _snapCross = null;
       _snapLine = null;
       _crossTexture;
+      // Shared vertex-dot texture (white disc + dark ring, tinted per measurement).
+      _dotTexture;
       constructor(scene) {
         this.scene = scene;
         this.group = new THREE5__namespace.Group();
@@ -1047,8 +1051,9 @@ var init_dist = __esm({
             o.geometry.dispose();
             o.material.dispose();
           } else if (o instanceof THREE5__namespace.Sprite) {
-            o.material.map?.dispose();
-            o.material.dispose();
+            const mat = o.material;
+            if (mat.map && mat.map !== this._dotTexture) mat.map.dispose();
+            mat.dispose();
           }
           this.group.remove(o);
         });
@@ -1299,10 +1304,8 @@ var init_dist = __esm({
         objects.push(edges);
         const text = formatVolume(m.value);
         const sprite = this.makeTextSprite(text, m.color);
-        sprite.position.copy(center).add(new THREE5__namespace.Vector3(0, 0, size.z / 2 + 0.5));
-        const ls = this._displaySettings.measurementLabelScale;
-        sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
-        sprite.renderOrder = 3;
+        sprite.position.copy(center).add(new THREE5__namespace.Vector3(0, 0, size.z / 2));
+        sprite.center.set(0.5, -0.35);
         this.group.add(sprite);
         objects.push(sprite);
         return objects;
@@ -1348,18 +1351,57 @@ var init_dist = __esm({
         box.getSize(size);
         return size.x * size.y * size.z;
       }
+      /**
+       * Vertex marker: a constant screen-size dot sprite (like a map pin, not a
+       * world-sized ball) so markers stay small and precise at any zoom level.
+       * `measurementSphereRadius` acts as a size multiplier (0.15 = standard).
+       */
+      makeVertexDot(position, color) {
+        const mat = new THREE5__namespace.SpriteMaterial({
+          map: this._getDotTexture(),
+          color,
+          sizeAttenuation: false,
+          depthTest: false,
+          depthWrite: false,
+          transparent: true
+        });
+        const dot = new THREE5__namespace.Sprite(mat);
+        const s = 0.016 * (this._displaySettings.measurementSphereRadius / 0.15);
+        dot.scale.set(s, s, 1);
+        dot.position.copy(position);
+        dot.renderOrder = 2;
+        return dot;
+      }
+      /** Cached dot texture: white disc (tinted by material color) + dark outline ring. */
+      _getDotTexture() {
+        if (this._dotTexture) return this._dotTexture;
+        const S = 32;
+        const canvas = document.createElement("canvas");
+        canvas.width = S;
+        canvas.height = S;
+        const ctx = canvas.getContext("2d");
+        const c = S / 2;
+        ctx.beginPath();
+        ctx.arc(c, c, 13, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(0,0,0,0.85)";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(c, c, 9, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        const tex = new THREE5__namespace.CanvasTexture(canvas);
+        tex.minFilter = THREE5__namespace.LinearFilter;
+        this._dotTexture = tex;
+        return tex;
+      }
       buildObjects(m) {
         const objects = [];
         const color = new THREE5__namespace.Color(m.color);
         const pts = m.points;
         pts.forEach((p) => {
-          const geo = new THREE5__namespace.SphereGeometry(this._displaySettings.measurementSphereRadius, 8, 6);
-          const mat = new THREE5__namespace.MeshBasicMaterial({ color, depthTest: false });
-          const mesh = new THREE5__namespace.Mesh(geo, mat);
-          mesh.position.copy(p);
-          mesh.renderOrder = 2;
-          this.group.add(mesh);
-          objects.push(mesh);
+          const dot = this.makeVertexDot(p, color);
+          this.group.add(dot);
+          objects.push(dot);
         });
         if (pts.length >= 2) {
           const lineType = m.type === "height" ? "vertical" : "direct";
@@ -1417,35 +1459,70 @@ var init_dist = __esm({
             }
           }
           if (text) {
+            const anchor = this.labelAnchor(m);
+            const onLine = m.type === "distance" || m.type === "height";
             const sprite = this.makeTextSprite(text, m.color);
-            const mid = new THREE5__namespace.Vector3();
-            for (const p of pts) mid.add(p);
-            mid.divideScalar(pts.length);
-            sprite.position.copy(mid).add(new THREE5__namespace.Vector3(0, 0, 1));
-            const ls = this._displaySettings.measurementLabelScale;
-            sprite.scale.set(3.2 * ls, 0.8 * ls, 1);
-            sprite.renderOrder = 3;
+            sprite.position.copy(anchor);
+            if (!onLine) sprite.center.set(0.5, -0.35);
             this.group.add(sprite);
             objects.push(sprite);
           }
         }
         return objects;
       }
+      /** World anchor for a measurement's label. */
+      labelAnchor(m) {
+        const pts = m.points;
+        if (m.type === "height" && pts.length >= 2) {
+          return new THREE5__namespace.Vector3(pts[0].x, pts[0].y, (pts[0].z + pts[1].z) / 2);
+        }
+        if (m.type === "angle" && pts.length >= 2) return pts[1].clone();
+        const mid = new THREE5__namespace.Vector3();
+        for (const p of pts) mid.add(p);
+        return mid.divideScalar(Math.max(pts.length, 1));
+      }
+      /**
+       * Value label: constant screen-size sprite (`sizeAttenuation:false`) so it is
+       * equally readable on a 5 m room and a 500 m site. White text on a dark card
+       * with the measurement color as accent bar + border — high contrast on both
+       * bright and dark point clouds. `measurementLabelScale` multiplies the size.
+       */
       makeTextSprite(text, color) {
+        const W = 512, H = 96;
         const canvas = document.createElement("canvas");
-        canvas.width = 256;
-        canvas.height = 48;
+        canvas.width = W;
+        canvas.height = H;
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "rgba(0,0,0,0.78)";
-        ctx.roundRect(2, 2, 252, 44, 6);
+        ctx.beginPath();
+        ctx.roundRect(3, 3, W - 6, H - 6, 14);
+        ctx.fillStyle = "rgba(10,10,12,0.88)";
         ctx.fill();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.roundRect(10, 16, 10, H - 32, 5);
         ctx.fillStyle = color;
-        ctx.font = "bold 28px -apple-system, 'Segoe UI', sans-serif";
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 52px -apple-system, 'Segoe UI', sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(text, 128, 24);
+        ctx.fillText(text, W / 2 + 8, H / 2 + 2);
         const tex = new THREE5__namespace.CanvasTexture(canvas);
-        return new THREE5__namespace.Sprite(new THREE5__namespace.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+        tex.minFilter = THREE5__namespace.LinearFilter;
+        const sprite = new THREE5__namespace.Sprite(new THREE5__namespace.SpriteMaterial({
+          map: tex,
+          transparent: true,
+          sizeAttenuation: false,
+          // constant on-screen size at any zoom
+          depthTest: false,
+          depthWrite: false
+        }));
+        const ls = this._displaySettings.measurementLabelScale;
+        sprite.scale.set(0.2 * ls, 0.2 * H / W * ls, 1);
+        sprite.renderOrder = 4;
+        return sprite;
       }
       rebuildPreview() {
         this.clearPreview();
@@ -1492,6 +1569,8 @@ var init_dist = __esm({
         this.clearSnap();
         this._crossTexture?.dispose();
         this._crossTexture = void 0;
+        this._dotTexture?.dispose();
+        this._dotTexture = void 0;
         this.scene.remove(this.group);
       }
     };
@@ -1803,22 +1882,24 @@ var init_dist = __esm({
         if (render3D) this._render3D();
         if (this.frameCount % 2 === 0) this._drawOverlay();
       }
+      /** Sync canvas backing stores to the container's CSS size (no-op when equal). */
+      _syncSize() {
+        const c = this.container;
+        if (!c || !this.glCanvas) return;
+        const w = c.clientWidth;
+        const h = c.clientHeight;
+        if (this.glCanvas.width === w && this.glCanvas.height === h) return;
+        this.glCanvas.width = w;
+        this.glCanvas.height = h;
+        this.miniRenderer?.setSize(w, h, false);
+        if (this.overlayCanvas) {
+          this.overlayCanvas.width = w;
+          this.overlayCanvas.height = h;
+        }
+      }
       _render3D() {
         if (!this.miniRenderer || !this.bounds) return;
-        const c = this.container;
-        if (c && this.glCanvas) {
-          const w = c.clientWidth;
-          const h = c.clientHeight;
-          if (this.glCanvas.width !== w || this.glCanvas.height !== h) {
-            this.glCanvas.width = w;
-            this.glCanvas.height = h;
-            this.miniRenderer.setSize(w, h, false);
-            if (this.overlayCanvas) {
-              this.overlayCanvas.width = w;
-              this.overlayCanvas.height = h;
-            }
-          }
-        }
+        this._syncSize();
         this.miniRenderer.render(this.sceneManager.scene, this.orthoCamera);
       }
       _drawOverlay() {
@@ -1842,15 +1923,17 @@ var init_dist = __esm({
         const H = this.overlayCanvas?.height ?? 176;
         return (1 - (wy - this.worldBottom) / (this.worldTop - this.worldBottom)) * H;
       }
-      _drawCamera(ctx, _W, _H) {
+      _drawCamera(ctx, W, H) {
         const cam = this.sceneManager.camera;
         const dir = new THREE5__namespace.Vector3();
         cam.getWorldDirection(dir);
-        const cx = this._worldToCanvasX(cam.position.x);
-        const cy = this._worldToCanvasY(cam.position.y);
+        const cx = Math.min(Math.max(this._worldToCanvasX(cam.position.x), 5), W - 5);
+        const cy = Math.min(Math.max(this._worldToCanvasY(cam.position.y), 5), H - 5);
         const angle = Math.atan2(-dir.y, dir.x);
-        const fovLen = 28;
-        const halfFov = THREE5__namespace.MathUtils.degToRad(cam.fov * 0.5 * (1 / Math.max(cam.aspect, 0.1)));
+        const fovLen = Math.max(20, H * 0.16);
+        const halfFov = Math.atan(
+          Math.tan(THREE5__namespace.MathUtils.degToRad(cam.fov) / 2) * Math.max(cam.aspect, 0.1)
+        );
         const left = angle - halfFov;
         const right = angle + halfFov;
         ctx.beginPath();
@@ -1878,18 +1961,7 @@ var init_dist = __esm({
       }
       /** Handle resize (called by parent when container size changes) */
       resize() {
-        if (!this.container) return;
-        const w = this.container.clientWidth;
-        const h = this.container.clientHeight;
-        if (this.glCanvas) {
-          this.glCanvas.width = w;
-          this.glCanvas.height = h;
-        }
-        if (this.overlayCanvas) {
-          this.overlayCanvas.width = w;
-          this.overlayCanvas.height = h;
-        }
-        this.miniRenderer?.setSize(w, h, false);
+        this._syncSize();
       }
       dispose() {
         this.miniRenderer?.dispose();
@@ -2146,6 +2218,10 @@ var init_dist = __esm({
       constructor(sm) {
         this.sm = sm;
       }
+      /** Look up a box entry by id. */
+      entryOf(id) {
+        return id ? this.entries.find((e) => e.id === id) : void 0;
+      }
       /**
        * Remove a Box3Helper from the scene and dispose BOTH its geometry and its
        * internally-created LineBasicMaterial. Box3Helper owns its material, so
@@ -2182,12 +2258,14 @@ var init_dist = __esm({
           tc.addEventListener("change", () => this.syncFromPivot());
           tc.addEventListener("dragging-changed", (e) => {
             this.sm.controls.enabled = !e.value;
+            const sibling = tc === this.tcMove ? this.tcRotate : this.tcMove;
+            if (sibling) sibling.enabled = !e.value;
           });
           this.sm.scene.add(tc.getHelper());
           return tc;
         };
-        this.tcMove = makeTc("translate", 0.8);
-        this.tcRotate = makeTc("rotate", 1.1);
+        this.tcMove = makeTc("translate", 0.55);
+        this.tcRotate = makeTc("rotate", 1.25);
         this._raiseGizmo();
       }
       /**
@@ -2273,7 +2351,7 @@ var init_dist = __esm({
         this.selectedId = id;
         this.onSelectChange?.(id);
         if (!id) return;
-        const entry = this.entries.find((e) => e.id === id);
+        const entry = this.entryOf(id);
         if (!entry) return;
         await this.initTransformControls();
         const center = new THREE5__namespace.Vector3();
@@ -2295,15 +2373,17 @@ var init_dist = __esm({
             this.sm.renderer.domElement
           );
         }
-        this._applyTransformMode();
+        this._showSelectionHandles();
         this._applyOutlineVisibility();
         this._highlightHelper(id, true);
       }
-      /** Switch the active transform mode for the selected box (move/scale/rotate). */
-      setTransformMode(mode) {
-        this._transformMode = mode;
-        this._applyTransformMode();
+      /**
+       * @deprecated All handle sets (move / scale / rotate) now show simultaneously
+       * — there are no modes to switch. Kept as a no-op for API compatibility.
+       */
+      setTransformMode(_mode) {
       }
+      /** @deprecated See {@link setTransformMode}. Always returns "scale". */
       getTransformMode() {
         return this._transformMode;
       }
@@ -2330,42 +2410,32 @@ var init_dist = __esm({
         });
       }
       /**
-       * Show only the handles for the active mode:
-       * - `scale` → 6 face-resize spheres (no gizmos),
-       * - `translate` → move arrows,
-       * - `rotate` → full XYZ rotation rings.
-       * Keeping a single set active avoids overlapping handles grabbing each other.
+       * Attach ALL handle sets to the selected box at once: move arrows, full-XYZ
+       * rotate rings, and the 6 face-resize spheres. Overlap conflicts are handled
+       * by size separation (arrows 0.55 inside rings 1.25, spheres off the faces)
+       * plus the mutual drag exclusion wired in _doInitTransformControls.
        */
-      _applyTransformMode() {
+      _showSelectionHandles() {
         if (!this.pivot || !this.selectedId) return;
         const move = this.tcMove;
         const rotate = this.tcRotate;
-        const entry = this.entries.find((e) => e.id === this.selectedId);
-        if (this._transformMode === "scale") {
-          move?.detach();
-          rotate?.detach();
-          if (entry) {
-            if (!this._faceHandles?.isAttached()) this._attachFaceHandles(entry);
-            this._faceHandles?.setGroupVisible(true);
-            this._faceHandles?.updatePositions();
-          }
-        } else if (this._transformMode === "translate") {
-          rotate?.detach();
-          this._faceHandles?.detach();
-          if (move) {
-            move.attach(this.pivot);
-            move.showX = move.showY = move.showZ = true;
-          }
-          this._raiseGizmo();
-        } else {
-          move?.detach();
-          this._faceHandles?.detach();
-          if (rotate) {
-            rotate.attach(this.pivot);
-            rotate.showX = rotate.showY = rotate.showZ = true;
-          }
-          this._raiseGizmo();
+        const entry = this.entryOf(this.selectedId);
+        if (entry) {
+          if (!this._faceHandles?.isAttached()) this._attachFaceHandles(entry);
+          this._faceHandles?.setGroupVisible(true);
+          this._faceHandles?.updatePositions();
         }
+        if (move) {
+          move.attach(this.pivot);
+          move.enabled = true;
+          move.showX = move.showY = move.showZ = true;
+        }
+        if (rotate) {
+          rotate.attach(this.pivot);
+          rotate.enabled = true;
+          rotate.showX = rotate.showY = rotate.showZ = true;
+        }
+        this._raiseGizmo();
       }
       /** Detach both gizmos. */
       _detachGizmos() {
@@ -2379,7 +2449,7 @@ var init_dist = __esm({
       resetRotation(id) {
         const targetId = id ?? this.selectedId;
         if (!targetId) return;
-        const entry = this.entries.find((e) => e.id === targetId);
+        const entry = this.entryOf(targetId);
         if (!entry) return;
         entry.quaternion.identity();
         if (this.selectedId === targetId) {
@@ -2414,7 +2484,7 @@ var init_dist = __esm({
         this.onChange?.(this.getBoxes());
       }
       setBoxMode(id, mode) {
-        const entry = this.entries.find((e) => e.id === id);
+        const entry = this.entryOf(id);
         if (!entry) return;
         entry.mode = mode;
         this.applyAll();
@@ -2490,14 +2560,14 @@ var init_dist = __esm({
         }
         const selected = show && this.selectedId !== null;
         if (selected) {
-          this._applyTransformMode();
+          this._showSelectionHandles();
         } else {
           this._detachGizmos();
           this._faceHandles?.setGroupVisible(false);
         }
       }
       setBoxVisible(id, visible) {
-        const entry = this.entries.find((e) => e.id === id);
+        const entry = this.entryOf(id);
         if (!entry) return;
         entry.visible = visible;
         const helper = this.helpers.get(id);
@@ -2508,7 +2578,7 @@ var init_dist = __esm({
         this.onChange?.(this.getBoxes());
       }
       renameBox(id, name) {
-        const entry = this.entries.find((e) => e.id === id);
+        const entry = this.entryOf(id);
         if (!entry) return;
         entry.name = name;
         this.onChange?.(this.getBoxes());
@@ -2571,7 +2641,7 @@ var init_dist = __esm({
       }
       syncFromPivot() {
         if (!this.pivot || !this.selectedId) return;
-        const entry = this.entries.find((e) => e.id === this.selectedId);
+        const entry = this.entryOf(this.selectedId);
         if (!entry) return;
         const center = this.pivot.position.clone();
         const halfSize = new THREE5__namespace.Vector3(
@@ -2899,7 +2969,9 @@ var init_dist = __esm({
         return res.arrayBuffer();
       }
       fetchWithHeaders(input, init) {
-        const mergedHeaders = { ...this.headers, ...init?.headers };
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const ours = url.startsWith(this.baseUrl);
+        const mergedHeaders = ours ? { ...this.headers, ...init?.headers } : init?.headers;
         return fetch(input, { ...init, headers: mergedHeaders });
       }
     };
@@ -3254,6 +3326,8 @@ var init_en = __esm({
         hintArea: "Click polygon vertices \u2022 Right-click to close",
         hintAngle: "Click 3 points (vertex is middle)",
         hintSectionBox: "Drag to define clipping box",
+        hintVolumeFootprint: "Drag to draw volume footprint",
+        hintVolumeHeight: "Move mouse up/down to set height \u2022 Click to confirm",
         initialisingRenderer: "Initialising renderer\u2026",
         statusPts: (m) => `${m.toFixed(1)}M pts`,
         statusBudget: (m) => `Budget: ${m.toFixed(1)}M`,
@@ -3330,7 +3404,12 @@ var init_en = __esm({
         delete: "Delete",
         move: "Move",
         scale: "Scale",
-        rotateZ: "Rotate"
+        rotateZ: "Rotate",
+        clippingOn: "Clipping on",
+        clippingOff: "Clipping off",
+        outlinesOn: "Outlines on",
+        outlinesOff: "Outlines off",
+        resetRotation: "Reset rotation"
       }
     };
   }
@@ -3564,19 +3643,30 @@ function Viewport({ className }) {
       minimapRef.current.attach(minimapContainerRef.current);
     }
   }, [showMinimap]);
-  const handleMinimapClick = React27.useCallback((e) => {
+  const navigateMinimap = React27.useCallback((el, clientX, clientY) => {
     const sm = smRef.current;
     const minimap = minimapRef.current;
     if (!sm || !minimap) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
-    const world = minimap.canvasToWorld(cx, cy);
+    const rect = el.getBoundingClientRect();
+    const world = minimap.canvasToWorld(clientX - rect.left, clientY - rect.top);
     const cam = sm.camera;
     const offset = new THREE5__namespace.Vector3().subVectors(cam.position, sm.controls.target);
     sm.controls.target.set(world.x, world.y, sm.controls.target.z);
     cam.position.set(world.x + offset.x, world.y + offset.y, cam.position.z);
     sm.controls.update();
+  }, []);
+  const minimapDragRef = React27.useRef(false);
+  const handleMinimapPointerDown = React27.useCallback((e) => {
+    minimapDragRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    navigateMinimap(e.currentTarget, e.clientX, e.clientY);
+  }, [navigateMinimap]);
+  const handleMinimapPointerMove = React27.useCallback((e) => {
+    if (minimapDragRef.current) navigateMinimap(e.currentTarget, e.clientX, e.clientY);
+  }, [navigateMinimap]);
+  const handleMinimapPointerUp = React27.useCallback((e) => {
+    minimapDragRef.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
   }, []);
   React27.useEffect(() => {
     if (markerRef.current && cameras.length > 0) {
@@ -3598,6 +3688,7 @@ function Viewport({ className }) {
     mm.applyClipFilter(cm ? (p) => cm.isPointVisible(p) : null);
   }, [clipBoxEntries]);
   React27.useEffect(() => {
+    lastSnapRef.current = null;
     if (!activeTool.startsWith("measure-")) {
       measureRef.current?.clearSnap();
     }
@@ -3639,8 +3730,10 @@ function Viewport({ className }) {
     }
     return projectToPlaneZ(nx, ny, sm.controls.target.z);
   }, [projectToPlaneZ]);
+  const lastSnapRef = React27.useRef(null);
   const { scheduleSnap, cancelSnap } = useSnapThrottle((nx, ny) => {
     const hit = pickVisiblePoint(nx, ny);
+    lastSnapRef.current = hit;
     if (hit) measureRef.current?.updateSnap(hit);
   });
   const buildClipDraftAt = React27.useCallback((nx, ny) => {
@@ -3833,15 +3926,16 @@ function Viewport({ className }) {
     }
     if (activeTool.startsWith("measure-") && activeTool !== "measure-volume" && measureRef.current) {
       const type = activeTool.replace("measure-", "");
-      const hit = pickVisiblePoint(nx, ny);
+      const hit = lastSnapRef.current ?? pickVisiblePoint(nx, ny);
       if (hit) {
         if (!measureRef.current.activeMeasurement) measureRef.current.start(type);
-        measureRef.current.addPoint(hit);
+        measureRef.current.addPoint(hit.clone());
       }
     }
   }, [activeTool, cameras, config, pickVisiblePoint, showMarkers]);
   const handleMouseLeave = React27.useCallback(() => {
     cancelSnap();
+    lastSnapRef.current = null;
     measureRef.current?.clearSnap();
   }, [cancelSnap]);
   const handleContextMenu = React27.useCallback((e) => {
@@ -3895,7 +3989,9 @@ function Viewport({ className }) {
           // Lift above the OS home indicator / browser nav bar on mobile.
           bottom: "calc(2.5rem + env(safe-area-inset-bottom))"
         },
-        onClick: handleMinimapClick,
+        onPointerDown: handleMinimapPointerDown,
+        onPointerMove: handleMinimapPointerMove,
+        onPointerUp: handleMinimapPointerUp,
         children: [
           /* @__PURE__ */ jsxRuntime.jsx(
             "div",
@@ -3909,6 +4005,7 @@ function Viewport({ className }) {
             "div",
             {
               onMouseDown: handleMinimapResizeStart,
+              onPointerDown: (e) => e.stopPropagation(),
               className: "absolute top-0 right-0 w-4 h-4 cursor-nwse-resize flex items-center justify-center",
               title: "Resize minimap",
               children: /* @__PURE__ */ jsxRuntime.jsx("svg", { width: "8", height: "8", viewBox: "0 0 8 8", className: "text-white/30", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M0 8L8 0M3 8L8 3M6 8L8 6", stroke: "currentColor", strokeWidth: "1" }) })
@@ -3923,7 +4020,7 @@ function Viewport({ className }) {
       activeTool === "measure-height" && t.hintHeight,
       activeTool === "measure-area" && t.hintArea,
       activeTool === "measure-angle" && t.hintAngle,
-      activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? "Move mouse up/down to set height, click to confirm" : "Drag to draw volume footprint"),
+      activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? t.hintVolumeHeight : t.hintVolumeFootprint),
       activeTool === "section-box" && t.hintSectionBox
     ] }),
     metadata && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "absolute top-3 left-3 text-[10px] font-mono text-white/30 pointer-events-none", children: [
@@ -4633,10 +4730,9 @@ function useClipActions() {
   const resetRotation = React27.useCallback((id) => {
     clipManager?.resetRotation(id);
   }, [clipManager]);
-  const setTransformMode = React27.useCallback((mode) => {
+  const setTransformMode = React27.useCallback((_mode) => {
     if (!clipManager) return;
     if (!clipManager.getSelectedId() && boxes[0]) clipManager.selectBox(boxes[0].id);
-    clipManager.setTransformMode(mode);
   }, [clipManager, boxes]);
   const removeBox = React27.useCallback((id) => {
     clipManager?.removeBox(id);
@@ -4671,20 +4767,14 @@ function useClipActions() {
 // src/components/toolbar/clip-toolbar.tsx
 init_locale_context();
 function ClipToolbar() {
-  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible, resetRotation, setTransformMode } = useClipActions();
+  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible, resetRotation } = useClipActions();
   const t = useLocale().clipToolbar;
   const [enabled, setEnabledLocal] = React27__default.default.useState(isEnabled);
   const [outlines, setOutlinesLocal] = React27__default.default.useState(outlinesVisible);
-  const [mode, setMode] = React27__default.default.useState("scale");
   React27__default.default.useEffect(() => {
     setEnabledLocal(isEnabled);
     setOutlinesLocal(outlinesVisible);
   }, [isEnabled, outlinesVisible, boxes]);
-  const TRANSFORM_MODES = [
-    { m: "translate", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Move, { size: 12 }), label: t.move },
-    { m: "scale", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Maximize2, { size: 12 }), label: t.scale },
-    { m: "rotate", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.RotateCw, { size: 12 }), label: t.rotateZ }
-  ];
   if (boxes.length === 0) return null;
   const firstVisible = boxes.find((b) => b.visible);
   const isInside = (firstVisible?.mode ?? "outside") === "inside";
@@ -4727,14 +4817,14 @@ function ClipToolbar() {
           setEnabledLocal(next);
           setEnabled(next);
         },
-        title: enabled ? "Clipping on" : "Clipping off",
+        title: enabled ? t.clippingOn : t.clippingOff,
         className: cn(
           "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
           enabled ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
         ),
         children: [
           enabled ? /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Scissors, { size: 12 }) : /* @__PURE__ */ jsxRuntime.jsx(lucideReact.ScissorsLineDashed, { size: 12 }),
-          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "flex-1 text-left", children: enabled ? "Clipping on" : "Clipping off" }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "flex-1 text-left", children: enabled ? t.clippingOn : t.clippingOff }),
           /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Power, { size: 12, className: enabled ? "text-[hsl(var(--brand))]" : "text-muted-foreground" })
         ]
       }
@@ -4747,14 +4837,14 @@ function ClipToolbar() {
           setOutlinesLocal(next);
           setOutlinesVisible(next);
         },
-        title: outlines ? "Outlines visible" : "Outlines hidden",
+        title: outlines ? t.outlinesOn : t.outlinesOff,
         className: cn(
           "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
           outlines ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
         ),
         children: [
           outlines ? /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Eye, { size: 12 }) : /* @__PURE__ */ jsxRuntime.jsx(lucideReact.EyeOff, { size: 12 }),
-          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "flex-1 text-left", children: outlines ? "Outlines on" : "Outlines off" })
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "flex-1 text-left", children: outlines ? t.outlinesOn : t.outlinesOff })
         ]
       }
     ) }),
@@ -4820,34 +4910,15 @@ function ClipToolbar() {
     }) }),
     selectedClipBoxId && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       /* @__PURE__ */ jsxRuntime.jsx("div", { className: "h-px bg-muted mx-1 mt-1.5 mb-1.5" }),
-      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "flex items-center gap-1 px-1", children: TRANSFORM_MODES.map(({ m, icon, label }) => /* @__PURE__ */ jsxRuntime.jsxs(
-        "button",
-        {
-          onClick: () => {
-            setMode(m);
-            setTransformMode(m);
-          },
-          title: label,
-          className: cn(
-            "flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-xs transition-colors border",
-            mode === m ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/60"
-          ),
-          children: [
-            icon,
-            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-[10px]", children: label })
-          ]
-        },
-        m
-      )) }),
-      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "px-1 mt-1", children: /* @__PURE__ */ jsxRuntime.jsxs(
+      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "px-1", children: /* @__PURE__ */ jsxRuntime.jsxs(
         "button",
         {
           onClick: () => resetRotation(),
-          title: "Reset the box back to axis-aligned",
+          title: t.resetRotation,
           className: "w-full flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] border border-border text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
           children: [
             /* @__PURE__ */ jsxRuntime.jsx(lucideReact.RotateCcw, { size: 12 }),
-            /* @__PURE__ */ jsxRuntime.jsx("span", { children: "Reset rotation" })
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.resetRotation })
           ]
         }
       ) })
@@ -5874,8 +5945,11 @@ function AnimRow({ label, children }) {
 function Sidebar() {
   const [tab, setTab] = React27.useState("layers");
   const t = useLocale().sidebar;
-  const { uiMode } = useViewer();
+  const { uiMode, activeTool } = useViewer();
   const { cameras } = useData();
+  React27.useEffect(() => {
+    if (activeTool.startsWith("measure-")) setTab("measurements");
+  }, [activeTool]);
   const isPro = uiMode === "professional";
   const hasPanoramas = cameras.length > 0;
   const ALL_TABS = [
@@ -6560,6 +6634,9 @@ function WorkspaceLayout({ className }) {
   const { metadata } = useData();
   const t = useLocale().viewport;
   const isPro = uiMode === "professional";
+  React27.useEffect(() => {
+    if (activeTool.startsWith("measure-") && !isMobile) setSidebarOpen(true);
+  }, [activeTool, isMobile]);
   return /* @__PURE__ */ jsxRuntime.jsxs(
     "div",
     {
@@ -7111,7 +7188,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "0353a97 \xB7 2026-07-01 09:21Z" ;
+var PCV_BUILD = "3bc0718 \xB7 2026-07-02 12:39Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
@@ -8457,6 +8534,8 @@ var de = createLocale(exports.en, {
     hintArea: "Polygonpunkte klicken \u2022 Rechtsklick zum Schlie\xDFen",
     hintAngle: "3 Punkte klicken (Mittelpunkt ist der Scheitelpunkt)",
     hintSectionBox: "Ziehen um Ausschnittrahmen zu definieren",
+    hintVolumeFootprint: "Ziehen um die Volumen-Grundfl\xE4che zu zeichnen",
+    hintVolumeHeight: "Maus hoch/runter f\xFCr die H\xF6he \u2022 Klick zum Best\xE4tigen",
     initialisingRenderer: "Renderer wird initialisiert\u2026",
     statusPts: (m) => `${m.toFixed(1)}M Pkt.`,
     statusBudget: (m) => `Budget: ${m.toFixed(1)}M`,
@@ -8533,7 +8612,12 @@ var de = createLocale(exports.en, {
     delete: "L\xF6schen",
     move: "Verschieben",
     scale: "Skalieren",
-    rotateZ: "Drehen"
+    rotateZ: "Drehen",
+    clippingOn: "Zuschnitt an",
+    clippingOff: "Zuschnitt aus",
+    outlinesOn: "Umrisse an",
+    outlinesOff: "Umrisse aus",
+    resetRotation: "Drehung zur\xFCcksetzen"
   }
 });
 

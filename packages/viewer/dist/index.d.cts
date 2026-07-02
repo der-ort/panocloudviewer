@@ -433,6 +433,7 @@ declare class MeasurementManager {
     private _snapCross;
     private _snapLine;
     private _crossTexture?;
+    private _dotTexture?;
     constructor(scene: THREE.Scene);
     getAll(): Measurement[];
     /** Apply new display settings and rebuild all existing measurements */
@@ -469,7 +470,23 @@ declare class MeasurementManager {
     private compute;
     private polygonArea;
     private convexVolume;
+    /**
+     * Vertex marker: a constant screen-size dot sprite (like a map pin, not a
+     * world-sized ball) so markers stay small and precise at any zoom level.
+     * `measurementSphereRadius` acts as a size multiplier (0.15 = standard).
+     */
+    private makeVertexDot;
+    /** Cached dot texture: white disc (tinted by material color) + dark outline ring. */
+    private _getDotTexture;
     private buildObjects;
+    /** World anchor for a measurement's label. */
+    private labelAnchor;
+    /**
+     * Value label: constant screen-size sprite (`sizeAttenuation:false`) so it is
+     * equally readable on a 5 m room and a 500 m site. White text on a dark card
+     * with the measurement color as accent bar + border — high contrast on both
+     * bright and dark point clouds. `measurementLabelScale` multiplies the size.
+     */
     private makeTextSprite;
     private rebuildPreview;
     private clearPreview;
@@ -551,6 +568,8 @@ declare class MinimapRenderer {
     setBounds(bounds: THREE.Box3): void;
     /** Called every frame. Renders 3D scene top-down + overlay. */
     update(): void;
+    /** Sync canvas backing stores to the container's CSS size (no-op when equal). */
+    private _syncSize;
     private _render3D;
     private _drawOverlay;
     private _worldToCanvasX;
@@ -648,6 +667,8 @@ declare class ClipManager {
     onChange?: (boxes: ClipBoxEntry[]) => void;
     onSelectChange?: (id: string | null) => void;
     constructor(sm: SceneManager);
+    /** Look up a box entry by id. */
+    private entryOf;
     /**
      * Remove a Box3Helper from the scene and dispose BOTH its geometry and its
      * internally-created LineBasicMaterial. Box3Helper owns its material, so
@@ -682,21 +703,24 @@ declare class ClipManager {
     addDefaultBox(worldBox?: THREE.Box3, name?: string): ClipBoxEntry;
     addBox(box: THREE.Box3, name?: string): ClipBoxEntry;
     selectBox(id: string | null): Promise<void>;
-    /** Switch the active transform mode for the selected box (move/scale/rotate). */
-    setTransformMode(mode: "translate" | "scale" | "rotate"): void;
+    /**
+     * @deprecated All handle sets (move / scale / rotate) now show simultaneously
+     * — there are no modes to switch. Kept as a no-op for API compatibility.
+     */
+    setTransformMode(_mode: "translate" | "scale" | "rotate"): void;
+    /** @deprecated See {@link setTransformMode}. Always returns "scale". */
     getTransformMode(): "translate" | "scale" | "rotate";
     /** Get the face handle controller (for viewport event forwarding) */
     get faceHandles(): FaceHandleController | null;
     /** Attach the face-resize handles to the selected box with the sync callback. */
     private _attachFaceHandles;
     /**
-     * Show only the handles for the active mode:
-     * - `scale` → 6 face-resize spheres (no gizmos),
-     * - `translate` → move arrows,
-     * - `rotate` → full XYZ rotation rings.
-     * Keeping a single set active avoids overlapping handles grabbing each other.
+     * Attach ALL handle sets to the selected box at once: move arrows, full-XYZ
+     * rotate rings, and the 6 face-resize spheres. Overlap conflicts are handled
+     * by size separation (arrows 0.55 inside rings 1.25, spheres off the faces)
+     * plus the mutual drag exclusion wired in _doInitTransformControls.
      */
-    private _applyTransformMode;
+    private _showSelectionHandles;
     /** Detach both gizmos. */
     private _detachGizmos;
     /**
@@ -996,6 +1020,8 @@ interface ViewerLocale {
         hintArea: string;
         hintAngle: string;
         hintSectionBox: string;
+        hintVolumeFootprint: string;
+        hintVolumeHeight: string;
         initialisingRenderer: string;
         statusPts: (millions: number) => string;
         statusBudget: (millions: number) => string;
@@ -1066,9 +1092,17 @@ interface ViewerLocale {
         show: string;
         hide: string;
         delete: string;
+        /** @deprecated unused — handles show simultaneously (kept for locale compat) */
         move: string;
+        /** @deprecated unused — handles show simultaneously (kept for locale compat) */
         scale: string;
+        /** @deprecated unused — handles show simultaneously (kept for locale compat) */
         rotateZ: string;
+        clippingOn: string;
+        clippingOff: string;
+        outlinesOn: string;
+        outlinesOff: string;
+        resetRotation: string;
     };
     /** UI mode labels and related toolbar strings */
     uiModes: {
@@ -1563,7 +1597,7 @@ declare function useClipActions(): {
     setOutlinesVisible: (visible: boolean) => void;
     selectBox: (id: string | null) => void;
     resetRotation: (id?: string) => void;
-    setTransformMode: (mode: "translate" | "scale" | "rotate") => void;
+    setTransformMode: (_mode: "translate" | "scale" | "rotate") => void;
     removeBox: (id: string) => void;
     setBoxVisible: (id: string, visible: boolean) => void;
     setModeAll: (mode: "outside" | "inside") => void;
