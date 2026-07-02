@@ -7869,7 +7869,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "5374f7c \xB7 2026-07-02 16:23Z" ;
+var PCV_BUILD = "66ff82c \xB7 2026-07-02 23:33Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
@@ -8024,7 +8024,9 @@ function MinimalToolbar() {
     navigationMode,
     setNavigationMode,
     sceneManager,
-    loader
+    loader,
+    showMagnifier,
+    setShowMagnifier
   } = useViewer();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const toggleMeasure = useCallback(
@@ -8116,6 +8118,15 @@ function MinimalToolbar() {
           ),
           isMeasuring && /* @__PURE__ */ jsxs(Fragment, { children: [
             /* @__PURE__ */ jsx(Separator2, {}),
+            /* @__PURE__ */ jsx(
+              GlassButton,
+              {
+                icon: /* @__PURE__ */ jsx(ZoomIn, { size: 16 }),
+                title: "Magnifier (zoom while picking)",
+                active: showMagnifier,
+                onClick: () => setShowMagnifier(!showMagnifier)
+              }
+            ),
             /* @__PURE__ */ jsx(
               GlassButton,
               {

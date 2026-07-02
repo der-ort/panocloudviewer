@@ -11,6 +11,7 @@ import {
   Pentagon,
   Settings,
   X,
+  ZoomIn,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
@@ -59,6 +60,8 @@ export function MinimalToolbar() {
     setNavigationMode,
     sceneManager,
     loader,
+    showMagnifier,
+    setShowMagnifier,
   } = useViewer();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -140,6 +143,15 @@ export function MinimalToolbar() {
           {isMeasuring && (
             <>
               <Separator />
+              {/* Picking magnifier — the crosshair zoom inset. Same feature as
+                  the professional tool rail's toggle; lite gets it while a
+                  measurement tool is active (its only useful moment). */}
+              <GlassButton
+                icon={<ZoomIn size={16} />}
+                title="Magnifier (zoom while picking)"
+                active={showMagnifier}
+                onClick={() => setShowMagnifier(!showMagnifier)}
+              />
               <GlassButton
                 icon={<X size={16} />}
                 title="Cancel measurement"

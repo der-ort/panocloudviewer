@@ -7,6 +7,7 @@
     "build:viewer": "pnpm --filter @der-ort/pano-cloud-viewer build",
     "build:web": "pnpm --filter pano-cloud-viewer-web build",
     "lint": "pnpm -r lint",
-    "dev:example": "pnpm --filter @der-ort/pano-cloud-viewer build && pnpm --filter pano-cloud-viewer-example dev"
+    "dev:example": "pnpm --filter @der-ort/pano-cloud-viewer build && pnpm --filter pano-cloud-viewer-example dev",
+    "prepare": "git config core.hooksPath .githooks"
   }
 }

@@ -1,0 +1,22 @@
+#!/bin/sh
+# Consumers install this package via a git pin and use the COMMITTED dist/.
+# If src/ changes are committed without a rebuild, every consumer silently
+# gets stale code. This hook rebuilds and stages dist/ whenever package src
+# is part of the commit, so dist can never lag the source again.
+#
+# Enabled automatically by `pnpm install` (root "prepare" script sets
+# core.hooksPath to .githooks).
+
+if git diff --cached --name-only | grep -qE '^packages/(core|viewer)/src/'; then
+  echo "pre-commit: package src changed — rebuilding dist…"
+  pnpm --filter @der-ort/pano-cloud-viewer-core build >/dev/null || {
+    echo "pre-commit: core build failed" >&2
+    exit 1
+  }
+  pnpm --filter @der-ort/pano-cloud-viewer build >/dev/null || {
+    echo "pre-commit: viewer build failed" >&2
+    exit 1
+  }
+  git add packages/core/dist packages/viewer/dist
+  echo "pre-commit: dist rebuilt and staged."
+fi
