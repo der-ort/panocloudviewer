@@ -3,7 +3,7 @@
 import React from "react";
 import {
   MapPin, Ruler, ArrowUpDown, Pentagon, Package, Triangle, Waypoints,
-  BoxSelect, X,
+  BoxSelect, X, ZoomIn,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
@@ -67,7 +67,7 @@ const ADVANCED_MEASURES: { type: MeasurementType; tool: ActiveTool; icon: React.
 ];
 
 export function ToolRail() {
-  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, uiMode, selectedClipBoxId } = useViewer();
+  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, uiMode, selectedClipBoxId, showMagnifier, setShowMagnifier } = useViewer();
   const t = useLocale().toolRail;
 
   const isPro = uiMode === "professional";
@@ -134,6 +134,14 @@ export function ToolRail() {
           ))}
         </>
       )}
+      {/* Picking magnifier toggle — zoom inset while measuring */}
+      <RailBtn
+        icon={<ZoomIn size={14} />}
+        title={t.magnifier}
+        active={showMagnifier}
+        onClick={() => setShowMagnifier(!showMagnifier)}
+        compact
+      />
       <RailBtn
         icon={<X size={13} />}
         title={t.clearMeasurements}

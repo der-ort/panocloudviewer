@@ -4,7 +4,7 @@ import React27, { createContext, lazy, useContext, useState, useCallback, useEff
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { X, ChevronDown, ChevronUp, Check, Download, SlidersHorizontal, BoxSelect, Plus, Trash2, Scissors, ScissorsLineDashed, Power, Eye, EyeOff, RotateCcw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, ChevronRight, Square, Film, Layers, Camera, Box, Sun, Moon, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Map as Map$1, Orbit, Rotate3d, Maximize, Settings, Palette, Image, Tag, Circle, Minus } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Check, Download, SlidersHorizontal, ZoomIn, BoxSelect, Plus, Trash2, Scissors, ScissorsLineDashed, Power, Eye, EyeOff, RotateCcw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, ChevronRight, Square, Film, Layers, Camera, Box, Sun, Moon, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Map as Map$1, Orbit, Rotate3d, Maximize, Settings, Palette, Image, Tag, Circle, Minus } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cva } from 'class-variance-authority';
 import * as SliderPrimitive from '@radix-ui/react-slider';
@@ -152,7 +152,7 @@ function createAdapter(source) {
       return new S3SourceAdapter(source.basePath);
   }
 }
-var SceneManager, PointCloudLoader, EASINGS, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, _muxerPromise, ExportManager, MinimapRenderer, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, RING_COLOR, RING_HOVER_COLOR, RING_DRAG_COLOR, RotationRingController, _nextId, ClipManager, AxisWidget, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
+var SceneManager, PointCloudLoader, EASINGS, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, _muxerPromise, ExportManager, MinimapRenderer, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, RING_COLOR, RING_HOVER_COLOR, RING_DRAG_COLOR, RotationRingController, _nextId, ClipManager, AxisWidget, MagnifierRenderer, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
 var init_dist = __esm({
   "../core/dist/index.js"() {
     SceneManager = class {
@@ -422,7 +422,7 @@ var init_dist = __esm({
         return null;
       }
     };
-    PointCloudLoader = class {
+    PointCloudLoader = class _PointCloudLoader {
       sceneManager;
       adapter;
       currentClouds = [];
@@ -435,8 +435,15 @@ var init_dist = __esm({
         this.sceneManager = sceneManager;
         this.adapter = adapter;
       }
-      /** Load a point cloud from the adapter's base URL */
-      async load(metadataPath = "metadata.json", pointBudget = 2e6) {
+      /** Point budget actually applied by the last load() (auto-derived or explicit). */
+      appliedBudget = 2e6;
+      /**
+       * Load a point cloud from the adapter's base URL.
+       * @param pointBudget Explicit budget. When omitted, the budget is derived
+       *                    from the cloud's total point count via
+       *                    {@link PointCloudLoader.calcOptimalBudget} — no fixed cap.
+       */
+      async load(metadataPath = "metadata.json", pointBudget) {
         const { Potree, PointColorType } = await import('potree-core');
         if (!this.sceneManager.potree) {
           this.sceneManager.potree = new Potree();
@@ -447,15 +454,8 @@ var init_dist = __esm({
           getUrl: (url) => Promise.resolve(this.adapter.resolveUrl(url))
         };
         const potree = this.sceneManager.potree;
-        potree.pointBudget = pointBudget;
-        const pointCloud = await potree.loadPointCloud(
-          metadataPath,
-          requestManager
-        );
-        pointCloud.material.size = 1.5;
-        pointCloud.material.pointSizeType = 2;
-        pointCloud.material.shape = 1;
         let hasRgb = false;
+        let totalPoints = 0;
         try {
           const meta = await this.adapter.fetchJson(metadataPath);
           const attributes = meta?.attributes ?? [];
@@ -464,10 +464,21 @@ var init_dist = __esm({
             return n === "rgb" || n === "rgba" || n === "color";
           });
           this._projection = typeof meta?.projection === "string" ? meta.projection.trim() : "";
+          totalPoints = typeof meta?.points === "number" ? meta.points : 0;
         } catch {
           hasRgb = false;
         }
         this.hasRgb = hasRgb;
+        const budget = pointBudget ?? (totalPoints > 0 ? _PointCloudLoader.calcOptimalBudget(totalPoints) : 2e6);
+        this.appliedBudget = budget;
+        potree.pointBudget = budget;
+        const pointCloud = await potree.loadPointCloud(
+          metadataPath,
+          requestManager
+        );
+        pointCloud.material.size = 1.5;
+        pointCloud.material.pointSizeType = 2;
+        pointCloud.material.shape = 1;
         if (hasRgb) {
           pointCloud.material.pointColorType = PointColorType.RGB;
         } else {
@@ -627,11 +638,16 @@ var init_dist = __esm({
       getPointCloud() {
         return this.currentClouds[0] ?? null;
       }
-      /** Calculate optimal point budget based on total point count */
+      /**
+       * Calculate an optimal point budget from the total point count.
+       * Proportional (30% / 15% / 8% by cloud size), floored at 500K, and never
+       * above the cloud's own total — no fixed upper cap, so large clouds aren't
+       * artificially starved.
+       */
       static calcOptimalBudget(totalPoints) {
         const ratio = totalPoints < 5e6 ? 0.3 : totalPoints < 5e7 ? 0.15 : 0.08;
-        const raw = Math.round(totalPoints * ratio);
-        return Math.min(Math.max(Math.round(raw / 1e5) * 1e5, 5e5), 1e7);
+        const raw = Math.round(totalPoints * ratio / 1e5) * 1e5;
+        return Math.min(Math.max(raw, 5e5), Math.max(totalPoints, 5e5));
       }
     };
     EASINGS = {
@@ -1170,11 +1186,19 @@ var init_dist = __esm({
       }
       // ─── Volume measurement (drag-to-create) ─────────────────────────────────
       _volumeDraft = null;
-      /** Show/update a volume draft box preview during drag creation */
+      /**
+       * Show/update a volume draft box preview during drag creation, with a live
+       * dimensions readout (L × W × H and m³) so the user sees what they're
+       * defining before committing.
+       */
       setVolumeDraft(box) {
         if (this._volumeDraft) {
           this._volumeDraft.traverse((o) => {
-            if (o instanceof THREE5.Mesh || o instanceof THREE5.LineSegments) {
+            if (o instanceof THREE5.Sprite) {
+              const mat = o.material;
+              mat.map?.dispose();
+              mat.dispose();
+            } else if (o instanceof THREE5.Mesh || o instanceof THREE5.LineSegments) {
               o.geometry.dispose();
               o.material.dispose();
             }
@@ -1209,6 +1233,11 @@ var init_dist = __esm({
         edges.scale.copy(size);
         edges.renderOrder = 2;
         draftGroup.add(edges);
+        const dims = `${size.x.toFixed(2)} \xD7 ${size.y.toFixed(2)} \xD7 ${size.z.toFixed(2)} m \xB7 ${formatVolume(size.x * size.y * size.z)}`;
+        const label = this.makeTextSprite(dims, COLORS.volume);
+        label.position.copy(center).add(new THREE5.Vector3(0, 0, size.z / 2));
+        label.center.set(0.5, -0.35);
+        draftGroup.add(label);
         this.group.add(draftGroup);
         this._volumeDraft = draftGroup;
       }
@@ -1451,16 +1480,21 @@ var init_dist = __esm({
       }
       /**
        * Value label: constant screen-size sprite (`sizeAttenuation:false`) so it is
-       * equally readable on a 5 m room and a 500 m site. White text on a dark card
-       * with the measurement color as accent bar + border — high contrast on both
-       * bright and dark point clouds. `measurementLabelScale` multiplies the size.
+       * equally readable on a 5 m room and a 500 m site. Monospaced white text on a
+       * dark card with the measurement color as border; the card width fits the
+       * text so labels stay compact. `measurementLabelScale` multiplies the size.
        */
       makeTextSprite(text, color) {
-        const W = 512, H = 96;
+        const FONT = "bold 52px Consolas, 'Cascadia Mono', 'Courier New', monospace";
+        const H = 96;
+        const PAD = 28;
         const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        ctx.font = FONT;
+        const W = Math.ceil(ctx.measureText(text).width) + PAD * 2;
         canvas.width = W;
         canvas.height = H;
-        const ctx = canvas.getContext("2d");
+        ctx.font = FONT;
         ctx.beginPath();
         ctx.roundRect(3, 3, W - 6, H - 6, 14);
         ctx.fillStyle = "rgba(10,10,12,0.88)";
@@ -1468,15 +1502,10 @@ var init_dist = __esm({
         ctx.strokeStyle = color;
         ctx.lineWidth = 3;
         ctx.stroke();
-        ctx.beginPath();
-        ctx.roundRect(10, 16, 10, H - 32, 5);
-        ctx.fillStyle = color;
-        ctx.fill();
         ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 52px -apple-system, 'Segoe UI', sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(text, W / 2 + 8, H / 2 + 2);
+        ctx.fillText(text, W / 2, H / 2 + 2);
         const tex = new THREE5.CanvasTexture(canvas);
         tex.minFilter = THREE5.LinearFilter;
         const sprite = new THREE5.Sprite(new THREE5.SpriteMaterial({
@@ -1488,7 +1517,8 @@ var init_dist = __esm({
           depthWrite: false
         }));
         const ls = this._displaySettings.measurementLabelScale;
-        sprite.scale.set(0.2 * ls, 0.2 * H / W * ls, 1);
+        const spriteH = 0.0375 * ls;
+        sprite.scale.set(spriteH * (W / H), spriteH, 1);
         sprite.renderOrder = 4;
         return sprite;
       }
@@ -1775,6 +1805,11 @@ var init_dist = __esm({
       overlayCanvas = null;
       miniRenderer = null;
       orthoCamera;
+      /** True when WebGL context creation failed — overlay shows a message instead of silent black. */
+      glFailed = false;
+      // Points of interest (panorama camera positions) drawn on the overlay
+      pois = [];
+      selectedPoi = null;
       // World range (square, padded)
       worldLeft = -50;
       worldRight = 50;
@@ -1816,14 +1851,24 @@ var init_dist = __esm({
           this.miniRenderer.setPixelRatio(1);
           this.miniRenderer.setSize(w, h, false);
           this.miniRenderer.setClearColor(658970, 1);
+          this.glFailed = false;
         } catch {
           this.miniRenderer = null;
+          this.glFailed = true;
         }
       }
-      /** Set world-space bounds of the scene */
+      /** Panorama camera positions (world XY) to draw as dots on the overlay. */
+      setPois(pois) {
+        this.pois = pois;
+      }
+      /** Highlight one POI (the opened panorama), or null for none. */
+      setSelectedPoi(poi) {
+        this.selectedPoi = poi;
+      }
+      /** Set world-space bounds of the scene (empty boxes are ignored). */
       setBounds(bounds) {
-        this.bounds = bounds.clone();
         if (bounds.isEmpty()) return;
+        this.bounds = bounds.clone();
         const size = new THREE5.Vector3();
         const center = new THREE5.Vector3();
         bounds.getSize(size);
@@ -1845,10 +1890,27 @@ var init_dist = __esm({
       }
       /** Called every frame. Renders 3D scene top-down + overlay. */
       update() {
+        if (!this.bounds) this._deriveBoundsFromClouds();
         this.frameCount++;
         const render3D = this.frameCount % 6 === 0;
         if (render3D) this._render3D();
         if (this.frameCount % 2 === 0) this._drawOverlay();
+      }
+      /** Fallback bounds from the loaded potree octrees (tight box + offset). */
+      _deriveBoundsFromClouds() {
+        const box = new THREE5.Box3();
+        for (const pc of this.sceneManager.pointClouds) {
+          const g = pc.pcoGeometry;
+          const tb = g?.tightBoundingBox ?? g?.boundingBox ?? pc.boundingBox;
+          if (!tb) continue;
+          const wb = tb.clone();
+          if (g?.offset) {
+            wb.min.add(g.offset);
+            wb.max.add(g.offset);
+          }
+          box.union(wb);
+        }
+        if (!box.isEmpty()) this.setBounds(box);
       }
       /** Sync canvas backing stores to the container's CSS size (no-op when equal). */
       _syncSize() {
@@ -1877,11 +1939,79 @@ var init_dist = __esm({
         const W = this.overlayCanvas.width;
         const H = this.overlayCanvas.height;
         ctx.clearRect(0, 0, W, H);
+        if (this.glFailed) {
+          ctx.fillStyle = "rgba(255,255,255,0.5)";
+          ctx.font = "10px monospace";
+          ctx.textAlign = "center";
+          ctx.fillText("overview unavailable", W / 2, H / 2 - 4);
+          ctx.fillText("(WebGL context limit)", W / 2, H / 2 + 8);
+          return;
+        }
+        this._drawPois(ctx, W, H);
         this._drawCamera(ctx, W, H);
-        ctx.fillStyle = "rgba(255,255,255,0.35)";
-        ctx.font = "bold 9px monospace";
+        this._drawScaleBar(ctx, W, H);
+        this._drawNorthArrow(ctx, W);
+      }
+      /** Panorama positions as small dots; the opened one highlighted. */
+      _drawPois(ctx, W, H) {
+        if (this.pois.length === 0) return;
+        ctx.fillStyle = "rgba(255,255,255,0.55)";
+        for (const p of this.pois) {
+          const x = this._worldToCanvasX(p.x);
+          const y = this._worldToCanvasY(p.y);
+          if (x < 0 || x > W || y < 0 || y > H) continue;
+          ctx.beginPath();
+          ctx.arc(x, y, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (this.selectedPoi) {
+          const x = this._worldToCanvasX(this.selectedPoi.x);
+          const y = this._worldToCanvasY(this.selectedPoi.y);
+          ctx.beginPath();
+          ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = "#ff5533";
+          ctx.fill();
+          ctx.strokeStyle = "rgba(255,255,255,0.9)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+      /** Scale bar (bottom-left): a round-number world length (1/2/5×10ⁿ m). */
+      _drawScaleBar(ctx, W, H) {
+        const worldWidth = this.worldRight - this.worldLeft;
+        if (!(worldWidth > 0)) return;
+        const target = worldWidth * 0.3;
+        const pow = Math.pow(10, Math.floor(Math.log10(target)));
+        const nice = target >= 5 * pow ? 5 * pow : target >= 2 * pow ? 2 * pow : pow;
+        const px = nice / worldWidth * W;
+        const x = 8, y = H - 9;
+        ctx.strokeStyle = "rgba(255,255,255,0.7)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 3);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x + px, y);
+        ctx.lineTo(x + px, y - 3);
+        ctx.stroke();
+        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        ctx.font = "9px monospace";
+        ctx.textAlign = "left";
+        ctx.fillText(nice >= 1e3 ? `${nice / 1e3} km` : `${nice} m`, x + 3, y - 4);
+      }
+      /** North arrow (top-center): the minimap is axis-aligned, +Y = up = north. */
+      _drawNorthArrow(ctx, W) {
+        const cx = W / 2, top = 5;
+        ctx.beginPath();
+        ctx.moveTo(cx, top);
+        ctx.lineTo(cx - 3.5, top + 8);
+        ctx.lineTo(cx + 3.5, top + 8);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(255,255,255,0.55)";
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.55)";
+        ctx.font = "bold 8px monospace";
         ctx.textAlign = "center";
-        ctx.fillText("N", W / 2, 10);
+        ctx.fillText("N", cx, top + 17);
       }
       _worldToCanvasX(wx) {
         const W = this.overlayCanvas?.width ?? 176;
@@ -2286,7 +2416,7 @@ var init_dist = __esm({
         this.quaternion.copy(quaternion);
         this.group.position.copy(this.center);
         this.group.quaternion.copy(quaternion);
-        const radius = Math.max(size.x, size.y, size.z) * 0.62;
+        const radius = Math.max(size.x, size.y, size.z) * 0.42;
         this.group.scale.setScalar(Math.max(radius, 0.3));
       }
       /** Try to start a rotation drag. Returns true if an arc was grabbed. */
@@ -2439,7 +2569,26 @@ var init_dist = __esm({
         });
         this.sm.scene.add(tc.getHelper());
         this.tcMove = tc;
+        this._removePlaneHandles(tc);
         this._raiseGizmo();
+      }
+      /**
+       * Strip the translate gizmo's two-axis PLANE quads (children named XY/YZ/XZ)
+       * so only the single-axis arrows and the center handle remain — the rotation
+       * arcs occupy the mid-region instead. Hiding is NOT enough: the gizmo's
+       * updateMatrixWorld forces `visible = true` on every handle each frame, so
+       * the quads must be REMOVED from both the visible gizmo and the invisible
+       * picker trees. Names are non-unique — collect first, then remove.
+       */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      _removePlaneHandles(tc) {
+        const root = tc?.getHelper?.();
+        const gz = root?.children?.find((c) => c.gizmo && c.picker);
+        for (const group of [gz?.gizmo?.translate, gz?.picker?.translate]) {
+          if (!group?.children) continue;
+          const planes = group.children.filter((c) => c.name === "XY" || c.name === "YZ" || c.name === "XZ");
+          for (const p of planes) group.remove(p);
+        }
       }
       /** Whether the translate gizmo is mid-drag (viewport uses this for ordering). */
       isGizmoDragging() {
@@ -3057,6 +3206,125 @@ var init_dist = __esm({
         this._materials = [];
       }
     };
+    MagnifierRenderer = class _MagnifierRenderer {
+      sm;
+      enabled = false;
+      /** Latest cursor position, or null when the cursor left the canvas. */
+      cursor = null;
+      zoomCamera = new THREE5.PerspectiveCamera(10, 1, 0.01, 1e5);
+      lookTarget = new THREE5.Vector3();
+      // Frame + crosshair drawn over the inset in a second tiny pass.
+      frameScene = new THREE5.Scene();
+      frameCamera = new THREE5.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      frameDisposables = [];
+      /** Inset size (CSS px) and zoom factor. */
+      static SIZE = 180;
+      static ZOOM = 8;
+      constructor(sm) {
+        this.sm = sm;
+        this._buildFrame();
+      }
+      _buildFrame() {
+        const border = new THREE5.LineLoop(
+          new THREE5.BufferGeometry().setFromPoints([
+            new THREE5.Vector3(-0.995, -0.995, 0),
+            new THREE5.Vector3(0.995, -0.995, 0),
+            new THREE5.Vector3(0.995, 0.995, 0),
+            new THREE5.Vector3(-0.995, 0.995, 0)
+          ]),
+          new THREE5.LineBasicMaterial({ color: 14472518 })
+        );
+        const g = 0.08, a = 0.3;
+        const cross = new THREE5.LineSegments(
+          new THREE5.BufferGeometry().setFromPoints([
+            new THREE5.Vector3(-a, 0, 0),
+            new THREE5.Vector3(-g, 0, 0),
+            new THREE5.Vector3(g, 0, 0),
+            new THREE5.Vector3(a, 0, 0),
+            new THREE5.Vector3(0, -a, 0),
+            new THREE5.Vector3(0, -g, 0),
+            new THREE5.Vector3(0, g, 0),
+            new THREE5.Vector3(0, a, 0)
+          ]),
+          new THREE5.LineBasicMaterial({ color: 16777215, transparent: true, opacity: 0.8 })
+        );
+        this.frameScene.add(border, cross);
+        this.frameDisposables.push(
+          border.geometry,
+          border.material,
+          cross.geometry,
+          cross.material
+        );
+      }
+      setEnabled(enabled) {
+        this.enabled = enabled;
+        if (!enabled) this.cursor = null;
+      }
+      isEnabled() {
+        return this.enabled;
+      }
+      /**
+       * Feed the latest cursor position (canvas-relative CSS px + NDC).
+       * Call on mousemove while a measurement tool is active.
+       */
+      update(nx, ny, cx, cy) {
+        this.cursor = { nx, ny, cx, cy };
+      }
+      /** Hide the inset (cursor left the canvas / tool deactivated). */
+      clearCursor() {
+        this.cursor = null;
+      }
+      /** Render the inset. Register as a SceneManager post-render callback. */
+      render() {
+        if (!this.enabled || !this.cursor) return;
+        const renderer = this.sm.renderer;
+        const el = renderer.domElement;
+        const W = el.clientWidth;
+        const H = el.clientHeight;
+        if (W === 0 || H === 0) return;
+        const size = _MagnifierRenderer.SIZE;
+        const { nx, ny, cx, cy } = this.cursor;
+        const pad = 24;
+        let left = cx + pad;
+        if (left + size > W) left = cx - pad - size;
+        let bottom = H - cy + pad;
+        if (bottom + size > H) bottom = H - cy - pad - size;
+        left = Math.max(0, Math.min(left, W - size));
+        bottom = Math.max(0, Math.min(bottom, H - size));
+        const main = this.sm.camera;
+        this.zoomCamera.position.copy(main.position);
+        this.zoomCamera.up.copy(main.up);
+        this.zoomCamera.fov = (main.fov || 60) / _MagnifierRenderer.ZOOM;
+        this.zoomCamera.near = main.near;
+        this.zoomCamera.far = main.far;
+        this.zoomCamera.aspect = 1;
+        this.zoomCamera.updateProjectionMatrix();
+        this.lookTarget.set(nx, ny, 0.5).unproject(main);
+        this.zoomCamera.lookAt(this.lookTarget);
+        const savedVp = new THREE5.Vector4();
+        const savedSc = new THREE5.Vector4();
+        renderer.getViewport(savedVp);
+        renderer.getScissor(savedSc);
+        const savedScTest = renderer.getScissorTest();
+        const savedAutoClear = renderer.autoClear;
+        renderer.autoClear = false;
+        renderer.setScissorTest(true);
+        renderer.setScissor(left, bottom, size, size);
+        renderer.setViewport(left, bottom, size, size);
+        renderer.clearDepth();
+        renderer.render(this.sm.scene, this.zoomCamera);
+        renderer.clearDepth();
+        renderer.render(this.frameScene, this.frameCamera);
+        renderer.setViewport(savedVp);
+        renderer.setScissor(savedSc);
+        renderer.setScissorTest(savedScTest);
+        renderer.autoClear = savedAutoClear;
+      }
+      dispose() {
+        for (const d of this.frameDisposables) d.dispose();
+        this.frameDisposables = [];
+      }
+    };
     MAX_SCENES = 50;
     _nextId2 = 1;
     PresentationManager = class {
@@ -3220,6 +3488,7 @@ function ViewerProvider({ config, children }) {
   const [showMarkers, setShowMarkers] = useState(true);
   const [showMinimap, setShowMinimap] = useState(config.showMinimap ?? true);
   const [showMeasurements, setShowMeasurements] = useState(true);
+  const [showMagnifier, setShowMagnifier] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState(null);
   const [clipBoxEntries, setClipBoxEntries] = useState([]);
   const [selectedClipBoxId, setSelectedClipBoxId] = useState(null);
@@ -3281,6 +3550,8 @@ function ViewerProvider({ config, children }) {
     setShowMinimap,
     showMeasurements,
     setShowMeasurements,
+    showMagnifier,
+    setShowMagnifier,
     selectedCamera,
     setSelectedCamera,
     clipBoxEntries,
@@ -3447,6 +3718,7 @@ var init_en = __esm({
         measureVolume: "Volume",
         measureAngle: "Angle",
         measureProfile: "Profile",
+        magnifier: "Magnifier (zoom while picking)",
         clearMeasurements: "Clear all measurements",
         drawClipBox: "Draw clip box (drag in viewport)",
         clipModeKeepInside: "Mode: keep inside (click to invert)",
@@ -3622,6 +3894,11 @@ var init_locale_context = __esm({
 function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
+function budgetSliderRange(totalPoints) {
+  const max = totalPoints && totalPoints > 1e6 ? totalPoints : 1e7;
+  const step = Math.max(1e5, Math.round(max / 100 / 1e5) * 1e5);
+  return { min: 5e5, max, step };
+}
 var pcvChromeScaleStyle;
 var init_utils = __esm({
   "src/lib/utils.ts"() {
@@ -3720,11 +3997,13 @@ function Viewport({ className }) {
     setClipManager,
     setFps,
     activeTool,
-    pointBudget,
+    setPointBudget,
     showMarkers,
     showMinimap,
     showMeasurements,
+    showMagnifier,
     setMeasurementList,
+    selectedCamera,
     setSelectedCamera,
     clipBoxEntries,
     setClipBoxEntries,
@@ -3751,10 +4030,27 @@ function Viewport({ className }) {
   const clipRef = useRef(null);
   const animRef = useRef(null);
   const axisRef = useRef(null);
+  const magRef = useRef(null);
   const { minimapSize, handleMinimapResizeStart } = useMinimapResize(minimapRef);
   const clipDraftRef = useRef(null);
   const clipDownRef = useRef(null);
   const volumeDragRef = useRef(null);
+  const worldUnitsPerPixel = useCallback(() => {
+    const sm = smRef.current;
+    if (!sm || !containerRef.current) return 0.05;
+    const cam = sm.camera;
+    const dist = cam.position.distanceTo(sm.controls.target) || 10;
+    const vfov = THREE5.MathUtils.degToRad(cam.fov || 60);
+    return 2 * dist * Math.tan(vfov / 2) / Math.max(containerRef.current.clientHeight, 1);
+  }, []);
+  const footprintSlab = useCallback((a, b, baseZ) => {
+    const diag = Math.hypot(b.x - a.x, b.y - a.y);
+    const sliver = Math.max(0.5, diag * 0.05);
+    return new THREE5.Box3(
+      new THREE5.Vector3(Math.min(a.x, b.x), Math.min(a.y, b.y), baseZ),
+      new THREE5.Vector3(Math.max(a.x, b.x), Math.max(a.y, b.y), baseZ + sliver)
+    );
+  }, []);
   useEffect(() => {
     if (!containerRef.current || initialized.current) return;
     initialized.current = true;
@@ -3794,8 +4090,13 @@ function Viewport({ className }) {
     axisRef.current = axisWidget;
     const axisFrame = () => axisWidget.render();
     sm.addPostRenderCallback(axisFrame);
+    const magnifier = new MagnifierRenderer(sm);
+    magRef.current = magnifier;
+    const magFrame = () => magnifier.render();
+    sm.addPostRenderCallback(magFrame);
     sm.start();
-    loader.load("metadata.json", pointBudget).then(() => {
+    loader.load("metadata.json", config.pointBudget).then(() => {
+      setPointBudget(loader.appliedBudget);
       const pc = loader.getPointCloud();
       if (pc) {
         const pca = pc;
@@ -3820,6 +4121,8 @@ function Viewport({ className }) {
     return () => {
       sm.removeFrameCallback(minimapFrame);
       sm.removePostRenderCallback(axisFrame);
+      sm.removePostRenderCallback(magFrame);
+      magnifier.dispose();
       sm.dispose();
       measureMgr.dispose();
       markerMgr.dispose();
@@ -3830,8 +4133,9 @@ function Viewport({ className }) {
     };
   }, []);
   useEffect(() => {
-    if (minimapRef.current && minimapContainerRef.current) {
+    if (showMinimap && minimapRef.current && minimapContainerRef.current) {
       minimapRef.current.attach(minimapContainerRef.current);
+      return () => minimapRef.current?.dispose();
     }
   }, [showMinimap]);
   const navigateMinimap = useCallback((el, clientX, clientY) => {
@@ -3859,13 +4163,25 @@ function Viewport({ className }) {
     minimapDragRef.current = false;
     e.currentTarget.releasePointerCapture(e.pointerId);
   }, []);
+  const handleMinimapDblClick = useCallback(() => {
+    const wb = loaderRef.current?.worldBox;
+    if (wb && !wb.isEmpty()) smRef.current?.fitToBox(wb);
+  }, []);
   useEffect(() => {
     if (markerRef.current && cameras.length > 0) {
       const wb = loaderRef.current?.worldBox;
       markerRef.current.build(cameras, wb && !wb.isEmpty() ? wb : void 0);
       markerRef.current.setVisible(showMarkers);
     }
+    minimapRef.current?.setPois(
+      cameras.filter((c) => c.position).map((c) => ({ x: c.position.x, y: c.position.y }))
+    );
   }, [cameras, showMarkers]);
+  useEffect(() => {
+    minimapRef.current?.setSelectedPoi(
+      selectedCamera?.position ? { x: selectedCamera.position.x, y: selectedCamera.position.y } : null
+    );
+  }, [selectedCamera]);
   useEffect(() => {
     markerRef.current?.setVisible(showMarkers);
   }, [showMarkers]);
@@ -3893,6 +4209,9 @@ function Viewport({ className }) {
       clipRef.current?.setDraft(null);
     }
   }, [activeTool]);
+  useEffect(() => {
+    magRef.current?.setEnabled(showMagnifier && activeTool.startsWith("measure-"));
+  }, [showMagnifier, activeTool]);
   useEffect(() => {
     smRef.current?.setNavigationMode(navigationMode);
   }, [navigationMode]);
@@ -3994,16 +4313,20 @@ function Viewport({ className }) {
       e.preventDefault();
       sm.controls.enabled = false;
       const { nx, ny } = getNDC(e);
-      const planeZ = sm.controls.target.z;
-      const startWorld = projectToPlaneZ(nx, ny, planeZ);
+      const startWorld = pickVisiblePoint(nx, ny);
       if (startWorld) {
-        volumeDragRef.current = { phase: "footprint", startWorld, planeZ };
+        volumeDragRef.current = {
+          phase: "footprint",
+          startWorld,
+          planeZ: startWorld.z,
+          baseZ: startWorld.z
+        };
       }
       return;
     }
     if (activeTool !== "section-box" || e.button !== 0) return;
     clipDownRef.current = { x: e.clientX, y: e.clientY };
-  }, [activeTool]);
+  }, [activeTool, pickVisiblePoint]);
   const handleMouseMove = useCallback((e) => {
     const fh = clipRef.current?.faceHandles;
     if (fh && fh.isDragging()) {
@@ -4023,22 +4346,21 @@ function Viewport({ className }) {
         const { nx, ny } = getNDC(e);
         const endWorld = projectToPlaneZ(nx, ny, vd.planeZ);
         if (!endWorld) return;
-        const { startWorld } = vd;
-        const zMin = metaZRef.current?.min ?? vd.planeZ - 10;
-        const zMax = metaZRef.current?.max ?? vd.planeZ + 10;
-        const box = new THREE5.Box3(
-          new THREE5.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
-          new THREE5.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
+        measureRef.current?.setVolumeDraft(
+          footprintSlab(vd.startWorld, endWorld, vd.baseZ ?? vd.planeZ)
         );
-        measureRef.current?.setVolumeDraft(box);
       } else if (vd.phase === "height" && vd.footprintBox && vd.startClientY !== void 0) {
         const deltaY = vd.startClientY - e.clientY;
-        const sensitivity = 0.1;
-        const zExtent = Math.max(0.1, Math.abs(deltaY) * sensitivity);
-        const midZ = ((vd.baseZMin ?? 0) + (vd.baseZMax ?? 0)) / 2;
+        const extent = Math.max(0.1, Math.abs(deltaY) * worldUnitsPerPixel());
+        const base = vd.baseZ ?? vd.footprintBox.min.z;
         const box = vd.footprintBox.clone();
-        box.min.z = midZ - zExtent / 2;
-        box.max.z = midZ + zExtent / 2;
+        if (deltaY >= 0) {
+          box.min.z = base;
+          box.max.z = base + extent;
+        } else {
+          box.min.z = base - extent;
+          box.max.z = base;
+        }
         vd.footprintBox.copy(box);
         measureRef.current?.setVolumeDraft(box);
       }
@@ -4054,8 +4376,10 @@ function Viewport({ className }) {
     if (activeTool.startsWith("measure-") && smRef.current) {
       const { nx, ny } = getNDC(e);
       scheduleSnap(nx, ny);
+      const rect = e.currentTarget.getBoundingClientRect();
+      magRef.current?.update(nx, ny, e.clientX - rect.left, e.clientY - rect.top);
     }
-  }, [activeTool, scheduleSnap, buildClipDraftAt]);
+  }, [activeTool, scheduleSnap, buildClipDraftAt, footprintSlab, worldUnitsPerPixel]);
   const handleMouseUp = useCallback((e) => {
     const sm = smRef.current;
     const fh = clipRef.current?.faceHandles;
@@ -4075,13 +4399,8 @@ function Viewport({ className }) {
       const { nx, ny } = getNDC(e);
       const endWorld = projectToPlaneZ(nx, ny, vdUp.planeZ);
       if (endWorld) {
-        const { startWorld } = vdUp;
-        const zMin = metaZRef.current?.min ?? vdUp.planeZ - 10;
-        const zMax = metaZRef.current?.max ?? vdUp.planeZ + 10;
-        const box = new THREE5.Box3(
-          new THREE5.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
-          new THREE5.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax)
-        );
+        const base = vdUp.baseZ ?? vdUp.planeZ;
+        const box = footprintSlab(vdUp.startWorld, endWorld, base);
         if (!box.isEmpty()) {
           volumeDragRef.current = {
             phase: "height",
@@ -4089,8 +4408,7 @@ function Viewport({ className }) {
             planeZ: vdUp.planeZ,
             footprintBox: box,
             startClientY: e.clientY,
-            baseZMin: zMin,
-            baseZMax: zMax
+            baseZ: base
           };
           return;
         }
@@ -4118,7 +4436,7 @@ function Viewport({ className }) {
       }
       return;
     }
-  }, [activeTool, buildClipDraftAt]);
+  }, [activeTool, buildClipDraftAt, footprintSlab]);
   const handleClick = useCallback((e) => {
     if (activeTool === "section-box") return;
     const sm = smRef.current;
@@ -4146,6 +4464,7 @@ function Viewport({ className }) {
     cancelSnap();
     lastSnapRef.current = null;
     measureRef.current?.clearSnap();
+    magRef.current?.clearCursor();
   }, [cancelSnap]);
   const handleContextMenu = useCallback((e) => {
     e.preventDefault();
@@ -4203,6 +4522,7 @@ function Viewport({ className }) {
         onPointerDown: handleMinimapPointerDown,
         onPointerMove: handleMinimapPointerMove,
         onPointerUp: handleMinimapPointerUp,
+        onDoubleClick: handleMinimapDblClick,
         children: [
           /* @__PURE__ */ jsx(
             "div",
@@ -4247,6 +4567,7 @@ var init_viewport = __esm({
     init_viewer_provider();
     init_data_provider();
     init_locale_context();
+    init_dist();
     init_dist();
     init_dist();
     init_dist();
@@ -4323,8 +4644,52 @@ function useIsMobile(breakpointPx = 768) {
 init_utils();
 init_viewer_provider();
 
-// src/components/toolbar/view-controls.tsx
+// src/hooks/use-navigation-actions.ts
 init_viewer_provider();
+var PRESET_DIRS = {
+  top: [0, -0.035, 1],
+  bottom: [0, -0.035, -1],
+  front: [0, -1, 0],
+  back: [0, 1, 0],
+  left: [-1, 0, 0],
+  right: [1, 0, 0]
+};
+function useNavigationActions() {
+  const { sceneManager, cameraAnimator, loader, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
+  const fitToView = useCallback(() => {
+    if (!sceneManager || !loader) return;
+    const wb = loader.worldBox;
+    if (!wb.isEmpty()) sceneManager.fitToBox(wb);
+  }, [sceneManager, loader]);
+  const flyToView = useCallback((preset) => {
+    if (!sceneManager) return;
+    const cam = sceneManager.camera;
+    const controls = sceneManager.controls;
+    const target = controls.target.clone();
+    const dist = cam.position.distanceTo(target) || 10;
+    const d = PRESET_DIRS[preset];
+    const dir = new THREE5.Vector3(d[0], d[1], d[2]).normalize();
+    const position = target.clone().addScaledVector(dir, dist);
+    const up = new THREE5.Vector3(0, 0, 1);
+    if (cameraAnimator) {
+      cameraAnimator.flyTo({ position, target, up, duration: 600 });
+    } else {
+      cam.position.copy(position);
+      cam.up.copy(up);
+      controls.update();
+    }
+  }, [sceneManager, cameraAnimator]);
+  return {
+    navigationMode,
+    setNavigationMode,
+    projection,
+    setProjection,
+    fitToView,
+    flyToView
+  };
+}
+
+// src/components/toolbar/view-controls.tsx
 init_locale_context();
 var CUBE_WIRE = /* @__PURE__ */ jsxs(Fragment, { children: [
   /* @__PURE__ */ jsx("path", { d: "M12 2L22 8V16L12 22L2 16V8Z", stroke: "currentColor", strokeWidth: "1.2", strokeLinejoin: "round", fill: "none" }),
@@ -4369,35 +4734,23 @@ function RightIcon() {
   ] });
 }
 var VIEW_DEFS = [
-  { titleKey: "viewTop", pos: [0, 0, 1], up: [0, 1, 0], icon: TopIcon },
-  { titleKey: "viewBottom", pos: [0, 0, -1], up: [0, 1, 0], icon: BottomIcon },
-  { titleKey: "viewFront", pos: [0, -1, 0], up: [0, 0, 1], icon: FrontIcon },
-  { titleKey: "viewBack", pos: [0, 1, 0], up: [0, 0, 1], icon: BackIcon },
-  { titleKey: "viewLeft", pos: [-1, 0, 0], up: [0, 0, 1], icon: LeftIcon },
-  { titleKey: "viewRight", pos: [1, 0, 0], up: [0, 0, 1], icon: RightIcon }
+  { titleKey: "viewTop", preset: "top", icon: TopIcon },
+  { titleKey: "viewBottom", preset: "bottom", icon: BottomIcon },
+  { titleKey: "viewFront", preset: "front", icon: FrontIcon },
+  { titleKey: "viewBack", preset: "back", icon: BackIcon },
+  { titleKey: "viewLeft", preset: "left", icon: LeftIcon },
+  { titleKey: "viewRight", preset: "right", icon: RightIcon }
 ];
 function ViewControls() {
-  const { sceneManager } = useViewer();
+  const { flyToView } = useNavigationActions();
   const t = useLocale().toolbar;
-  const flyToView = (pos, up) => {
-    if (!sceneManager) return;
-    const { camera, controls } = sceneManager;
-    const target = controls.target.clone();
-    const dist = camera.position.distanceTo(target);
-    const newPos = target.clone().add(
-      { x: pos[0] * dist, y: pos[1] * dist, z: pos[2] * dist }
-    );
-    camera.position.set(newPos.x, newPos.y, newPos.z);
-    camera.up.set(up[0], up[1], up[2]);
-    controls.update();
-  };
   return /* @__PURE__ */ jsx(Fragment, { children: VIEW_DEFS.map((v) => /* @__PURE__ */ jsx(
     ToolbarIconBtn,
     {
       icon: /* @__PURE__ */ jsx(v.icon, {}),
       title: t[v.titleKey] ?? v.titleKey,
       active: false,
-      onClick: () => flyToView(v.pos, v.up)
+      onClick: () => flyToView(v.preset)
     },
     v.titleKey
   )) });
@@ -4405,7 +4758,9 @@ function ViewControls() {
 
 // src/components/toolbar/display-controls.tsx
 init_viewer_provider();
+init_data_provider();
 init_locale_context();
+init_utils();
 var COLOR_MODES = [
   { value: "rgb", labelKey: "colorRgb" },
   { value: "height", labelKey: "colorElevation" },
@@ -4508,6 +4863,8 @@ function ViewModeControls() {
 }
 function DisplayControls() {
   const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, uiMode } = useViewer();
+  const { metadata } = useData();
+  const budgetRange = budgetSliderRange(metadata?.points);
   const t = useLocale().toolbar;
   const [quality, setQuality] = useState("balanced");
   const isPro = uiMode === "professional";
@@ -4561,9 +4918,9 @@ function DisplayControls() {
         "input",
         {
           type: "range",
-          min: 5e5,
-          max: 1e7,
-          step: 1e5,
+          min: budgetRange.min,
+          max: budgetRange.max,
+          step: budgetRange.step,
           value: pointBudget,
           onChange: handleBudget,
           className: "pcv-slider w-16",
@@ -4817,7 +5174,7 @@ var ADVANCED_MEASURES = [
   { type: "profile", tool: "measure-profile", icon: /* @__PURE__ */ jsx(Waypoints, { size: 15 }), titleKey: "measureProfile" }
 ];
 function ToolRail() {
-  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, uiMode, selectedClipBoxId } = useViewer();
+  const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, uiMode, selectedClipBoxId, showMagnifier, setShowMagnifier } = useViewer();
   const t = useLocale().toolRail;
   const isPro = uiMode === "professional";
   const toggle = (tool) => setActiveTool(activeTool === tool ? "none" : tool);
@@ -4869,6 +5226,16 @@ function ToolRail() {
         def.tool
       ))
     ] }),
+    /* @__PURE__ */ jsx(
+      RailBtn,
+      {
+        icon: /* @__PURE__ */ jsx(ZoomIn, { size: 14 }),
+        title: t.magnifier,
+        active: showMagnifier,
+        onClick: () => setShowMagnifier(!showMagnifier),
+        compact: true
+      }
+    ),
     /* @__PURE__ */ jsx(
       RailBtn,
       {
@@ -5176,9 +5543,9 @@ function ClassificationPanel() {
       if (cloud?.material) {
         const mat = cloud.material;
         if (mat.classification) {
-          const THREE3 = window.THREE;
+          const THREE4 = window.THREE;
           const hexColor = CLASS_DEFS.find((c) => c.code === code)?.color ?? "#ffffff";
-          mat.classification[code] = { visible: next[code], color: THREE3 ? new THREE3.Color(hexColor) : hexColor };
+          mat.classification[code] = { visible: next[code], color: THREE4 ? new THREE4.Color(hexColor) : hexColor };
         }
       }
       return next;
@@ -6388,6 +6755,7 @@ function PanoViewer() {
 
 // src/components/overlays/rendering-settings.tsx
 init_viewer_provider();
+init_data_provider();
 
 // src/hooks/use-display-actions.ts
 init_viewer_provider();
@@ -6418,6 +6786,25 @@ function useDisplayActions() {
     pointSize,
     setPointSize,
     setQualityPreset
+  };
+}
+
+// src/hooks/use-display-settings.ts
+init_viewer_provider();
+init_dist();
+function useDisplaySettings() {
+  const { displaySettings: settings, setDisplaySettings } = useViewer();
+  const applyPreset = useCallback((preset) => {
+    setDisplaySettings({ ...DISPLAY_PRESETS[preset] });
+  }, [setDisplaySettings]);
+  const updateSetting = useCallback((key, value) => {
+    setDisplaySettings({ ...settings, preset: "custom", [key]: value });
+  }, [settings, setDisplaySettings]);
+  return {
+    settings,
+    presets: DISPLAY_PRESETS,
+    applyPreset,
+    updateSetting
   };
 }
 
@@ -6471,6 +6858,9 @@ function useDraggable(options) {
   );
   return { position, onDragStart, reset };
 }
+
+// src/components/overlays/rendering-settings.tsx
+init_utils();
 var COLOR_MODES2 = [
   { value: "rgb", label: "RGB" },
   { value: "height", label: "Elevation" },
@@ -6484,7 +6874,10 @@ var QUALITY = [
 ];
 function RenderingSettings({ open, onClose }) {
   const { loader, colorMode, setColorMode, pointSize, setPointSize, pointBudget, setPointBudget } = useViewer();
+  const { metadata } = useData();
+  const budgetRange = budgetSliderRange(metadata?.points);
   const { setQualityPreset } = useDisplayActions();
+  const { settings: display, updateSetting: updateDisplay } = useDisplaySettings();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().renderingSettings;
   const pcvRoot = usePcvRoot();
@@ -6620,9 +7013,9 @@ function RenderingSettings({ open, onClose }) {
               {
                 label: "Budget",
                 value: pointBudget,
-                min: 2e5,
-                max: 1e7,
-                step: 1e5,
+                min: budgetRange.min,
+                max: budgetRange.max,
+                step: budgetRange.step,
                 onChange: (v) => {
                   setPointBudget(v);
                   loader?.setPointBudget(v);
@@ -6773,6 +7166,67 @@ function RenderingSettings({ open, onClose }) {
               onChange: setOpacityVal
             }
           ) }),
+          /* @__PURE__ */ jsxs(Section, { title: "Measurements & markers", children: [
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: "Label size",
+                value: display.measurementLabelScale,
+                min: 0.3,
+                max: 2.5,
+                step: 0.1,
+                onChange: (v) => updateDisplay("measurementLabelScale", v),
+                display: (v) => v.toFixed(1) + "\xD7"
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: "Point size",
+                value: display.measurementSphereRadius,
+                min: 0.05,
+                max: 0.4,
+                step: 0.01,
+                onChange: (v) => updateDisplay("measurementSphereRadius", v),
+                display: (v) => (v / 0.15).toFixed(1) + "\xD7"
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: "Pin size",
+                value: display.markerSphereScale,
+                min: 0.4,
+                max: 2,
+                step: 0.1,
+                onChange: (v) => updateDisplay("markerSphereScale", v),
+                display: (v) => v.toFixed(1) + "\xD7"
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              Slider,
+              {
+                label: "Pin opacity",
+                value: display.markerSphereOpacity,
+                min: 0.2,
+                max: 1,
+                step: 0.05,
+                onChange: (v) => updateDisplay("markerSphereOpacity", v)
+              }
+            ),
+            /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+              /* @__PURE__ */ jsx("span", { className: "w-16 text-muted-foreground shrink-0", children: "Pin labels" }),
+              /* @__PURE__ */ jsx("div", { className: "flex-1 flex items-center gap-1", children: ["hover", "always", "hidden"].map((mode) => /* @__PURE__ */ jsx(
+                "button",
+                {
+                  onClick: () => updateDisplay("markerLabelMode", mode),
+                  className: (display.markerLabelMode ?? "hover") === mode ? "flex-1 text-[10px] py-1 rounded bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] capitalize" : "flex-1 text-[10px] py-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 capitalize",
+                  children: mode
+                },
+                mode
+              )) })
+            ] })
+          ] }),
           /* @__PURE__ */ jsx(Section, { title: "Theme", children: /* @__PURE__ */ jsxs(
             "button",
             {
@@ -7386,10 +7840,26 @@ function PcvRoot({ className, uiScale = 1, children }) {
     }
   ) }) });
 }
-function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, uiScale = 1, children, components }) {
+function useAutoUiScale(explicit) {
+  const [auto, setAuto] = useState(1);
+  useEffect(() => {
+    if (explicit !== void 0 || typeof window === "undefined") return;
+    const update = () => {
+      const dpr = window.devicePixelRatio || 1;
+      setAuto(dpr >= 2 ? 1.25 : dpr >= 1.5 ? 1.15 : 1);
+    };
+    update();
+    const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, [explicit, auto]);
+  return explicit ?? auto;
+}
+function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, uiScale, children, components }) {
+  const effectiveUiScale = useAutoUiScale(uiScale);
   const adapter = useMemo(() => createAdapter(source), [source]);
   const config = useMemo(() => ({ source, uiMode, panoEngine }), [source, uiMode, panoEngine]);
-  return /* @__PURE__ */ jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsx(ComponentsProvider, { components, children: /* @__PURE__ */ jsx(PcvRoot, { className, uiScale, children: children ? /* @__PURE__ */ jsxs(Fragment, { children: [
+  return /* @__PURE__ */ jsx(LocaleProvider, { locale, children: /* @__PURE__ */ jsx(ThemeProvider, { defaultTheme: theme, children: /* @__PURE__ */ jsx(DataProvider, { adapter, children: /* @__PURE__ */ jsx(ViewerProvider, { config, children: /* @__PURE__ */ jsx(ComponentsProvider, { components, children: /* @__PURE__ */ jsx(PcvRoot, { className, uiScale: effectiveUiScale, children: children ? /* @__PURE__ */ jsxs(Fragment, { children: [
     children(
       /* @__PURE__ */ jsx(Suspense, { fallback: /* @__PURE__ */ jsx(ViewportFallback2, {}), children: /* @__PURE__ */ jsx(Viewport4, {}) })
     ),
@@ -7399,7 +7869,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "e994397 \xB7 2026-07-02 13:37Z" ;
+var PCV_BUILD = "5374f7c \xB7 2026-07-02 16:23Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
@@ -7818,6 +8288,7 @@ function ToolsPalette() {
 // src/layouts/workstation/display-palette.tsx
 init_utils();
 init_viewer_provider();
+init_data_provider();
 var COLOR_MODES4 = [
   { value: "rgb", label: "RGB" },
   { value: "height", label: "Elevation" },
@@ -7834,6 +8305,8 @@ var QUALITY_PRESETS2 = [
 ];
 function DisplayPalette() {
   const { loader, colorMode, setColorMode, pointBudget, setPointBudget, pointSize, setPointSize } = useViewer();
+  const { metadata } = useData();
+  const budgetRange = budgetSliderRange(metadata?.points);
   return /* @__PURE__ */ jsxs(FloatingPalette, { title: "Display", icon: /* @__PURE__ */ jsx(Palette, { size: 12 }), children: [
     /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mb-1", children: "Color" }),
     /* @__PURE__ */ jsx("div", { className: "flex flex-wrap gap-1", children: COLOR_MODES4.map((cm) => /* @__PURE__ */ jsx(
@@ -7877,9 +8350,9 @@ function DisplayPalette() {
           "input",
           {
             type: "range",
-            min: 5e5,
-            max: 1e7,
-            step: 1e5,
+            min: budgetRange.min,
+            max: budgetRange.max,
+            step: budgetRange.step,
             value: pointBudget,
             onChange: (e) => {
               const v = parseInt(e.target.value);
@@ -8311,7 +8784,7 @@ function DisplaySettingsDialog({
     setSettings({ ...DISPLAY_PRESETS[preset] });
   };
   const updateField = (key, value) => {
-    setSettings({ ...settings, [key]: value, preset: settings.preset });
+    setSettings({ ...settings, [key]: value, preset: "custom" });
   };
   return /* @__PURE__ */ jsx(Dialog2, { open, onOpenChange, children: /* @__PURE__ */ jsxs(
     DialogContent2,
@@ -8351,17 +8824,6 @@ function DisplaySettingsDialog({
           ) }) }),
           /* @__PURE__ */ jsx(TabsContent2, { value: "advanced", children: /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
             /* @__PURE__ */ jsxs(SettingsSection, { title: t.measurementsSection, children: [
-              /* @__PURE__ */ jsx(
-                SliderRow,
-                {
-                  label: t.lineWidth,
-                  min: 1,
-                  max: 6,
-                  step: 0.5,
-                  value: settings.measurementLineWidth,
-                  onChange: (v) => updateField("measurementLineWidth", v)
-                }
-              ),
               /* @__PURE__ */ jsx(
                 SliderRow,
                 {
@@ -8440,51 +8902,6 @@ function DisplaySettingsDialog({
   ) });
 }
 
-// src/hooks/use-navigation-actions.ts
-init_viewer_provider();
-function useNavigationActions() {
-  const { sceneManager, loader, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
-  const fitToView = useCallback(() => {
-    if (!sceneManager || !loader) return;
-    const wb = loader.worldBox;
-    if (!wb.isEmpty()) sceneManager.fitToBox(wb);
-  }, [sceneManager, loader]);
-  const flyToView = useCallback((preset) => {
-    if (!sceneManager || !loader) return;
-    const wb = loader.worldBox;
-    if (wb.isEmpty()) return;
-    const cam = sceneManager.camera;
-    const controls = sceneManager.controls;
-    const target = controls.target.clone();
-    const dist = cam.position.distanceTo(target);
-    const dirs = {
-      top: [0, 0, 1],
-      bottom: [0, 0, -1],
-      front: [0, -1, 0],
-      back: [0, 1, 0],
-      left: [-1, 0, 0],
-      right: [1, 0, 0]
-    };
-    const [dx, dy, dz] = dirs[preset];
-    setProjection("orthographic");
-    cam.position.set(
-      target.x + dx * dist,
-      target.y + dy * dist,
-      target.z + dz * dist
-    );
-    cam.up.set(0, preset === "top" || preset === "bottom" ? 1 : 0, preset === "top" || preset === "bottom" ? 0 : 1);
-    controls.update();
-  }, [sceneManager, loader, setProjection]);
-  return {
-    navigationMode,
-    setNavigationMode,
-    projection,
-    setProjection,
-    fitToView,
-    flyToView
-  };
-}
-
 // src/hooks/use-measurement-actions.ts
 init_viewer_provider();
 init_utils();
@@ -8552,25 +8969,6 @@ function useVisibilityActions() {
     toggleMarkers,
     showMinimap,
     toggleMinimap
-  };
-}
-
-// src/hooks/use-display-settings.ts
-init_viewer_provider();
-init_dist();
-function useDisplaySettings() {
-  const { displaySettings: settings, setDisplaySettings } = useViewer();
-  const applyPreset = useCallback((preset) => {
-    setDisplaySettings({ ...DISPLAY_PRESETS[preset] });
-  }, [setDisplaySettings]);
-  const updateSetting = useCallback((key, value) => {
-    setDisplaySettings({ ...settings, preset: "standard", [key]: value });
-  }, [settings, setDisplaySettings]);
-  return {
-    settings,
-    presets: DISPLAY_PRESETS,
-    applyPreset,
-    updateSetting
   };
 }
 
@@ -8675,6 +9073,7 @@ var de = createLocale(en, {
     measureVolume: "Volumen",
     measureAngle: "Winkel",
     measureProfile: "Profil",
+    magnifier: "Lupe (Zoom beim Messen)",
     clearMeasurements: "Alle Messungen l\xF6schen",
     drawClipBox: "Ausschnittrahmen ziehen (im Viewport)",
     clipModeKeepInside: "Modus: innen behalten (zum Umkehren klicken)",
@@ -8832,6 +9231,6 @@ var de = createLocale(en, {
   }
 });
 
-export { AboutDialog, AxisWidget, Button, CameraAnimator, ClassificationPanel, ClipManager, ClipToolbar, CollapsibleSidebar, ComponentsProvider, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, DisplaySettingsDialog, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, MinimapRenderer, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider2 as Slider, Tabs, TabsContent, TabsList, TabsTrigger, ThemeProvider, Toggle, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, AxisWidget, Button, CameraAnimator, ClassificationPanel, ClipManager, ClipToolbar, CollapsibleSidebar, ComponentsProvider, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, DisplaySettingsDialog, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MagnifierRenderer, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, MinimapRenderer, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider2 as Slider, Tabs, TabsContent, TabsList, TabsTrigger, ThemeProvider, Toggle, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

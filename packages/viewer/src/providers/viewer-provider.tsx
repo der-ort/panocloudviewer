@@ -54,6 +54,9 @@ interface ViewerContextValue {
   setShowMinimap: (v: boolean) => void;
   showMeasurements: boolean;
   setShowMeasurements: (v: boolean) => void;
+  /** Picking magnifier (zoom inset while measuring). Default off. */
+  showMagnifier: boolean;
+  setShowMagnifier: (v: boolean) => void;
   selectedCamera: CameraData | null;
   setSelectedCamera: (cam: CameraData | null) => void;
   clipBoxEntries: ClipBoxEntry[];
@@ -111,6 +114,7 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const [showMarkers, setShowMarkers] = useState(true);
   const [showMinimap, setShowMinimap] = useState(config.showMinimap ?? true);
   const [showMeasurements, setShowMeasurements] = useState(true);
+  const [showMagnifier, setShowMagnifier] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState<import("@der-ort/pano-cloud-viewer-core").CameraData | null>(null);
   const [clipBoxEntries, setClipBoxEntries] = useState<ClipBoxEntry[]>([]);
   const [selectedClipBoxId, setSelectedClipBoxId] = useState<string | null>(null);
@@ -154,6 +158,7 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
     showMarkers, setShowMarkers,
     showMinimap, setShowMinimap,
     showMeasurements, setShowMeasurements,
+    showMagnifier, setShowMagnifier,
     selectedCamera, setSelectedCamera,
     clipBoxEntries, setClipBoxEntries,
     selectedClipBoxId, setSelectedClipBoxId,

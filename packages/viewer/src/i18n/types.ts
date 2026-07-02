@@ -89,6 +89,7 @@ export interface ViewerLocale {
     measureVolume: string;
     measureAngle: string;
     measureProfile: string;
+    magnifier: string;
     clearMeasurements: string;
     drawClipBox: string;
     clipModeKeepInside: string;

@@ -291,7 +291,7 @@ var SceneManager = class {
     return null;
   }
 };
-var PointCloudLoader = class {
+var PointCloudLoader = class _PointCloudLoader {
   sceneManager;
   adapter;
   currentClouds = [];
@@ -304,8 +304,15 @@ var PointCloudLoader = class {
     this.sceneManager = sceneManager;
     this.adapter = adapter;
   }
-  /** Load a point cloud from the adapter's base URL */
-  async load(metadataPath = "metadata.json", pointBudget = 2e6) {
+  /** Point budget actually applied by the last load() (auto-derived or explicit). */
+  appliedBudget = 2e6;
+  /**
+   * Load a point cloud from the adapter's base URL.
+   * @param pointBudget Explicit budget. When omitted, the budget is derived
+   *                    from the cloud's total point count via
+   *                    {@link PointCloudLoader.calcOptimalBudget} — no fixed cap.
+   */
+  async load(metadataPath = "metadata.json", pointBudget) {
     const { Potree, PointColorType } = await import('potree-core');
     if (!this.sceneManager.potree) {
       this.sceneManager.potree = new Potree();
@@ -316,15 +323,8 @@ var PointCloudLoader = class {
       getUrl: (url) => Promise.resolve(this.adapter.resolveUrl(url))
     };
     const potree = this.sceneManager.potree;
-    potree.pointBudget = pointBudget;
-    const pointCloud = await potree.loadPointCloud(
-      metadataPath,
-      requestManager
-    );
-    pointCloud.material.size = 1.5;
-    pointCloud.material.pointSizeType = 2;
-    pointCloud.material.shape = 1;
     let hasRgb = false;
+    let totalPoints = 0;
     try {
       const meta = await this.adapter.fetchJson(metadataPath);
       const attributes = meta?.attributes ?? [];
@@ -333,10 +333,21 @@ var PointCloudLoader = class {
         return n === "rgb" || n === "rgba" || n === "color";
       });
       this._projection = typeof meta?.projection === "string" ? meta.projection.trim() : "";
+      totalPoints = typeof meta?.points === "number" ? meta.points : 0;
     } catch {
       hasRgb = false;
     }
     this.hasRgb = hasRgb;
+    const budget = pointBudget ?? (totalPoints > 0 ? _PointCloudLoader.calcOptimalBudget(totalPoints) : 2e6);
+    this.appliedBudget = budget;
+    potree.pointBudget = budget;
+    const pointCloud = await potree.loadPointCloud(
+      metadataPath,
+      requestManager
+    );
+    pointCloud.material.size = 1.5;
+    pointCloud.material.pointSizeType = 2;
+    pointCloud.material.shape = 1;
     if (hasRgb) {
       pointCloud.material.pointColorType = PointColorType.RGB;
     } else {
@@ -496,11 +507,16 @@ var PointCloudLoader = class {
   getPointCloud() {
     return this.currentClouds[0] ?? null;
   }
-  /** Calculate optimal point budget based on total point count */
+  /**
+   * Calculate an optimal point budget from the total point count.
+   * Proportional (30% / 15% / 8% by cloud size), floored at 500K, and never
+   * above the cloud's own total — no fixed upper cap, so large clouds aren't
+   * artificially starved.
+   */
   static calcOptimalBudget(totalPoints) {
     const ratio = totalPoints < 5e6 ? 0.3 : totalPoints < 5e7 ? 0.15 : 0.08;
-    const raw = Math.round(totalPoints * ratio);
-    return Math.min(Math.max(Math.round(raw / 1e5) * 1e5, 5e5), 1e7);
+    const raw = Math.round(totalPoints * ratio / 1e5) * 1e5;
+    return Math.min(Math.max(raw, 5e5), Math.max(totalPoints, 5e5));
   }
 };
 var EASINGS = {
@@ -1132,11 +1148,19 @@ var MeasurementManager = class {
   }
   // ─── Volume measurement (drag-to-create) ─────────────────────────────────
   _volumeDraft = null;
-  /** Show/update a volume draft box preview during drag creation */
+  /**
+   * Show/update a volume draft box preview during drag creation, with a live
+   * dimensions readout (L × W × H and m³) so the user sees what they're
+   * defining before committing.
+   */
   setVolumeDraft(box) {
     if (this._volumeDraft) {
       this._volumeDraft.traverse((o) => {
-        if (o instanceof THREE5__namespace.Mesh || o instanceof THREE5__namespace.LineSegments) {
+        if (o instanceof THREE5__namespace.Sprite) {
+          const mat = o.material;
+          mat.map?.dispose();
+          mat.dispose();
+        } else if (o instanceof THREE5__namespace.Mesh || o instanceof THREE5__namespace.LineSegments) {
           o.geometry.dispose();
           o.material.dispose();
         }
@@ -1171,6 +1195,11 @@ var MeasurementManager = class {
     edges.scale.copy(size);
     edges.renderOrder = 2;
     draftGroup.add(edges);
+    const dims = `${size.x.toFixed(2)} \xD7 ${size.y.toFixed(2)} \xD7 ${size.z.toFixed(2)} m \xB7 ${formatVolume(size.x * size.y * size.z)}`;
+    const label = this.makeTextSprite(dims, COLORS.volume);
+    label.position.copy(center).add(new THREE5__namespace.Vector3(0, 0, size.z / 2));
+    label.center.set(0.5, -0.35);
+    draftGroup.add(label);
     this.group.add(draftGroup);
     this._volumeDraft = draftGroup;
   }
@@ -1413,16 +1442,21 @@ var MeasurementManager = class {
   }
   /**
    * Value label: constant screen-size sprite (`sizeAttenuation:false`) so it is
-   * equally readable on a 5 m room and a 500 m site. White text on a dark card
-   * with the measurement color as accent bar + border — high contrast on both
-   * bright and dark point clouds. `measurementLabelScale` multiplies the size.
+   * equally readable on a 5 m room and a 500 m site. Monospaced white text on a
+   * dark card with the measurement color as border; the card width fits the
+   * text so labels stay compact. `measurementLabelScale` multiplies the size.
    */
   makeTextSprite(text, color) {
-    const W = 512, H = 96;
+    const FONT = "bold 52px Consolas, 'Cascadia Mono', 'Courier New', monospace";
+    const H = 96;
+    const PAD = 28;
     const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    ctx.font = FONT;
+    const W = Math.ceil(ctx.measureText(text).width) + PAD * 2;
     canvas.width = W;
     canvas.height = H;
-    const ctx = canvas.getContext("2d");
+    ctx.font = FONT;
     ctx.beginPath();
     ctx.roundRect(3, 3, W - 6, H - 6, 14);
     ctx.fillStyle = "rgba(10,10,12,0.88)";
@@ -1430,15 +1464,10 @@ var MeasurementManager = class {
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     ctx.stroke();
-    ctx.beginPath();
-    ctx.roundRect(10, 16, 10, H - 32, 5);
-    ctx.fillStyle = color;
-    ctx.fill();
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 52px -apple-system, 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, W / 2 + 8, H / 2 + 2);
+    ctx.fillText(text, W / 2, H / 2 + 2);
     const tex = new THREE5__namespace.CanvasTexture(canvas);
     tex.minFilter = THREE5__namespace.LinearFilter;
     const sprite = new THREE5__namespace.Sprite(new THREE5__namespace.SpriteMaterial({
@@ -1450,7 +1479,8 @@ var MeasurementManager = class {
       depthWrite: false
     }));
     const ls = this._displaySettings.measurementLabelScale;
-    sprite.scale.set(0.2 * ls, 0.2 * H / W * ls, 1);
+    const spriteH = 0.0375 * ls;
+    sprite.scale.set(spriteH * (W / H), spriteH, 1);
     sprite.renderOrder = 4;
     return sprite;
   }
@@ -1744,6 +1774,11 @@ var MinimapRenderer = class {
   overlayCanvas = null;
   miniRenderer = null;
   orthoCamera;
+  /** True when WebGL context creation failed — overlay shows a message instead of silent black. */
+  glFailed = false;
+  // Points of interest (panorama camera positions) drawn on the overlay
+  pois = [];
+  selectedPoi = null;
   // World range (square, padded)
   worldLeft = -50;
   worldRight = 50;
@@ -1785,14 +1820,24 @@ var MinimapRenderer = class {
       this.miniRenderer.setPixelRatio(1);
       this.miniRenderer.setSize(w, h, false);
       this.miniRenderer.setClearColor(658970, 1);
+      this.glFailed = false;
     } catch {
       this.miniRenderer = null;
+      this.glFailed = true;
     }
   }
-  /** Set world-space bounds of the scene */
+  /** Panorama camera positions (world XY) to draw as dots on the overlay. */
+  setPois(pois) {
+    this.pois = pois;
+  }
+  /** Highlight one POI (the opened panorama), or null for none. */
+  setSelectedPoi(poi) {
+    this.selectedPoi = poi;
+  }
+  /** Set world-space bounds of the scene (empty boxes are ignored). */
   setBounds(bounds) {
-    this.bounds = bounds.clone();
     if (bounds.isEmpty()) return;
+    this.bounds = bounds.clone();
     const size = new THREE5__namespace.Vector3();
     const center = new THREE5__namespace.Vector3();
     bounds.getSize(size);
@@ -1814,10 +1859,27 @@ var MinimapRenderer = class {
   }
   /** Called every frame. Renders 3D scene top-down + overlay. */
   update() {
+    if (!this.bounds) this._deriveBoundsFromClouds();
     this.frameCount++;
     const render3D = this.frameCount % 6 === 0;
     if (render3D) this._render3D();
     if (this.frameCount % 2 === 0) this._drawOverlay();
+  }
+  /** Fallback bounds from the loaded potree octrees (tight box + offset). */
+  _deriveBoundsFromClouds() {
+    const box = new THREE5__namespace.Box3();
+    for (const pc of this.sceneManager.pointClouds) {
+      const g = pc.pcoGeometry;
+      const tb = g?.tightBoundingBox ?? g?.boundingBox ?? pc.boundingBox;
+      if (!tb) continue;
+      const wb = tb.clone();
+      if (g?.offset) {
+        wb.min.add(g.offset);
+        wb.max.add(g.offset);
+      }
+      box.union(wb);
+    }
+    if (!box.isEmpty()) this.setBounds(box);
   }
   /** Sync canvas backing stores to the container's CSS size (no-op when equal). */
   _syncSize() {
@@ -1846,11 +1908,79 @@ var MinimapRenderer = class {
     const W = this.overlayCanvas.width;
     const H = this.overlayCanvas.height;
     ctx.clearRect(0, 0, W, H);
+    if (this.glFailed) {
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.font = "10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("overview unavailable", W / 2, H / 2 - 4);
+      ctx.fillText("(WebGL context limit)", W / 2, H / 2 + 8);
+      return;
+    }
+    this._drawPois(ctx, W, H);
     this._drawCamera(ctx, W, H);
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
-    ctx.font = "bold 9px monospace";
+    this._drawScaleBar(ctx, W, H);
+    this._drawNorthArrow(ctx, W);
+  }
+  /** Panorama positions as small dots; the opened one highlighted. */
+  _drawPois(ctx, W, H) {
+    if (this.pois.length === 0) return;
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    for (const p of this.pois) {
+      const x = this._worldToCanvasX(p.x);
+      const y = this._worldToCanvasY(p.y);
+      if (x < 0 || x > W || y < 0 || y > H) continue;
+      ctx.beginPath();
+      ctx.arc(x, y, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (this.selectedPoi) {
+      const x = this._worldToCanvasX(this.selectedPoi.x);
+      const y = this._worldToCanvasY(this.selectedPoi.y);
+      ctx.beginPath();
+      ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#ff5533";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+  /** Scale bar (bottom-left): a round-number world length (1/2/5×10ⁿ m). */
+  _drawScaleBar(ctx, W, H) {
+    const worldWidth = this.worldRight - this.worldLeft;
+    if (!(worldWidth > 0)) return;
+    const target = worldWidth * 0.3;
+    const pow = Math.pow(10, Math.floor(Math.log10(target)));
+    const nice = target >= 5 * pow ? 5 * pow : target >= 2 * pow ? 2 * pow : pow;
+    const px = nice / worldWidth * W;
+    const x = 8, y = H - 9;
+    ctx.strokeStyle = "rgba(255,255,255,0.7)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 3);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + px, y);
+    ctx.lineTo(x + px, y - 3);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.font = "9px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(nice >= 1e3 ? `${nice / 1e3} km` : `${nice} m`, x + 3, y - 4);
+  }
+  /** North arrow (top-center): the minimap is axis-aligned, +Y = up = north. */
+  _drawNorthArrow(ctx, W) {
+    const cx = W / 2, top = 5;
+    ctx.beginPath();
+    ctx.moveTo(cx, top);
+    ctx.lineTo(cx - 3.5, top + 8);
+    ctx.lineTo(cx + 3.5, top + 8);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = "bold 8px monospace";
     ctx.textAlign = "center";
-    ctx.fillText("N", W / 2, 10);
+    ctx.fillText("N", cx, top + 17);
   }
   _worldToCanvasX(wx) {
     const W = this.overlayCanvas?.width ?? 176;
@@ -2255,7 +2385,7 @@ var RotationRingController = class {
     this.quaternion.copy(quaternion);
     this.group.position.copy(this.center);
     this.group.quaternion.copy(quaternion);
-    const radius = Math.max(size.x, size.y, size.z) * 0.62;
+    const radius = Math.max(size.x, size.y, size.z) * 0.42;
     this.group.scale.setScalar(Math.max(radius, 0.3));
   }
   /** Try to start a rotation drag. Returns true if an arc was grabbed. */
@@ -2413,7 +2543,26 @@ var ClipManager = class {
     });
     this.sm.scene.add(tc.getHelper());
     this.tcMove = tc;
+    this._removePlaneHandles(tc);
     this._raiseGizmo();
+  }
+  /**
+   * Strip the translate gizmo's two-axis PLANE quads (children named XY/YZ/XZ)
+   * so only the single-axis arrows and the center handle remain — the rotation
+   * arcs occupy the mid-region instead. Hiding is NOT enough: the gizmo's
+   * updateMatrixWorld forces `visible = true` on every handle each frame, so
+   * the quads must be REMOVED from both the visible gizmo and the invisible
+   * picker trees. Names are non-unique — collect first, then remove.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _removePlaneHandles(tc) {
+    const root = tc?.getHelper?.();
+    const gz = root?.children?.find((c) => c.gizmo && c.picker);
+    for (const group of [gz?.gizmo?.translate, gz?.picker?.translate]) {
+      if (!group?.children) continue;
+      const planes = group.children.filter((c) => c.name === "XY" || c.name === "YZ" || c.name === "XZ");
+      for (const p of planes) group.remove(p);
+    }
   }
   /** Whether the translate gizmo is mid-drag (viewport uses this for ordering). */
   isGizmoDragging() {
@@ -3031,6 +3180,125 @@ var AxisWidget = class {
     this._materials = [];
   }
 };
+var MagnifierRenderer = class _MagnifierRenderer {
+  sm;
+  enabled = false;
+  /** Latest cursor position, or null when the cursor left the canvas. */
+  cursor = null;
+  zoomCamera = new THREE5__namespace.PerspectiveCamera(10, 1, 0.01, 1e5);
+  lookTarget = new THREE5__namespace.Vector3();
+  // Frame + crosshair drawn over the inset in a second tiny pass.
+  frameScene = new THREE5__namespace.Scene();
+  frameCamera = new THREE5__namespace.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  frameDisposables = [];
+  /** Inset size (CSS px) and zoom factor. */
+  static SIZE = 180;
+  static ZOOM = 8;
+  constructor(sm) {
+    this.sm = sm;
+    this._buildFrame();
+  }
+  _buildFrame() {
+    const border = new THREE5__namespace.LineLoop(
+      new THREE5__namespace.BufferGeometry().setFromPoints([
+        new THREE5__namespace.Vector3(-0.995, -0.995, 0),
+        new THREE5__namespace.Vector3(0.995, -0.995, 0),
+        new THREE5__namespace.Vector3(0.995, 0.995, 0),
+        new THREE5__namespace.Vector3(-0.995, 0.995, 0)
+      ]),
+      new THREE5__namespace.LineBasicMaterial({ color: 14472518 })
+    );
+    const g = 0.08, a = 0.3;
+    const cross = new THREE5__namespace.LineSegments(
+      new THREE5__namespace.BufferGeometry().setFromPoints([
+        new THREE5__namespace.Vector3(-a, 0, 0),
+        new THREE5__namespace.Vector3(-g, 0, 0),
+        new THREE5__namespace.Vector3(g, 0, 0),
+        new THREE5__namespace.Vector3(a, 0, 0),
+        new THREE5__namespace.Vector3(0, -a, 0),
+        new THREE5__namespace.Vector3(0, -g, 0),
+        new THREE5__namespace.Vector3(0, g, 0),
+        new THREE5__namespace.Vector3(0, a, 0)
+      ]),
+      new THREE5__namespace.LineBasicMaterial({ color: 16777215, transparent: true, opacity: 0.8 })
+    );
+    this.frameScene.add(border, cross);
+    this.frameDisposables.push(
+      border.geometry,
+      border.material,
+      cross.geometry,
+      cross.material
+    );
+  }
+  setEnabled(enabled) {
+    this.enabled = enabled;
+    if (!enabled) this.cursor = null;
+  }
+  isEnabled() {
+    return this.enabled;
+  }
+  /**
+   * Feed the latest cursor position (canvas-relative CSS px + NDC).
+   * Call on mousemove while a measurement tool is active.
+   */
+  update(nx, ny, cx, cy) {
+    this.cursor = { nx, ny, cx, cy };
+  }
+  /** Hide the inset (cursor left the canvas / tool deactivated). */
+  clearCursor() {
+    this.cursor = null;
+  }
+  /** Render the inset. Register as a SceneManager post-render callback. */
+  render() {
+    if (!this.enabled || !this.cursor) return;
+    const renderer = this.sm.renderer;
+    const el = renderer.domElement;
+    const W = el.clientWidth;
+    const H = el.clientHeight;
+    if (W === 0 || H === 0) return;
+    const size = _MagnifierRenderer.SIZE;
+    const { nx, ny, cx, cy } = this.cursor;
+    const pad = 24;
+    let left = cx + pad;
+    if (left + size > W) left = cx - pad - size;
+    let bottom = H - cy + pad;
+    if (bottom + size > H) bottom = H - cy - pad - size;
+    left = Math.max(0, Math.min(left, W - size));
+    bottom = Math.max(0, Math.min(bottom, H - size));
+    const main = this.sm.camera;
+    this.zoomCamera.position.copy(main.position);
+    this.zoomCamera.up.copy(main.up);
+    this.zoomCamera.fov = (main.fov || 60) / _MagnifierRenderer.ZOOM;
+    this.zoomCamera.near = main.near;
+    this.zoomCamera.far = main.far;
+    this.zoomCamera.aspect = 1;
+    this.zoomCamera.updateProjectionMatrix();
+    this.lookTarget.set(nx, ny, 0.5).unproject(main);
+    this.zoomCamera.lookAt(this.lookTarget);
+    const savedVp = new THREE5__namespace.Vector4();
+    const savedSc = new THREE5__namespace.Vector4();
+    renderer.getViewport(savedVp);
+    renderer.getScissor(savedSc);
+    const savedScTest = renderer.getScissorTest();
+    const savedAutoClear = renderer.autoClear;
+    renderer.autoClear = false;
+    renderer.setScissorTest(true);
+    renderer.setScissor(left, bottom, size, size);
+    renderer.setViewport(left, bottom, size, size);
+    renderer.clearDepth();
+    renderer.render(this.sm.scene, this.zoomCamera);
+    renderer.clearDepth();
+    renderer.render(this.frameScene, this.frameCamera);
+    renderer.setViewport(savedVp);
+    renderer.setScissor(savedSc);
+    renderer.setScissorTest(savedScTest);
+    renderer.autoClear = savedAutoClear;
+  }
+  dispose() {
+    for (const d of this.frameDisposables) d.dispose();
+    this.frameDisposables = [];
+  }
+};
 
 // src/core/presentation-manager.ts
 var MAX_SCENES = 50;
@@ -3213,6 +3481,7 @@ exports.ClipManager = ClipManager;
 exports.DISPLAY_PRESETS = DISPLAY_PRESETS;
 exports.ElectronSourceAdapter = ElectronSourceAdapter;
 exports.ExportManager = ExportManager;
+exports.MagnifierRenderer = MagnifierRenderer;
 exports.MarkerManager = MarkerManager;
 exports.MeasurementManager = MeasurementManager;
 exports.MinimapRenderer = MinimapRenderer;

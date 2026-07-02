@@ -251,12 +251,20 @@ export class MeasurementManager {
 
   private _volumeDraft: THREE.Object3D | null = null;
 
-  /** Show/update a volume draft box preview during drag creation */
+  /**
+   * Show/update a volume draft box preview during drag creation, with a live
+   * dimensions readout (L × W × H and m³) so the user sees what they're
+   * defining before committing.
+   */
   setVolumeDraft(box: THREE.Box3 | null): void {
     // Clear existing draft
     if (this._volumeDraft) {
       this._volumeDraft.traverse(o => {
-        if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) {
+        if (o instanceof THREE.Sprite) {
+          const mat = o.material as THREE.SpriteMaterial;
+          mat.map?.dispose();
+          mat.dispose();
+        } else if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) {
           o.geometry.dispose();
           (o.material as THREE.Material).dispose();
         }
@@ -292,6 +300,13 @@ export class MeasurementManager {
     edges.scale.copy(size);
     edges.renderOrder = 2;
     draftGroup.add(edges);
+
+    // Live dimensions readout above the box top
+    const dims = `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)} m · ${formatVolume(size.x * size.y * size.z)}`;
+    const label = this.makeTextSprite(dims, COLORS.volume);
+    label.position.copy(center).add(new THREE.Vector3(0, 0, size.z / 2));
+    label.center.set(0.5, -0.35); // screen-space lift above the anchor
+    draftGroup.add(label);
 
     this.group.add(draftGroup);
     this._volumeDraft = draftGroup;

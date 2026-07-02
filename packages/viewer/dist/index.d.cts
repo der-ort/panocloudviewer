@@ -128,8 +128,16 @@ type NavigationMode = "orbit" | "free" | "pan";
 type CameraProjection = "perspective" | "orthographic";
 type DisplayPreset = "compact" | "standard" | "prominent";
 interface DisplaySettings {
-    preset: DisplayPreset;
-    /** Measurement line width in pixels */
+    /**
+     * Which preset the current values came from, or `"custom"` after any manual
+     * slider tweak — so preset cards never claim to be active when the values
+     * have diverged.
+     */
+    preset: DisplayPreset | "custom";
+    /**
+     * @deprecated No-op: `LineBasicMaterial.linewidth` is ignored by WebGL.
+     * Kept only so existing DisplaySettings literals keep compiling.
+     */
     measurementLineWidth: number;
     /** Measurement label scale multiplier (1.0 = default) */
     measurementLabelScale: number;
@@ -304,7 +312,14 @@ declare class PointCloudLoader {
     /** World-space bounding box of the loaded point cloud (available after load) */
     worldBox: THREE.Box3;
     constructor(sceneManager: SceneManager, adapter: FileSourceAdapter);
-    /** Load a point cloud from the adapter's base URL */
+    /** Point budget actually applied by the last load() (auto-derived or explicit). */
+    appliedBudget: number;
+    /**
+     * Load a point cloud from the adapter's base URL.
+     * @param pointBudget Explicit budget. When omitted, the budget is derived
+     *                    from the cloud's total point count via
+     *                    {@link PointCloudLoader.calcOptimalBudget} — no fixed cap.
+     */
     load(metadataPath?: string, pointBudget?: number): Promise<void>;
     /** Set color mode on all loaded clouds */
     setColorMode(mode: ColorMode): Promise<void>;
@@ -330,7 +345,12 @@ declare class PointCloudLoader {
     readMetadata(path?: string): Promise<PointCloudMetadata | null>;
     /** Return the first loaded point cloud object, if any */
     getPointCloud(): THREE.Object3D | null;
-    /** Calculate optimal point budget based on total point count */
+    /**
+     * Calculate an optimal point budget from the total point count.
+     * Proportional (30% / 15% / 8% by cloud size), floored at 500K, and never
+     * above the cloud's own total — no fixed upper cap, so large clouds aren't
+     * artificially starved.
+     */
     static calcOptimalBudget(totalPoints: number): number;
 }
 
@@ -462,7 +482,11 @@ declare class MeasurementManager {
     /** Hide the snap preview (call on mouse leave or tool deactivation) */
     clearSnap(): void;
     private _volumeDraft;
-    /** Show/update a volume draft box preview during drag creation */
+    /**
+     * Show/update a volume draft box preview during drag creation, with a live
+     * dimensions readout (L × W × H and m³) so the user sees what they're
+     * defining before committing.
+     */
     setVolumeDraft(box: THREE.Box3 | null): void;
     /** Create a volume measurement from a drag-defined box */
     addVolumeMeasurement(box: THREE.Box3): Measurement | null;
@@ -483,9 +507,9 @@ declare class MeasurementManager {
     private labelAnchor;
     /**
      * Value label: constant screen-size sprite (`sizeAttenuation:false`) so it is
-     * equally readable on a 5 m room and a 500 m site. White text on a dark card
-     * with the measurement color as accent bar + border — high contrast on both
-     * bright and dark point clouds. `measurementLabelScale` multiplies the size.
+     * equally readable on a 5 m room and a 500 m site. Monospaced white text on a
+     * dark card with the measurement color as border; the card width fits the
+     * text so labels stay compact. `measurementLabelScale` multiplies the size.
      */
     private makeTextSprite;
     private rebuildPreview;
@@ -553,6 +577,10 @@ declare class MinimapRenderer {
     private overlayCanvas;
     private miniRenderer;
     private orthoCamera;
+    /** True when WebGL context creation failed — overlay shows a message instead of silent black. */
+    private glFailed;
+    private pois;
+    private selectedPoi;
     private worldLeft;
     private worldRight;
     private worldTop;
@@ -564,14 +592,32 @@ declare class MinimapRenderer {
      * Container should have position:relative and defined size.
      */
     attach(container: HTMLElement): void;
-    /** Set world-space bounds of the scene */
+    /** Panorama camera positions (world XY) to draw as dots on the overlay. */
+    setPois(pois: {
+        x: number;
+        y: number;
+    }[]): void;
+    /** Highlight one POI (the opened panorama), or null for none. */
+    setSelectedPoi(poi: {
+        x: number;
+        y: number;
+    } | null): void;
+    /** Set world-space bounds of the scene (empty boxes are ignored). */
     setBounds(bounds: THREE.Box3): void;
     /** Called every frame. Renders 3D scene top-down + overlay. */
     update(): void;
+    /** Fallback bounds from the loaded potree octrees (tight box + offset). */
+    private _deriveBoundsFromClouds;
     /** Sync canvas backing stores to the container's CSS size (no-op when equal). */
     private _syncSize;
     private _render3D;
     private _drawOverlay;
+    /** Panorama positions as small dots; the opened one highlighted. */
+    private _drawPois;
+    /** Scale bar (bottom-left): a round-number world length (1/2/5×10ⁿ m). */
+    private _drawScaleBar;
+    /** North arrow (top-center): the minimap is axis-aligned, +Y = up = north. */
+    private _drawNorthArrow;
     private _worldToCanvasX;
     private _worldToCanvasY;
     private _drawCamera;
@@ -735,6 +781,15 @@ declare class ClipManager {
     private _initTcPromise;
     private initTransformControls;
     private _doInitTransformControls;
+    /**
+     * Strip the translate gizmo's two-axis PLANE quads (children named XY/YZ/XZ)
+     * so only the single-axis arrows and the center handle remain — the rotation
+     * arcs occupy the mid-region instead. Hiding is NOT enough: the gizmo's
+     * updateMatrixWorld forces `visible = true` on every handle each frame, so
+     * the quads must be REMOVED from both the visible gizmo and the invisible
+     * picker trees. Names are non-unique — collect first, then remove.
+     */
+    private _removePlaneHandles;
     /** Whether the translate gizmo is mid-drag (viewport uses this for ordering). */
     isGizmoDragging(): boolean;
     /**
@@ -862,6 +917,51 @@ declare class AxisWidget {
      * Render the widget into a scissor region in the bottom-left corner.
      * Must be called from a post-render callback after the main scene renders.
      */
+    render(): void;
+    dispose(): void;
+}
+
+/**
+ * NavVis-style picking magnifier: while a measurement tool is active, a small
+ * zoomed inset follows the cursor so the user can see exactly which detail
+ * they are snapping to.
+ *
+ * Implementation: a second render pass of the MAIN scene through a narrow-FOV
+ * camera aimed along the cursor ray, scissored into a square near the cursor —
+ * the same proven post-render pattern as {@link AxisWidget}. No framebuffer
+ * readbacks, no `preserveDrawingBuffer` (a readback-based 2D loupe was tried
+ * before and was slow and empty — see CLAUDE.md).
+ *
+ * Potree LOD note: we deliberately do NOT call `potree.updatePointClouds` with
+ * the zoom camera — that would re-target octree streaming every frame and
+ * thrash the loader. The inset magnifies whatever LOD the main camera loaded,
+ * which is exactly what the user is picking against.
+ */
+declare class MagnifierRenderer {
+    private sm;
+    private enabled;
+    /** Latest cursor position, or null when the cursor left the canvas. */
+    private cursor;
+    private zoomCamera;
+    private lookTarget;
+    private frameScene;
+    private frameCamera;
+    private frameDisposables;
+    /** Inset size (CSS px) and zoom factor. */
+    static readonly SIZE = 180;
+    static readonly ZOOM = 8;
+    constructor(sm: SceneManager);
+    private _buildFrame;
+    setEnabled(enabled: boolean): void;
+    isEnabled(): boolean;
+    /**
+     * Feed the latest cursor position (canvas-relative CSS px + NDC).
+     * Call on mousemove while a measurement tool is active.
+     */
+    update(nx: number, ny: number, cx: number, cy: number): void;
+    /** Hide the inset (cursor left the canvas / tool deactivated). */
+    clearCursor(): void;
+    /** Render the inset. Register as a SceneManager post-render callback. */
     render(): void;
     dispose(): void;
 }
@@ -1021,6 +1121,7 @@ interface ViewerLocale {
         measureVolume: string;
         measureAngle: string;
         measureProfile: string;
+        magnifier: string;
         clearMeasurements: string;
         drawClipBox: string;
         clipModeKeepInside: string;
@@ -1357,7 +1458,11 @@ interface PanoCloudViewerProps {
     panoEngine?: PanoEngine;
     /**
      * Scale factor for the UI chrome (toolbars, tool-rail, sidebar, floating
-     * palettes, dialogs / overlay panels, status bar). Defaults to `1`.
+     * palettes, dialogs / overlay panels, status bar).
+     *
+     * Default: **auto from `devicePixelRatio`** — 1 on standard displays, 1.15
+     * at DPR ≥ 1.5, 1.25 at DPR ≥ 2 — so controls stay comfortably sized on
+     * high-DPI screens. Pass an explicit number to override.
      *
      * Only the chrome is scaled — the 3D viewport / canvas stays at native
      * resolution and full size, so the point-cloud view remains crisp and you
@@ -1365,7 +1470,7 @@ interface PanoCloudViewerProps {
      * on the `.pcv` root that chrome containers consume through `zoom`.
      *
      * @example
-     * // Enlarge all controls by 25% for touch / high-DPI displays
+     * // Enlarge all controls by 25% regardless of display DPI
      * <PanoCloudViewer source={source} uiScale={1.25} />
      */
     uiScale?: number;
@@ -1395,20 +1500,6 @@ interface PanoCloudViewerProps {
      */
     components?: Partial<ViewerComponents>;
 }
-/**
- * Drop-in PanoCloud Viewer component.
- *
- * @example
- * ```tsx
- * import { PanoCloudViewer } from '@der-ort/pano-cloud-viewer';
- * import '@der-ort/pano-cloud-viewer/themes/smart-agile.css';
- *
- * <PanoCloudViewer
- *   source={{ type: 's3', baseUrl: 'https://bucket.s3.amazonaws.com/project/' }}
- *   theme="dark"
- * />
- * ```
- */
 declare function PanoCloudViewer({ source, theme, className, locale, uiMode, panoEngine, uiScale, children, components }: PanoCloudViewerProps): react_jsx_runtime.JSX.Element;
 
 /** Package version, e.g. "0.1.0". */
@@ -1453,6 +1544,9 @@ interface ViewerContextValue {
     setShowMinimap: (v: boolean) => void;
     showMeasurements: boolean;
     setShowMeasurements: (v: boolean) => void;
+    /** Picking magnifier (zoom inset while measuring). Default off. */
+    showMagnifier: boolean;
+    setShowMagnifier: (v: boolean) => void;
     selectedCamera: CameraData | null;
     setSelectedCamera: (cam: CameraData | null) => void;
     clipBoxEntries: ClipBoxEntry[];
@@ -1729,4 +1823,4 @@ declare const en: ViewerLocale;
 
 declare const de: ViewerLocale;
 
-export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type GeoInfo, type LocalSource, LocaleProvider, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, type RecordOptions, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type GeoInfo, type LocalSource, LocaleProvider, MagnifierRenderer, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, type RecordOptions, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };

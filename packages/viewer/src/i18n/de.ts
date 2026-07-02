@@ -81,6 +81,7 @@ export const de = createLocale(en, {
     measureVolume: "Volumen",
     measureAngle: "Winkel",
     measureProfile: "Profil",
+    magnifier: "Lupe (Zoom beim Messen)",
     clearMeasurements: "Alle Messungen löschen",
     drawClipBox: "Ausschnittrahmen ziehen (im Viewport)",
     clipModeKeepInside: "Modus: innen behalten (zum Umkehren klicken)",

@@ -80,6 +80,7 @@ export const en: ViewerLocale = {
     measureVolume: "Volume",
     measureAngle: "Angle",
     measureProfile: "Profile",
+    magnifier: "Magnifier (zoom while picking)",
     clearMeasurements: "Clear all measurements",
     drawClipBox: "Draw clip box (drag in viewport)",
     clipModeKeepInside: "Mode: keep inside (click to invert)",

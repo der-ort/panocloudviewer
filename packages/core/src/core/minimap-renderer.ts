@@ -16,6 +16,12 @@ export class MinimapRenderer {
   private overlayCanvas: HTMLCanvasElement | null = null;
   private miniRenderer: THREE.WebGLRenderer | null = null;
   private orthoCamera: THREE.OrthographicCamera;
+  /** True when WebGL context creation failed — overlay shows a message instead of silent black. */
+  private glFailed = false;
+
+  // Points of interest (panorama camera positions) drawn on the overlay
+  private pois: { x: number; y: number }[] = [];
+  private selectedPoi: { x: number; y: number } | null = null;
 
   // World range (square, padded)
   private worldLeft = -50;
@@ -59,6 +65,11 @@ export class MinimapRenderer {
     this.overlayCanvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;";
     container.appendChild(this.overlayCanvas);
 
+    // Context creation can fail at the browser's WebGL-context limit. It is
+    // retried on every attach (toggling the minimap off frees our context via
+    // dispose(), so toggling it back on is the recovery path); while failed,
+    // the overlay draws an explicit "unavailable" message instead of silently
+    // staying black.
     try {
       this.miniRenderer = new THREE.WebGLRenderer({
         canvas: this.glCanvas,
@@ -68,16 +79,29 @@ export class MinimapRenderer {
       this.miniRenderer.setPixelRatio(1);
       this.miniRenderer.setSize(w, h, false);
       this.miniRenderer.setClearColor(0x0a0e1a, 1);
+      this.glFailed = false;
     } catch {
-      // WebGL context limit — fall back to overlay-only
       this.miniRenderer = null;
+      this.glFailed = true;
     }
   }
 
-  /** Set world-space bounds of the scene */
+  /** Panorama camera positions (world XY) to draw as dots on the overlay. */
+  setPois(pois: { x: number; y: number }[]): void {
+    this.pois = pois;
+  }
+
+  /** Highlight one POI (the opened panorama), or null for none. */
+  setSelectedPoi(poi: { x: number; y: number } | null): void {
+    this.selectedPoi = poi;
+  }
+
+  /** Set world-space bounds of the scene (empty boxes are ignored). */
   setBounds(bounds: THREE.Box3) {
-    this.bounds = bounds.clone();
+    // Ignore empty bounds entirely — assigning them would suppress the
+    // derive-from-octree fallback while still rendering a useless ±50 range.
     if (bounds.isEmpty()) return;
+    this.bounds = bounds.clone();
 
     const size = new THREE.Vector3();
     const center = new THREE.Vector3();
@@ -104,6 +128,11 @@ export class MinimapRenderer {
 
   /** Called every frame. Renders 3D scene top-down + overlay. */
   update() {
+    // Self-heal: if the load-completion path never delivered bounds (e.g. the
+    // metadata promise rejected after the octree was already added), derive
+    // them straight from the loaded octrees so the minimap never stays blank.
+    if (!this.bounds) this._deriveBoundsFromClouds();
+
     // Throttle: render 3D every 6th frame (~10fps at 60fps main loop), overlay every 2nd
     this.frameCount++;
     const render3D = this.frameCount % 6 === 0;
@@ -111,6 +140,21 @@ export class MinimapRenderer {
     if (render3D) this._render3D();
     // Draw overlay every 2nd frame
     if (this.frameCount % 2 === 0) this._drawOverlay();
+  }
+
+  /** Fallback bounds from the loaded potree octrees (tight box + offset). */
+  private _deriveBoundsFromClouds(): void {
+    const box = new THREE.Box3();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const pc of this.sceneManager.pointClouds as any[]) {
+      const g = pc.pcoGeometry;
+      const tb = g?.tightBoundingBox ?? g?.boundingBox ?? pc.boundingBox;
+      if (!tb) continue;
+      const wb = (tb as THREE.Box3).clone();
+      if (g?.offset) { wb.min.add(g.offset); wb.max.add(g.offset); }
+      box.union(wb);
+    }
+    if (!box.isEmpty()) this.setBounds(box);
   }
 
   /** Sync canvas backing stores to the container's CSS size (no-op when equal). */
@@ -144,14 +188,84 @@ export class MinimapRenderer {
     const H = this.overlayCanvas.height;
     ctx.clearRect(0, 0, W, H);
 
-    // Camera frustum and dot
-    this._drawCamera(ctx, W, H);
+    // WebGL context failed → say so instead of a silent black square.
+    if (this.glFailed) {
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.font = "10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("overview unavailable", W / 2, H / 2 - 4);
+      ctx.fillText("(WebGL context limit)", W / 2, H / 2 + 8);
+      return;
+    }
 
-    // "N" label
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
-    ctx.font = "bold 9px monospace";
+    this._drawPois(ctx, W, H);
+    this._drawCamera(ctx, W, H);
+    this._drawScaleBar(ctx, W, H);
+    this._drawNorthArrow(ctx, W);
+  }
+
+  /** Panorama positions as small dots; the opened one highlighted. */
+  private _drawPois(ctx: CanvasRenderingContext2D, W: number, H: number) {
+    if (this.pois.length === 0) return;
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    for (const p of this.pois) {
+      const x = this._worldToCanvasX(p.x);
+      const y = this._worldToCanvasY(p.y);
+      if (x < 0 || x > W || y < 0 || y > H) continue;
+      ctx.beginPath();
+      ctx.arc(x, y, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (this.selectedPoi) {
+      const x = this._worldToCanvasX(this.selectedPoi.x);
+      const y = this._worldToCanvasY(this.selectedPoi.y);
+      ctx.beginPath();
+      ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#ff5533";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  /** Scale bar (bottom-left): a round-number world length (1/2/5×10ⁿ m). */
+  private _drawScaleBar(ctx: CanvasRenderingContext2D, W: number, H: number) {
+    const worldWidth = this.worldRight - this.worldLeft;
+    if (!(worldWidth > 0)) return;
+    // Round length that spans ~20–40% of the map width.
+    const target = worldWidth * 0.3;
+    const pow = Math.pow(10, Math.floor(Math.log10(target)));
+    const nice = target >= 5 * pow ? 5 * pow : target >= 2 * pow ? 2 * pow : pow;
+    const px = (nice / worldWidth) * W;
+
+    const x = 8, y = H - 9;
+    ctx.strokeStyle = "rgba(255,255,255,0.7)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 3); ctx.lineTo(x, y);
+    ctx.lineTo(x + px, y); ctx.lineTo(x + px, y - 3);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.font = "9px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(nice >= 1000 ? `${nice / 1000} km` : `${nice} m`, x + 3, y - 4);
+  }
+
+  /** North arrow (top-center): the minimap is axis-aligned, +Y = up = north. */
+  private _drawNorthArrow(ctx: CanvasRenderingContext2D, W: number) {
+    const cx = W / 2, top = 5;
+    ctx.beginPath();
+    ctx.moveTo(cx, top);
+    ctx.lineTo(cx - 3.5, top + 8);
+    ctx.lineTo(cx + 3.5, top + 8);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = "bold 8px monospace";
     ctx.textAlign = "center";
-    ctx.fillText("N", W / 2, 10);
+    ctx.fillText("N", cx, top + 17);
   }
 
   private _worldToCanvasX(wx: number): number {

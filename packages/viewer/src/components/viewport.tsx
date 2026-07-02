@@ -14,6 +14,7 @@ import { ExportManager } from "@der-ort/pano-cloud-viewer-core";
 import { MinimapRenderer } from "@der-ort/pano-cloud-viewer-core";
 import { ClipManager } from "@der-ort/pano-cloud-viewer-core";
 import { AxisWidget } from "@der-ort/pano-cloud-viewer-core";
+import { MagnifierRenderer } from "@der-ort/pano-cloud-viewer-core";
 import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
 import { useMinimapResize } from "../hooks/use-minimap-resize";
 import { useSnapThrottle } from "../hooks/use-snap-throttle";
@@ -35,7 +36,7 @@ export function Viewport({ className }: ViewportProps) {
     setSceneManager, setLoader, setMeasurementManager, setMarkerManager,
     setCameraAnimator, setExporter, setMinimap, setClipManager,
     setFps, activeTool, setPointBudget,
-    showMarkers, showMinimap, showMeasurements, setMeasurementList, setSelectedCamera,
+    showMarkers, showMinimap, showMeasurements, showMagnifier, setMeasurementList, selectedCamera, setSelectedCamera,
     clipBoxEntries, setClipBoxEntries, setSelectedClipBoxId,
     navigationMode, projection, displaySettings,
   } = useViewer();
@@ -60,6 +61,7 @@ export function Viewport({ className }: ViewportProps) {
   const clipRef = useRef<ClipManager | null>(null);
   const animRef = useRef<CameraAnimator | null>(null);
   const axisRef = useRef<AxisWidget | null>(null);
+  const magRef = useRef<MagnifierRenderer | null>(null);
 
   // Minimap pixel size + corner-drag resize (window listeners cleaned up on unmount).
   const { minimapSize, handleMinimapResizeStart } = useMinimapResize(minimapRef);
@@ -69,16 +71,43 @@ export function Viewport({ className }: ViewportProps) {
   const clipDraftRef = useRef<THREE.Box3 | null>(null);
   const clipDownRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Volume measurement drag state (two-phase: footprint → height)
+  // Volume measurement drag state (two-phase: footprint → height). The
+  // footprint plane sits at the Z of the CLOUD POINT picked at drag start (so
+  // the box is anchored to real geometry, not an arbitrary plane), and the
+  // height phase grows the box from that base plane.
   const volumeDragRef = useRef<{
     phase: "footprint" | "height";
     startWorld: THREE.Vector3;
     planeZ: number;
     footprintBox?: THREE.Box3;
     startClientY?: number;
-    baseZMin?: number;
-    baseZMax?: number;
+    /** Z of the footprint base plane the height grows from. */
+    baseZ?: number;
   } | null>(null);
+
+  /**
+   * World units per screen pixel at the orbit target's distance — the same
+   * scale OrbitControls uses for screen-space panning. Used to make the
+   * volume height drag feel consistent at any zoom level.
+   */
+  const worldUnitsPerPixel = useCallback((): number => {
+    const sm = smRef.current;
+    if (!sm || !containerRef.current) return 0.05;
+    const cam = sm.camera;
+    const dist = cam.position.distanceTo(sm.controls.target) || 10;
+    const vfov = THREE.MathUtils.degToRad(cam.fov || 60);
+    return (2 * dist * Math.tan(vfov / 2)) / Math.max(containerRef.current.clientHeight, 1);
+  }, []);
+
+  /** Thin footprint preview slab: base plane + a sliver of height. */
+  const footprintSlab = useCallback((a: THREE.Vector3, b: THREE.Vector3, baseZ: number): THREE.Box3 => {
+    const diag = Math.hypot(b.x - a.x, b.y - a.y);
+    const sliver = Math.max(0.5, diag * 0.05);
+    return new THREE.Box3(
+      new THREE.Vector3(Math.min(a.x, b.x), Math.min(a.y, b.y), baseZ),
+      new THREE.Vector3(Math.max(a.x, b.x), Math.max(a.y, b.y), baseZ + sliver),
+    );
+  }, []);
 
   // Init Three.js scene once
   useEffect(() => {
@@ -131,6 +160,12 @@ export function Viewport({ className }: ViewportProps) {
     const axisFrame = () => axisWidget.render();
     sm.addPostRenderCallback(axisFrame);
 
+    // Picking magnifier — zoom inset while measuring (post-render, no-op when off)
+    const magnifier = new MagnifierRenderer(sm);
+    magRef.current = magnifier;
+    const magFrame = () => magnifier.render();
+    sm.addPostRenderCallback(magFrame);
+
     sm.start();
 
     // Load point cloud and set minimap bounds. Budget: pass only an explicit
@@ -168,6 +203,8 @@ export function Viewport({ className }: ViewportProps) {
     return () => {
       sm.removeFrameCallback(minimapFrame);
       sm.removePostRenderCallback(axisFrame);
+      sm.removePostRenderCallback(magFrame);
+      magnifier.dispose();
       sm.dispose();
       measureMgr.dispose();
       markerMgr.dispose();
@@ -179,10 +216,13 @@ export function Viewport({ className }: ViewportProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Attach minimap container after init
+  // Attach minimap container after init; release its WebGL context while
+  // hidden (contexts are a scarce browser resource — holding one for an
+  // invisible minimap is what pushed other tabs/instances over the limit).
   useEffect(() => {
-    if (minimapRef.current && minimapContainerRef.current) {
+    if (showMinimap && minimapRef.current && minimapContainerRef.current) {
       minimapRef.current.attach(minimapContainerRef.current);
+      return () => minimapRef.current?.dispose();
     }
   }, [showMinimap]);
 
@@ -216,15 +256,32 @@ export function Viewport({ className }: ViewportProps) {
     minimapDragRef.current = false;
     e.currentTarget.releasePointerCapture(e.pointerId);
   }, []);
+  // Double-click the minimap → frame the whole cloud in the main view.
+  const handleMinimapDblClick = useCallback(() => {
+    const wb = loaderRef.current?.worldBox;
+    if (wb && !wb.isEmpty()) smRef.current?.fitToBox(wb);
+  }, []);
 
-  // Rebuild markers when cameras load
+  // Rebuild markers when cameras load; mirror the positions onto the minimap.
   useEffect(() => {
     if (markerRef.current && cameras.length > 0) {
       const wb = loaderRef.current?.worldBox;
       markerRef.current.build(cameras, wb && !wb.isEmpty() ? wb : undefined);
       markerRef.current.setVisible(showMarkers);
     }
+    minimapRef.current?.setPois(
+      cameras.filter(c => c.position).map(c => ({ x: c.position!.x, y: c.position!.y })),
+    );
   }, [cameras, showMarkers]);
+
+  // Highlight the opened panorama on the minimap.
+  useEffect(() => {
+    minimapRef.current?.setSelectedPoi(
+      selectedCamera?.position
+        ? { x: selectedCamera.position.x, y: selectedCamera.position.y }
+        : null,
+    );
+  }, [selectedCamera]);
 
   // Sync marker visibility
   useEffect(() => {
@@ -262,6 +319,11 @@ export function Viewport({ className }: ViewportProps) {
       clipRef.current?.setDraft(null);
     }
   }, [activeTool]);
+
+  // Magnifier is active only while a measurement tool is selected AND toggled on.
+  useEffect(() => {
+    magRef.current?.setEnabled(showMagnifier && activeTool.startsWith("measure-"));
+  }, [showMagnifier, activeTool]);
 
   // Sync navigation mode
   useEffect(() => {
@@ -401,14 +463,20 @@ export function Viewport({ className }: ViewportProps) {
         sm.controls.enabled = true;
         return;
       }
-      // Start phase 1: footprint drag
+      // Start phase 1: footprint drag — anchor the base plane to the actual
+      // cloud point under the cursor (falls back to the target plane inside
+      // pickVisiblePoint when nothing is picked).
       e.preventDefault();
       sm.controls.enabled = false;
       const { nx, ny } = getNDC(e);
-      const planeZ = sm.controls.target.z;
-      const startWorld = projectToPlaneZ(nx, ny, planeZ);
+      const startWorld = pickVisiblePoint(nx, ny);
       if (startWorld) {
-        volumeDragRef.current = { phase: "footprint", startWorld, planeZ };
+        volumeDragRef.current = {
+          phase: "footprint",
+          startWorld,
+          planeZ: startWorld.z,
+          baseZ: startWorld.z,
+        };
       }
       return;
     }
@@ -417,7 +485,7 @@ export function Viewport({ className }: ViewportProps) {
     // Cursor-drop placement: record the down position so mouseup can tell a
     // placement click apart from an orbit drag. Controls stay enabled.
     clipDownRef.current = { x: e.clientX, y: e.clientY };
-  }, [activeTool]);
+  }, [activeTool, pickVisiblePoint]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     // Face-resize arrow drag
@@ -443,23 +511,19 @@ export function Viewport({ className }: ViewportProps) {
         const { nx, ny } = getNDC(e);
         const endWorld = projectToPlaneZ(nx, ny, vd.planeZ);
         if (!endWorld) return;
-        const { startWorld } = vd;
-        const zMin = metaZRef.current?.min ?? (vd.planeZ - 10);
-        const zMax = metaZRef.current?.max ?? (vd.planeZ + 10);
-        const box = new THREE.Box3(
-          new THREE.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
-          new THREE.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax),
+        // Thin slab on the picked base plane — not a full-height tower.
+        measureRef.current?.setVolumeDraft(
+          footprintSlab(vd.startWorld, endWorld, vd.baseZ ?? vd.planeZ),
         );
-        measureRef.current?.setVolumeDraft(box);
       } else if (vd.phase === "height" && vd.footprintBox && vd.startClientY !== undefined) {
-        // Map vertical mouse movement to box Z range
+        // Height grows FROM the base plane: drag up extends up, down extends
+        // down. Sensitivity matches the view (world units per screen pixel).
         const deltaY = vd.startClientY - e.clientY; // up = positive
-        const sensitivity = 0.1; // world units per pixel
-        const zExtent = Math.max(0.1, Math.abs(deltaY) * sensitivity);
-        const midZ = ((vd.baseZMin ?? 0) + (vd.baseZMax ?? 0)) / 2;
+        const extent = Math.max(0.1, Math.abs(deltaY) * worldUnitsPerPixel());
+        const base = vd.baseZ ?? vd.footprintBox.min.z;
         const box = vd.footprintBox.clone();
-        box.min.z = midZ - zExtent / 2;
-        box.max.z = midZ + zExtent / 2;
+        if (deltaY >= 0) { box.min.z = base; box.max.z = base + extent; }
+        else            { box.min.z = base - extent; box.max.z = base; }
         vd.footprintBox.copy(box);
         measureRef.current?.setVolumeDraft(box);
       }
@@ -480,8 +544,11 @@ export function Viewport({ className }: ViewportProps) {
     if (activeTool.startsWith("measure-") && smRef.current) {
       const { nx, ny } = getNDC(e);
       scheduleSnap(nx, ny);
+      // Feed the magnifier inset (no-op unless enabled)
+      const rect = e.currentTarget.getBoundingClientRect();
+      magRef.current?.update(nx, ny, e.clientX - rect.left, e.clientY - rect.top);
     }
-  }, [activeTool, scheduleSnap, buildClipDraftAt]);
+  }, [activeTool, scheduleSnap, buildClipDraftAt, footprintSlab, worldUnitsPerPixel]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const sm = smRef.current;
@@ -508,13 +575,8 @@ export function Viewport({ className }: ViewportProps) {
       const { nx, ny } = getNDC(e);
       const endWorld = projectToPlaneZ(nx, ny, vdUp.planeZ);
       if (endWorld) {
-        const { startWorld } = vdUp;
-        const zMin = metaZRef.current?.min ?? (vdUp.planeZ - 10);
-        const zMax = metaZRef.current?.max ?? (vdUp.planeZ + 10);
-        const box = new THREE.Box3(
-          new THREE.Vector3(Math.min(startWorld.x, endWorld.x), Math.min(startWorld.y, endWorld.y), zMin),
-          new THREE.Vector3(Math.max(startWorld.x, endWorld.x), Math.max(startWorld.y, endWorld.y), zMax),
-        );
+        const base = vdUp.baseZ ?? vdUp.planeZ;
+        const box = footprintSlab(vdUp.startWorld, endWorld, base);
         if (!box.isEmpty()) {
           volumeDragRef.current = {
             phase: "height",
@@ -522,8 +584,7 @@ export function Viewport({ className }: ViewportProps) {
             planeZ: vdUp.planeZ,
             footprintBox: box,
             startClientY: e.clientY,
-            baseZMin: zMin,
-            baseZMax: zMax,
+            baseZ: base,
           };
           // Keep controls disabled during height phase
           return;
@@ -558,7 +619,7 @@ export function Viewport({ className }: ViewportProps) {
       }
       return;
     }
-  }, [activeTool, buildClipDraftAt]);
+  }, [activeTool, buildClipDraftAt, footprintSlab]);
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (activeTool === "section-box") return;
@@ -596,6 +657,7 @@ export function Viewport({ className }: ViewportProps) {
     cancelSnap();
     lastSnapRef.current = null; // a later click must not commit a stale preview
     measureRef.current?.clearSnap();
+    magRef.current?.clearCursor();
   }, [cancelSnap]);
 
   // Right-click to finish measurement, cancel volume drag, or clear clip box
@@ -660,6 +722,7 @@ export function Viewport({ className }: ViewportProps) {
           onPointerDown={handleMinimapPointerDown}
           onPointerMove={handleMinimapPointerMove}
           onPointerUp={handleMinimapPointerUp}
+          onDoubleClick={handleMinimapDblClick}
         >
           <div
             ref={minimapContainerRef}
