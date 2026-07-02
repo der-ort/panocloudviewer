@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useRef, useCallback, useMemo, Suspense, lazy } from "react";
+import React, { createContext, useContext, useRef, useCallback, useMemo, useState, useEffect, Suspense, lazy } from "react";
 import { ThemeProvider, useTheme } from "../providers/theme-provider";
 import { ViewerProvider, useViewer } from "../providers/viewer-provider";
 import { DataProvider } from "../providers/data-provider";
@@ -100,7 +100,11 @@ export interface PanoCloudViewerProps {
   panoEngine?: PanoEngine;
   /**
    * Scale factor for the UI chrome (toolbars, tool-rail, sidebar, floating
-   * palettes, dialogs / overlay panels, status bar). Defaults to `1`.
+   * palettes, dialogs / overlay panels, status bar).
+   *
+   * Default: **auto from `devicePixelRatio`** — 1 on standard displays, 1.15
+   * at DPR ≥ 1.5, 1.25 at DPR ≥ 2 — so controls stay comfortably sized on
+   * high-DPI screens. Pass an explicit number to override.
    *
    * Only the chrome is scaled — the 3D viewport / canvas stays at native
    * resolution and full size, so the point-cloud view remains crisp and you
@@ -108,7 +112,7 @@ export interface PanoCloudViewerProps {
    * on the `.pcv` root that chrome containers consume through `zoom`.
    *
    * @example
-   * // Enlarge all controls by 25% for touch / high-DPI displays
+   * // Enlarge all controls by 25% regardless of display DPI
    * <PanoCloudViewer source={source} uiScale={1.25} />
    */
   uiScale?: number;
@@ -211,7 +215,34 @@ function PcvRoot({ className, uiScale = 1, children }: PcvRootProps) {
  * />
  * ```
  */
-export function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, uiScale = 1, children, components }: PanoCloudViewerProps) {
+/**
+ * Chrome scale from `devicePixelRatio` when no explicit `uiScale` prop is
+ * given: 1 (standard) / 1.15 (DPR ≥ 1.5) / 1.25 (DPR ≥ 2). SSR-safe: renders
+ * at 1 until mounted, then applies the measured value.
+ */
+function useAutoUiScale(explicit?: number): number {
+  const [auto, setAuto] = useState(1);
+  useEffect(() => {
+    if (explicit !== undefined || typeof window === "undefined") return;
+    const update = () => {
+      const dpr = window.devicePixelRatio || 1;
+      setAuto(dpr >= 2 ? 1.25 : dpr >= 1.5 ? 1.15 : 1);
+    };
+    update();
+    // Re-evaluate when the window moves to a display with a different DPR.
+    // ponytail: the media query is bound to the DPR at subscribe time; the
+    // effect re-runs when `auto` changes, re-binding for the new DPR. A hop
+    // between two displays that map to the SAME tier keeps the stale query —
+    // harmless (scale is already correct), a reload rebinds.
+    const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, [explicit, auto]);
+  return explicit ?? auto;
+}
+
+export function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, panoEngine, uiScale, children, components }: PanoCloudViewerProps) {
+  const effectiveUiScale = useAutoUiScale(uiScale);
   // Memoize so a parent re-render doesn't hand DataProvider/ViewerProvider new
   // object identities — otherwise DataProvider re-fetches cameras/metadata and
   // managers see a "changed" config on every render. Callers passing an inline
@@ -225,7 +256,7 @@ export function PanoCloudViewer({ source, theme = "dark", className, locale, uiM
         <DataProvider adapter={adapter}>
           <ViewerProvider config={config}>
             <ComponentsProvider components={components}>
-              <PcvRoot className={className} uiScale={uiScale}>
+              <PcvRoot className={className} uiScale={effectiveUiScale}>
                 {children ? (
                   <>
                     {children(

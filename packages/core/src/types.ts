@@ -188,8 +188,16 @@ export type CameraProjection = "perspective" | "orthographic";
 export type DisplayPreset = "compact" | "standard" | "prominent";
 
 export interface DisplaySettings {
-  preset: DisplayPreset;
-  /** Measurement line width in pixels */
+  /**
+   * Which preset the current values came from, or `"custom"` after any manual
+   * slider tweak — so preset cards never claim to be active when the values
+   * have diverged.
+   */
+  preset: DisplayPreset | "custom";
+  /**
+   * @deprecated No-op: `LineBasicMaterial.linewidth` is ignored by WebGL.
+   * Kept only so existing DisplaySettings literals keep compiling.
+   */
   measurementLineWidth: number;
   /** Measurement label scale multiplier (1.0 = default) */
   measurementLabelScale: number;

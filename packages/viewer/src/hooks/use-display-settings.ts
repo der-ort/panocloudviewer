@@ -18,8 +18,9 @@ export function useDisplaySettings() {
   }, [setDisplaySettings]);
 
   const updateSetting = useCallback(<K extends keyof DisplaySettings>(key: K, value: DisplaySettings[K]) => {
-    // Any manual tweak drops the "which preset" label to "standard" (custom).
-    setDisplaySettings({ ...settings, preset: "standard" as DisplayPreset, [key]: value });
+    // Any manual tweak marks the settings as "custom" so no preset card
+    // claims to be active while the values have diverged from it.
+    setDisplaySettings({ ...settings, preset: "custom", [key]: value });
   }, [settings, setDisplaySettings]);
 
   return {

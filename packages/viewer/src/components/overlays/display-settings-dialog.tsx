@@ -205,7 +205,8 @@ export function DisplaySettingsDialog({
     key: K,
     value: DisplaySettings[K],
   ) => {
-    setSettings({ ...settings, [key]: value, preset: settings.preset });
+    // Manual tweak → "custom", so no preset card claims the diverged values.
+    setSettings({ ...settings, [key]: value, preset: "custom" });
   };
 
   return (
@@ -261,14 +262,8 @@ export function DisplaySettingsDialog({
           <TabsContent value="advanced">
             <div className="space-y-4">
               <SettingsSection title={t.measurementsSection}>
-                <SliderRow
-                  label={t.lineWidth}
-                  min={1}
-                  max={6}
-                  step={0.5}
-                  value={settings.measurementLineWidth}
-                  onChange={(v) => updateField("measurementLineWidth", v)}
-                />
+                {/* Line width slider removed — LineBasicMaterial.linewidth is a
+                    WebGL no-op, the slider never had a visible effect. */}
                 <SliderRow
                   label={t.labelScale}
                   min={0.3}

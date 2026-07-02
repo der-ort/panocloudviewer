@@ -40,8 +40,16 @@ export class PointCloudLoader {
     this.adapter = adapter;
   }
 
-  /** Load a point cloud from the adapter's base URL */
-  async load(metadataPath = "metadata.json", pointBudget = 2_000_000): Promise<void> {
+  /** Point budget actually applied by the last load() (auto-derived or explicit). */
+  appliedBudget = 2_000_000;
+
+  /**
+   * Load a point cloud from the adapter's base URL.
+   * @param pointBudget Explicit budget. When omitted, the budget is derived
+   *                    from the cloud's total point count via
+   *                    {@link PointCloudLoader.calcOptimalBudget} — no fixed cap.
+   */
+  async load(metadataPath = "metadata.json", pointBudget?: number): Promise<void> {
     // Lazy-import potree-core (client-only, heavy)
     const { Potree, PointColorType } = await import("potree-core");
 
@@ -65,19 +73,11 @@ export class PointCloudLoader {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const potree = this.sceneManager.potree as any;
-    potree.pointBudget = pointBudget;
 
-    const pointCloud = await potree.loadPointCloud(
-      metadataPath,
-      requestManager
-    );
-
-    pointCloud.material.size = 1.5;
-    pointCloud.material.pointSizeType = 2; // ADAPTIVE
-    pointCloud.material.shape = 1; // CIRCLE
-
-    // Read metadata to detect RGB attribute
+    // Read metadata up-front: RGB detection, CRS, and the total point count
+    // that drives the automatic budget.
     let hasRgb = false;
+    let totalPoints = 0;
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const meta = await this.adapter.fetchJson<any>(metadataPath);
@@ -88,11 +88,27 @@ export class PointCloudLoader {
       });
       // Capture the CRS so consumers can tell whether the cloud is georeferenced.
       this._projection = typeof meta?.projection === "string" ? meta.projection.trim() : "";
+      totalPoints = typeof meta?.points === "number" ? meta.points : 0;
     } catch {
       hasRgb = false;
     }
-
     this.hasRgb = hasRgb;
+
+    // No explicit budget → scale it to the cloud instead of a fixed default,
+    // so big clouds aren't artificially starved and small ones aren't padded.
+    const budget = pointBudget
+      ?? (totalPoints > 0 ? PointCloudLoader.calcOptimalBudget(totalPoints) : 2_000_000);
+    this.appliedBudget = budget;
+    potree.pointBudget = budget;
+
+    const pointCloud = await potree.loadPointCloud(
+      metadataPath,
+      requestManager
+    );
+
+    pointCloud.material.size = 1.5;
+    pointCloud.material.pointSizeType = 2; // ADAPTIVE
+    pointCloud.material.shape = 1; // CIRCLE
 
     if (hasRgb) {
       // Keep newFormat as set by loader; use RGB color type
@@ -292,10 +308,15 @@ export class PointCloudLoader {
     return this.currentClouds[0] ?? null;
   }
 
-  /** Calculate optimal point budget based on total point count */
+  /**
+   * Calculate an optimal point budget from the total point count.
+   * Proportional (30% / 15% / 8% by cloud size), floored at 500K, and never
+   * above the cloud's own total — no fixed upper cap, so large clouds aren't
+   * artificially starved.
+   */
   static calcOptimalBudget(totalPoints: number): number {
     const ratio = totalPoints < 5_000_000 ? 0.3 : totalPoints < 50_000_000 ? 0.15 : 0.08;
-    const raw = Math.round(totalPoints * ratio);
-    return Math.min(Math.max(Math.round(raw / 100_000) * 100_000, 500_000), 10_000_000);
+    const raw = Math.round(totalPoints * ratio / 100_000) * 100_000;
+    return Math.min(Math.max(raw, 500_000), Math.max(totalPoints, 500_000));
   }
 }

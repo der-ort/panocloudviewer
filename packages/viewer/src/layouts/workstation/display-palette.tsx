@@ -2,8 +2,9 @@
 
 import React from "react";
 import { Palette } from "lucide-react";
-import { cn } from "../../lib/utils";
+import { cn, budgetSliderRange } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
+import { useData } from "../../providers/data-provider";
 import { FloatingPalette } from "./floating-palette";
 import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
 
@@ -25,6 +26,9 @@ const QUALITY_PRESETS = [
 
 export function DisplayPalette() {
   const { loader, colorMode, setColorMode, pointBudget, setPointBudget, pointSize, setPointSize } = useViewer();
+  const { metadata } = useData();
+  // Budget slider scales with the loaded cloud — no fixed 10M cap.
+  const budgetRange = budgetSliderRange(metadata?.points);
 
   return (
     <FloatingPalette title="Display" icon={<Palette size={12} />}>
@@ -65,7 +69,7 @@ export function DisplayPalette() {
             <span>Budget</span>
             <span>{(pointBudget / 1e6).toFixed(1)}M</span>
           </div>
-          <input type="range" min={500000} max={10000000} step={100000} value={pointBudget}
+          <input type="range" min={budgetRange.min} max={budgetRange.max} step={budgetRange.step} value={pointBudget}
             onChange={e => { const v = parseInt(e.target.value); setPointBudget(v); loader?.setPointBudget(v); }}
             className="pcv-slider w-full" />
         </div>

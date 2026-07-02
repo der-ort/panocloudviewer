@@ -542,15 +542,25 @@ export class MeasurementManager {
 
   /**
    * Value label: constant screen-size sprite (`sizeAttenuation:false`) so it is
-   * equally readable on a 5 m room and a 500 m site. White text on a dark card
-   * with the measurement color as accent bar + border — high contrast on both
-   * bright and dark point clouds. `measurementLabelScale` multiplies the size.
+   * equally readable on a 5 m room and a 500 m site. Monospaced white text on a
+   * dark card with the measurement color as border; the card width fits the
+   * text so labels stay compact. `measurementLabelScale` multiplies the size.
    */
   private makeTextSprite(text: string, color: string): THREE.Sprite {
-    const W = 512, H = 96;
+    const FONT = "bold 52px Consolas, 'Cascadia Mono', 'Courier New', monospace";
+    const H = 96;
+    const PAD = 28;
+
+    // Measure first (throwaway context state), then size the canvas to fit.
     const canvas = document.createElement("canvas");
-    canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d")!;
+    ctx.font = FONT;
+    const W = Math.ceil(ctx.measureText(text).width) + PAD * 2;
+    canvas.width = W;
+    canvas.height = H;
+    // Resizing the canvas resets ALL context state — set the font again.
+    ctx.font = FONT;
+
     // Card (each roundRect needs its own beginPath — the path accumulates otherwise)
     ctx.beginPath();
     ctx.roundRect(3, 3, W - 6, H - 6, 14);
@@ -559,17 +569,11 @@ export class MeasurementManager {
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     ctx.stroke();
-    // Colored accent bar on the left
-    ctx.beginPath();
-    ctx.roundRect(10, 16, 10, H - 32, 5);
-    ctx.fillStyle = color;
-    ctx.fill();
-    // Value text in white (color is carried by accent + border)
+    // Value text in white (the measurement color is carried by the border)
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 52px -apple-system, 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, W / 2 + 8, H / 2 + 2);
+    ctx.fillText(text, W / 2, H / 2 + 2);
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.minFilter = THREE.LinearFilter;
@@ -581,8 +585,10 @@ export class MeasurementManager {
       depthWrite: false,
     }));
     const ls = this._displaySettings.measurementLabelScale;
-    // ~0.2 of NDC height at scale 1 ≈ compact readable card; keep W:H aspect.
-    sprite.scale.set(0.20 * ls, (0.20 * H / W) * ls, 1);
+    // Constant on-screen HEIGHT (same as the previous fixed-card design);
+    // width follows the actual canvas aspect so the card isn't stretched.
+    const spriteH = 0.0375 * ls; // = the old 0.20 * 96/512
+    sprite.scale.set(spriteH * (W / H), spriteH, 1);
     sprite.renderOrder = 4; // above lines (1) and dots (2)
     return sprite;
   }

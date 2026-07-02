@@ -106,7 +106,33 @@ export class ClipManager {
     });
     this.sm.scene.add(tc.getHelper());
     this.tcMove = tc;
+    this._removePlaneHandles(tc);
     this._raiseGizmo();
+  }
+
+  /**
+   * Strip the translate gizmo's two-axis PLANE quads (children named XY/YZ/XZ)
+   * so only the single-axis arrows and the center handle remain — the rotation
+   * arcs occupy the mid-region instead. Hiding is NOT enough: the gizmo's
+   * updateMatrixWorld forces `visible = true` on every handle each frame, so
+   * the quads must be REMOVED from both the visible gizmo and the invisible
+   * picker trees. Names are non-unique — collect first, then remove.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _removePlaneHandles(tc: any): void {
+    const root = tc?.getHelper?.();
+    // The TransformControlsGizmo instance is the root child carrying the
+    // gizmo/picker maps; probe defensively so a three upgrade degrades to a no-op.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gz = root?.children?.find((c: any) => c.gizmo && c.picker);
+    for (const group of [gz?.gizmo?.translate, gz?.picker?.translate]) {
+      if (!group?.children) continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const planes = group.children.filter((c: any) =>
+        c.name === "XY" || c.name === "YZ" || c.name === "XZ");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const p of planes as any[]) group.remove(p);
+    }
   }
 
   /** Whether the translate gizmo is mid-drag (viewport uses this for ordering). */

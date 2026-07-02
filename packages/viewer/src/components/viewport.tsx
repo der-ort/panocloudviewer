@@ -34,7 +34,7 @@ export function Viewport({ className }: ViewportProps) {
     config,
     setSceneManager, setLoader, setMeasurementManager, setMarkerManager,
     setCameraAnimator, setExporter, setMinimap, setClipManager,
-    setFps, activeTool, pointBudget,
+    setFps, activeTool, setPointBudget,
     showMarkers, showMinimap, showMeasurements, setMeasurementList, setSelectedCamera,
     clipBoxEntries, setClipBoxEntries, setSelectedClipBoxId,
     navigationMode, projection, displaySettings,
@@ -133,8 +133,12 @@ export function Viewport({ className }: ViewportProps) {
 
     sm.start();
 
-    // Load point cloud and set minimap bounds
-    loader.load("metadata.json", pointBudget).then(() => {
+    // Load point cloud and set minimap bounds. Budget: pass only an explicit
+    // config value through — otherwise the loader derives it from the cloud's
+    // total point count, and we sync the applied value back into React state
+    // so sliders/status show the real number.
+    loader.load("metadata.json", config.pointBudget).then(() => {
+      setPointBudget(loader.appliedBudget);
       const pc = loader.getPointCloud();
 
       // After load, compute world bounding box for minimap

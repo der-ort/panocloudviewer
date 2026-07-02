@@ -150,9 +150,10 @@ export class RotationRingController {
 
     this.group.position.copy(this.center);
     this.group.quaternion.copy(quaternion);
-    // Slightly beyond the largest half-extent so the arcs clear the box faces
-    // (and the face arrows mounted on them).
-    const radius = Math.max(size.x, size.y, size.z) * 0.62;
+    // Mid-region radius — the arcs sit where the translate gizmo's plane quads
+    // used to be: between the center arrows and the box faces, clear of both
+    // the face-mounted resize arrows and the compact move gizmo.
+    const radius = Math.max(size.x, size.y, size.z) * 0.42;
     this.group.scale.setScalar(Math.max(radius, 0.3));
   }
 

@@ -2,7 +2,9 @@
 
 import React, { useState } from "react";
 import { useViewer } from "../../providers/viewer-provider";
+import { useData } from "../../providers/data-provider";
 import { useLocale } from "../../i18n/locale-context";
+import { budgetSliderRange } from "../../lib/utils";
 import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
 import type { CameraProjection, NavigationMode } from "@der-ort/pano-cloud-viewer-core";
 
@@ -159,6 +161,9 @@ export function ViewModeControls() {
 
 export function DisplayControls() {
   const { pointBudget, setPointBudget, pointSize, setPointSize, loader, colorMode, setColorMode, uiMode } = useViewer();
+  const { metadata } = useData();
+  // Budget slider scales with the loaded cloud — no fixed 10M cap.
+  const budgetRange = budgetSliderRange(metadata?.points);
   const t = useLocale().toolbar;
   const [quality, setQuality] = useState("balanced");
 
@@ -232,9 +237,9 @@ export function DisplayControls() {
           <span className="hidden lg:block">{t.budget}</span>
           <input
             type="range"
-            min={500_000}
-            max={10_000_000}
-            step={100_000}
+            min={budgetRange.min}
+            max={budgetRange.max}
+            step={budgetRange.step}
             value={pointBudget}
             onChange={handleBudget}
             className="pcv-slider w-16"

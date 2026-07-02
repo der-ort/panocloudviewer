@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useViewer } from "../../providers/viewer-provider";
+import { useNavigationActions, type ViewPreset } from "../../hooks/use-navigation-actions";
 import { useLocale } from "../../i18n/locale-context";
 import { ToolbarIconBtn } from "./main-toolbar";
 
@@ -79,31 +79,20 @@ function RightIcon() {
   );
 }
 
-const VIEW_DEFS = [
-  { titleKey: "viewTop",    pos: [0, 0, 1],   up: [0, 1, 0], icon: TopIcon },
-  { titleKey: "viewBottom", pos: [0, 0, -1],  up: [0, 1, 0], icon: BottomIcon },
-  { titleKey: "viewFront",  pos: [0, -1, 0],  up: [0, 0, 1], icon: FrontIcon },
-  { titleKey: "viewBack",   pos: [0, 1, 0],   up: [0, 0, 1], icon: BackIcon },
-  { titleKey: "viewLeft",   pos: [-1, 0, 0],  up: [0, 0, 1], icon: LeftIcon },
-  { titleKey: "viewRight",  pos: [1, 0, 0],   up: [0, 0, 1], icon: RightIcon },
-] as const;
+// The preset camera math (directions + Z-up handling) lives in
+// useNavigationActions.flyToView — single implementation, see the hook.
+const VIEW_DEFS: { titleKey: string; preset: ViewPreset; icon: () => React.JSX.Element }[] = [
+  { titleKey: "viewTop",    preset: "top",    icon: TopIcon },
+  { titleKey: "viewBottom", preset: "bottom", icon: BottomIcon },
+  { titleKey: "viewFront",  preset: "front",  icon: FrontIcon },
+  { titleKey: "viewBack",   preset: "back",   icon: BackIcon },
+  { titleKey: "viewLeft",   preset: "left",   icon: LeftIcon },
+  { titleKey: "viewRight",  preset: "right",  icon: RightIcon },
+];
 
 export function ViewControls() {
-  const { sceneManager } = useViewer();
+  const { flyToView } = useNavigationActions();
   const t = useLocale().toolbar;
-
-  const flyToView = (pos: readonly [number, number, number], up: readonly [number, number, number]) => {
-    if (!sceneManager) return;
-    const { camera, controls } = sceneManager;
-    const target = controls.target.clone();
-    const dist = camera.position.distanceTo(target);
-    const newPos = target.clone().add(
-      { x: pos[0] * dist, y: pos[1] * dist, z: pos[2] * dist } as import("three").Vector3
-    );
-    camera.position.set(newPos.x, newPos.y, newPos.z);
-    camera.up.set(up[0], up[1], up[2]);
-    controls.update();
-  };
 
   return (
     <>
@@ -113,7 +102,7 @@ export function ViewControls() {
           icon={<v.icon />}
           title={(t as unknown as Record<string, string>)[v.titleKey] ?? v.titleKey}
           active={false}
-          onClick={() => flyToView(v.pos, v.up)}
+          onClick={() => flyToView(v.preset)}
         />
       ))}
     </>

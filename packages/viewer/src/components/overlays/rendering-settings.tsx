@@ -3,11 +3,14 @@
 import React, { useState, useEffect } from "react";
 import { X, SlidersHorizontal, Sun, Moon } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
+import { useData } from "../../providers/data-provider";
 import { useTheme } from "../../providers/theme-provider";
 import { useDisplayActions } from "../../hooks/use-display-actions";
+import { useDisplaySettings } from "../../hooks/use-display-settings";
 import { useLocale } from "../../i18n/locale-context";
 import { usePcvRoot } from "../pano-cloud-viewer";
 import { useDraggable } from "../../hooks/use-draggable";
+import { budgetSliderRange } from "../../lib/utils";
 import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
 
 interface RenderingSettingsProps {
@@ -36,7 +39,11 @@ const QUALITY = [
  */
 export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
   const { loader, colorMode, setColorMode, pointSize, setPointSize, pointBudget, setPointBudget } = useViewer();
+  const { metadata } = useData();
+  // Budget slider scales with the loaded cloud — no fixed 10M cap.
+  const budgetRange = budgetSliderRange(metadata?.points);
   const { setQualityPreset } = useDisplayActions();
+  const { settings: display, updateSetting: updateDisplay } = useDisplaySettings();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().renderingSettings;
   const pcvRoot = usePcvRoot();
@@ -168,7 +175,7 @@ export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
           </div>
           <Slider label="Point size" value={pointSize} min={0.2} max={5} step={0.1}
             onChange={v => { setPointSize(v); loader?.setPointSize(v); }} />
-          <Slider label="Budget" value={pointBudget} min={200_000} max={10_000_000} step={100_000}
+          <Slider label="Budget" value={pointBudget} min={budgetRange.min} max={budgetRange.max} step={budgetRange.step}
             onChange={v => { setPointBudget(v); loader?.setPointBudget(v); }}
             display={v => (v / 1e6).toFixed(1) + "M"} />
           <div className="flex items-center gap-1 pt-0.5">
@@ -223,6 +230,38 @@ export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
         <Section title={t.generalSection}>
           <Slider label={t.opacity} value={opacity} min={0} max={1} step={0.02}
             onChange={setOpacityVal} />
+        </Section>
+
+        {/* ── Measurements & markers ─────────────────────────────── */}
+        {/* Live writes to viewer.displaySettings — the viewport syncs the
+            managers on every change, so these apply in real time. */}
+        <Section title="Measurements & markers">
+          <Slider label="Label size" value={display.measurementLabelScale} min={0.3} max={2.5} step={0.1}
+            onChange={v => updateDisplay("measurementLabelScale", v)} display={v => v.toFixed(1) + "×"} />
+          <Slider label="Point size" value={display.measurementSphereRadius} min={0.05} max={0.4} step={0.01}
+            onChange={v => updateDisplay("measurementSphereRadius", v)}
+            display={v => (v / 0.15).toFixed(1) + "×"} />
+          <Slider label="Pin size" value={display.markerSphereScale} min={0.4} max={2} step={0.1}
+            onChange={v => updateDisplay("markerSphereScale", v)} display={v => v.toFixed(1) + "×"} />
+          <Slider label="Pin opacity" value={display.markerSphereOpacity} min={0.2} max={1} step={0.05}
+            onChange={v => updateDisplay("markerSphereOpacity", v)} />
+          <div className="flex items-center gap-2">
+            <span className="w-16 text-muted-foreground shrink-0">Pin labels</span>
+            <div className="flex-1 flex items-center gap-1">
+              {(["hover", "always", "hidden"] as const).map(mode => (
+                <button key={mode}
+                  onClick={() => updateDisplay("markerLabelMode", mode)}
+                  className={
+                    (display.markerLabelMode ?? "hover") === mode
+                      ? "flex-1 text-[10px] py-1 rounded bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))] capitalize"
+                      : "flex-1 text-[10px] py-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 capitalize"
+                  }
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+          </div>
         </Section>
 
         {/* ── Theme ──────────────────────────────────────────────── */}
