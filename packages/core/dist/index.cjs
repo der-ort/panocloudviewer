@@ -281,8 +281,10 @@ var SceneManager = class {
       if (typeof octree.pick !== "function") continue;
       const result = octree.pick(this.renderer, this.camera, raycaster.ray, {
         // Generous window so thin structures (edges, poles, railings) are easy
-        // to hit — the pick still returns the point closest to the ray.
-        pickWindowSize: 31
+        // to hit — the pick still returns the point closest to the ray. 63 px
+        // gives a proper point-snap feel; below that, sparse clouds miss often
+        // and the preview falls back to the ground plane.
+        pickWindowSize: 63
       });
       if (result?.position) {
         return result.position.clone();
@@ -3185,8 +3187,6 @@ var MagnifierRenderer = class _MagnifierRenderer {
   enabled = false;
   /** Latest cursor position, or null when the cursor left the canvas. */
   cursor = null;
-  zoomCamera = new THREE5__namespace.PerspectiveCamera(10, 1, 0.01, 1e5);
-  lookTarget = new THREE5__namespace.Vector3();
   // Frame + crosshair drawn over the inset in a second tiny pass.
   frameScene = new THREE5__namespace.Scene();
   frameCamera = new THREE5__namespace.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -3265,16 +3265,10 @@ var MagnifierRenderer = class _MagnifierRenderer {
     if (bottom + size > H) bottom = H - cy - pad - size;
     left = Math.max(0, Math.min(left, W - size));
     bottom = Math.max(0, Math.min(bottom, H - size));
-    const main = this.sm.camera;
-    this.zoomCamera.position.copy(main.position);
-    this.zoomCamera.up.copy(main.up);
-    this.zoomCamera.fov = (main.fov || 60) / _MagnifierRenderer.ZOOM;
-    this.zoomCamera.near = main.near;
-    this.zoomCamera.far = main.far;
-    this.zoomCamera.aspect = 1;
-    this.zoomCamera.updateProjectionMatrix();
-    this.lookTarget.set(nx, ny, 0.5).unproject(main);
-    this.zoomCamera.lookAt(this.lookTarget);
+    const sub = size / _MagnifierRenderer.ZOOM;
+    const zoomCamera = this.sm.camera.clone();
+    zoomCamera.setViewOffset(W, H, cx - sub / 2, cy - sub / 2, sub, sub);
+    zoomCamera.updateProjectionMatrix();
     const savedVp = new THREE5__namespace.Vector4();
     const savedSc = new THREE5__namespace.Vector4();
     renderer.getViewport(savedVp);
@@ -3286,7 +3280,7 @@ var MagnifierRenderer = class _MagnifierRenderer {
     renderer.setScissor(left, bottom, size, size);
     renderer.setViewport(left, bottom, size, size);
     renderer.clearDepth();
-    renderer.render(this.sm.scene, this.zoomCamera);
+    renderer.render(this.sm.scene, zoomCamera);
     renderer.clearDepth();
     renderer.render(this.frameScene, this.frameCamera);
     renderer.setViewport(savedVp);

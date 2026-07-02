@@ -444,8 +444,10 @@ var init_dist = __esm({
           if (typeof octree.pick !== "function") continue;
           const result = octree.pick(this.renderer, this.camera, raycaster.ray, {
             // Generous window so thin structures (edges, poles, railings) are easy
-            // to hit — the pick still returns the point closest to the ray.
-            pickWindowSize: 31
+            // to hit — the pick still returns the point closest to the ray. 63 px
+            // gives a proper point-snap feel; below that, sparse clouds miss often
+            // and the preview falls back to the ground plane.
+            pickWindowSize: 63
           });
           if (result?.position) {
             return result.position.clone();
@@ -3243,8 +3245,6 @@ var init_dist = __esm({
       enabled = false;
       /** Latest cursor position, or null when the cursor left the canvas. */
       cursor = null;
-      zoomCamera = new THREE5__namespace.PerspectiveCamera(10, 1, 0.01, 1e5);
-      lookTarget = new THREE5__namespace.Vector3();
       // Frame + crosshair drawn over the inset in a second tiny pass.
       frameScene = new THREE5__namespace.Scene();
       frameCamera = new THREE5__namespace.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -3323,16 +3323,10 @@ var init_dist = __esm({
         if (bottom + size > H) bottom = H - cy - pad - size;
         left = Math.max(0, Math.min(left, W - size));
         bottom = Math.max(0, Math.min(bottom, H - size));
-        const main = this.sm.camera;
-        this.zoomCamera.position.copy(main.position);
-        this.zoomCamera.up.copy(main.up);
-        this.zoomCamera.fov = (main.fov || 60) / _MagnifierRenderer.ZOOM;
-        this.zoomCamera.near = main.near;
-        this.zoomCamera.far = main.far;
-        this.zoomCamera.aspect = 1;
-        this.zoomCamera.updateProjectionMatrix();
-        this.lookTarget.set(nx, ny, 0.5).unproject(main);
-        this.zoomCamera.lookAt(this.lookTarget);
+        const sub = size / _MagnifierRenderer.ZOOM;
+        const zoomCamera = this.sm.camera.clone();
+        zoomCamera.setViewOffset(W, H, cx - sub / 2, cy - sub / 2, sub, sub);
+        zoomCamera.updateProjectionMatrix();
         const savedVp = new THREE5__namespace.Vector4();
         const savedSc = new THREE5__namespace.Vector4();
         renderer.getViewport(savedVp);
@@ -3344,7 +3338,7 @@ var init_dist = __esm({
         renderer.setScissor(left, bottom, size, size);
         renderer.setViewport(left, bottom, size, size);
         renderer.clearDepth();
-        renderer.render(this.sm.scene, this.zoomCamera);
+        renderer.render(this.sm.scene, zoomCamera);
         renderer.clearDepth();
         renderer.render(this.frameScene, this.frameCamera);
         renderer.setViewport(savedVp);
@@ -3520,7 +3514,7 @@ function ViewerProvider({ config, children }) {
   const [showMarkers, setShowMarkers] = React27.useState(true);
   const [showMinimap, setShowMinimap] = React27.useState(config.showMinimap ?? true);
   const [showMeasurements, setShowMeasurements] = React27.useState(true);
-  const [showMagnifier, setShowMagnifier] = React27.useState(false);
+  const [showMagnifier, setShowMagnifier] = React27.useState(true);
   const [selectedCamera, setSelectedCamera] = React27.useState(null);
   const [clipBoxEntries, setClipBoxEntries] = React27.useState([]);
   const [selectedClipBoxId, setSelectedClipBoxId] = React27.useState(null);
@@ -7901,7 +7895,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "66ff82c \xB7 2026-07-02 23:33Z" ;
+var PCV_BUILD = "6812ef6 \xB7 2026-07-02 23:49Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

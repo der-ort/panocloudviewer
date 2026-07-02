@@ -6,9 +6,13 @@ import type { SceneManager } from "./scene-manager";
  * zoomed inset follows the cursor so the user can see exactly which detail
  * they are snapping to.
  *
- * Implementation: a second render pass of the MAIN scene through a narrow-FOV
- * camera aimed along the cursor ray, scissored into a square near the cursor —
- * the same proven post-render pattern as {@link AxisWidget}. No framebuffer
+ * Implementation: a second render pass of the MAIN scene through a CLONE of
+ * the main camera with a `setViewOffset` crop around the cursor, scissored
+ * into a square near the cursor — a true crop-magnification of exactly what
+ * is on screen. Unlike the earlier narrow-FOV re-aim, this keeps the main
+ * camera's pose and projection semantics, so it magnifies identically for
+ * perspective and orthographic cameras and for potree point materials (whose
+ * size/LOD uniforms are computed for the main camera). No framebuffer
  * readbacks, no `preserveDrawingBuffer` (a readback-based 2D loupe was tried
  * before and was slow and empty — see CLAUDE.md).
  *
@@ -22,9 +26,6 @@ export class MagnifierRenderer {
   private enabled = false;
   /** Latest cursor position, or null when the cursor left the canvas. */
   private cursor: { nx: number; ny: number; cx: number; cy: number } | null = null;
-
-  private zoomCamera = new THREE.PerspectiveCamera(10, 1, 0.01, 100000);
-  private lookTarget = new THREE.Vector3();
 
   // Frame + crosshair drawn over the inset in a second tiny pass.
   private frameScene = new THREE.Scene();
@@ -110,17 +111,13 @@ export class MagnifierRenderer {
     left = Math.max(0, Math.min(left, W - size));
     bottom = Math.max(0, Math.min(bottom, H - size));
 
-    // Zoom camera: main camera's pose, narrow FOV, aimed along the cursor ray.
-    const main = this.sm.camera;
-    this.zoomCamera.position.copy(main.position);
-    this.zoomCamera.up.copy(main.up);
-    this.zoomCamera.fov = (main.fov || 60) / MagnifierRenderer.ZOOM;
-    this.zoomCamera.near = main.near;
-    this.zoomCamera.far = main.far;
-    this.zoomCamera.aspect = 1;
-    this.zoomCamera.updateProjectionMatrix();
-    this.lookTarget.set(nx, ny, 0.5).unproject(main);
-    this.zoomCamera.lookAt(this.lookTarget);
+    // Zoom camera: an exact clone of the main camera rendering only a
+    // (size / ZOOM)² crop centered on the cursor — crop → magnification.
+    void nx; void ny; // NDC not needed for the crop; kept in the cursor payload for pickers
+    const sub = size / MagnifierRenderer.ZOOM;
+    const zoomCamera = this.sm.camera.clone();
+    zoomCamera.setViewOffset(W, H, cx - sub / 2, cy - sub / 2, sub, sub);
+    zoomCamera.updateProjectionMatrix();
 
     // Save renderer state
     const savedVp = new THREE.Vector4();
@@ -138,7 +135,7 @@ export class MagnifierRenderer {
     // The scene's own background fills the square (clearDepth keeps the main
     // image outside the scissor untouched).
     renderer.clearDepth();
-    renderer.render(this.sm.scene, this.zoomCamera);
+    renderer.render(this.sm.scene, zoomCamera);
     // Frame + crosshair on top
     renderer.clearDepth();
     renderer.render(this.frameScene, this.frameCamera);

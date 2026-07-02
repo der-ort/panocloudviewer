@@ -114,7 +114,9 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const [showMarkers, setShowMarkers] = useState(true);
   const [showMinimap, setShowMinimap] = useState(config.showMinimap ?? true);
   const [showMeasurements, setShowMeasurements] = useState(true);
-  const [showMagnifier, setShowMagnifier] = useState(false);
+  // On by default — the crosshair inset is the precision aid while measuring
+  // (it only renders while a measurement tool is active).
+  const [showMagnifier, setShowMagnifier] = useState(true);
   const [selectedCamera, setSelectedCamera] = useState<import("@der-ort/pano-cloud-viewer-core").CameraData | null>(null);
   const [clipBoxEntries, setClipBoxEntries] = useState<ClipBoxEntry[]>([]);
   const [selectedClipBoxId, setSelectedClipBoxId] = useState<string | null>(null);

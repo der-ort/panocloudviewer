@@ -914,9 +914,13 @@ declare class AxisWidget {
  * zoomed inset follows the cursor so the user can see exactly which detail
  * they are snapping to.
  *
- * Implementation: a second render pass of the MAIN scene through a narrow-FOV
- * camera aimed along the cursor ray, scissored into a square near the cursor —
- * the same proven post-render pattern as {@link AxisWidget}. No framebuffer
+ * Implementation: a second render pass of the MAIN scene through a CLONE of
+ * the main camera with a `setViewOffset` crop around the cursor, scissored
+ * into a square near the cursor — a true crop-magnification of exactly what
+ * is on screen. Unlike the earlier narrow-FOV re-aim, this keeps the main
+ * camera's pose and projection semantics, so it magnifies identically for
+ * perspective and orthographic cameras and for potree point materials (whose
+ * size/LOD uniforms are computed for the main camera). No framebuffer
  * readbacks, no `preserveDrawingBuffer` (a readback-based 2D loupe was tried
  * before and was slow and empty — see CLAUDE.md).
  *
@@ -930,8 +934,6 @@ declare class MagnifierRenderer {
     private enabled;
     /** Latest cursor position, or null when the cursor left the canvas. */
     private cursor;
-    private zoomCamera;
-    private lookTarget;
     private frameScene;
     private frameCamera;
     private frameDisposables;
