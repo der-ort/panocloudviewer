@@ -5,7 +5,14 @@ type FaceAxis = "x" | "y" | "z";
 type FaceSign = 1 | -1;
 
 interface FaceHandle {
-  mesh: THREE.Mesh;
+  /** Arrow group: shaft + cone (visible) + an invisible grab sphere (hitbox). */
+  group: THREE.Group;
+  /** Shared by shaft + cone so hover/drag recoloring hits both. */
+  material: THREE.MeshBasicMaterial;
+  /** Invisible enlarged hitbox — raycast target. */
+  grab: THREE.Mesh;
+  /** Orients local +Y onto this handle's outward face direction. */
+  localQuat: THREE.Quaternion;
   axis: FaceAxis;
   sign: FaceSign;
 }
@@ -34,8 +41,10 @@ const HANDLE_HOVER_COLOR = 0xffffff;
 const HANDLE_DRAG_COLOR = 0xf97316;
 
 /**
- * Manages 6 face-center handles for interactive Box3 resizing.
- * Each handle controls one face of the box (min.x, max.x, min.y, max.y, min.z, max.z).
+ * Manages 6 face-center handles for interactive Box3 resizing, rendered as
+ * outward-pointing AXIS ARROWS (shaft + cone) mounted on each face — drag an
+ * arrow to push/pull that face. Each arrow carries an invisible grab sphere as
+ * its hitbox, kept deliberately tight so the rotation rings never contend with it.
  */
 export class FaceHandleController {
   private scene: THREE.Scene;
@@ -62,28 +71,49 @@ export class FaceHandleController {
     this.createHandles();
   }
 
-  /** Shared sphere geometry for all 6 handles — disposed exactly once in dispose(). */
-  private handleGeometry = new THREE.SphereGeometry(1, 12, 8);
+  // Shared arrow geometries for all 6 handles — each disposed once in dispose().
+  // Local space: arrow points along +Y, base at the origin (mounted on the face).
+  private shaftGeometry = new THREE.CylinderGeometry(0.09, 0.09, 0.55, 10).translate(0, 0.275, 0);
+  private coneGeometry = new THREE.ConeGeometry(0.26, 0.5, 12).translate(0, 0.8, 0);
+  private grabGeometry = new THREE.SphereGeometry(0.6, 8, 6).translate(0, 0.65, 0);
+  /** One invisible material shared by all grab spheres. */
+  private grabMaterial = new THREE.MeshBasicMaterial({
+    transparent: true, opacity: 0, depthTest: false, depthWrite: false,
+  });
 
   private createHandles(): void {
     const axes: FaceAxis[] = ["x", "y", "z"];
     const signs: FaceSign[] = [1, -1];
-    const geo = this.handleGeometry;
+    const UP = new THREE.Vector3(0, 1, 0);
 
     for (const axis of axes) {
       for (const sign of signs) {
-        const mat = new THREE.MeshBasicMaterial({
+        const material = new THREE.MeshBasicMaterial({
           color: AXIS_COLOR[axis],
           transparent: true,
           opacity: 0.95,
           depthTest: false,
         });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.renderOrder = 10;
-        mesh.visible = false;
-        mesh.userData = { faceHandle: true, axis, sign };
-        this.group.add(mesh);
-        this.handles.push({ mesh, axis, sign });
+        const shaft = new THREE.Mesh(this.shaftGeometry, material);
+        const cone = new THREE.Mesh(this.coneGeometry, material);
+        const grab = new THREE.Mesh(this.grabGeometry, this.grabMaterial);
+        shaft.renderOrder = cone.renderOrder = 10;
+
+        const arrow = new THREE.Group();
+        arrow.add(shaft, cone, grab);
+        arrow.visible = false;
+        arrow.userData = { faceHandle: true, axis, sign };
+
+        // Local +Y → this face's outward direction (box rotation applied later).
+        const dir = new THREE.Vector3(
+          axis === "x" ? sign : 0,
+          axis === "y" ? sign : 0,
+          axis === "z" ? sign : 0,
+        );
+        const localQuat = new THREE.Quaternion().setFromUnitVectors(UP, dir);
+
+        this.group.add(arrow);
+        this.handles.push({ group: arrow, material, grab, localQuat, axis, sign });
       }
     }
   }
@@ -92,7 +122,7 @@ export class FaceHandleController {
     this.box = box;
     this.onChange = onChange;
     this.updatePositions();
-    for (const h of this.handles) h.mesh.visible = true;
+    for (const h of this.handles) h.group.visible = true;
   }
 
   /** Set the box's orientation (full 3-axis) so handles follow it. */
@@ -106,7 +136,7 @@ export class FaceHandleController {
     this.onChange = null;
     this.drag = null;
     this.hoveredHandle = null;
-    for (const h of this.handles) h.mesh.visible = false;
+    for (const h of this.handles) h.group.visible = false;
   }
 
   isAttached(): boolean {
@@ -123,7 +153,7 @@ export class FaceHandleController {
   }
 
   getHandleMeshes(): THREE.Mesh[] {
-    return this.handles.map(h => h.mesh);
+    return this.handles.map(h => h.grab);
   }
 
   /** Update handle positions and sizes to match the current box */
@@ -134,10 +164,11 @@ export class FaceHandleController {
     this.box.getCenter(center);
     this.box.getSize(size);
 
-    // Handle radius: ~3% of box diagonal, clamped — large enough to read and
-    // grab clearly against the wireframe without dominating a small box.
+    // Arrow scale: ~6% of box diagonal per local unit (arrow is ~1.3 units
+    // long) — proportional at any box size, floored so tiny boxes stay grabbable.
+    // No upper clamp: a fixed cap made arrows invisible on large site-scale boxes.
     const diag = size.length();
-    const radius = Math.max(0.08, Math.min(diag * 0.03, 3));
+    const scale = Math.max(0.1, diag * 0.06);
 
     for (const h of this.handles) {
       // Face-center offset from the box center, in box-local (unrotated) space.
@@ -147,15 +178,15 @@ export class FaceHandleController {
       } else {
         offset[h.axis] = this.box.min[h.axis] - center[h.axis];
       }
-      // Push the handle slightly OFF the face (along its own axis) plus a
-      // constant pad so it doesn't sit on top of the move arrows / rotate rings,
-      // making each handle easier to grab without catching a neighbour.
+      // Arrow base sits just off the face, pointing outward along its axis.
       const half = Math.abs(offset[h.axis]);
-      offset[h.axis] += h.sign * (half * 0.12 + radius * 1.5);
+      offset[h.axis] += h.sign * (half * 0.04 + scale * 0.1);
       // Rotate the offset by the box orientation, then translate by center.
       offset.applyQuaternion(this._quaternion);
-      h.mesh.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
-      h.mesh.scale.setScalar(radius);
+      h.group.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
+      h.group.scale.setScalar(scale);
+      // Box orientation × local face direction — the arrow follows rotation.
+      h.group.quaternion.copy(this._quaternion).multiply(h.localQuat);
     }
   }
 
@@ -173,7 +204,7 @@ export class FaceHandleController {
     const cameraDir = new THREE.Vector3();
     this.camera.getWorldDirection(cameraDir);
     const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
-      cameraDir.negate(), handle.mesh.position.clone()
+      cameraDir.negate(), handle.group.position.clone()
     );
 
     // Get the initial intersection
@@ -270,10 +301,13 @@ export class FaceHandleController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    // All handles share one geometry — dispose it once, then each material.
-    this.handleGeometry.dispose();
+    // Shared geometries/material are disposed once, then each handle's material.
+    this.shaftGeometry.dispose();
+    this.coneGeometry.dispose();
+    this.grabGeometry.dispose();
+    this.grabMaterial.dispose();
     for (const h of this.handles) {
-      (h.mesh.material as THREE.Material).dispose();
+      h.material.dispose();
     }
     this.scene.remove(this.group);
   }
@@ -281,11 +315,12 @@ export class FaceHandleController {
   private hitTest(clientX: number, clientY: number): FaceHandle | null {
     if (!this.box) return null;
     this.setRaycasterFromClient(clientX, clientY);
-    const meshes = this.handles.filter(h => h.mesh.visible).map(h => h.mesh);
-    const intersects = this.raycaster.intersectObjects(meshes);
+    // Raycast the invisible grab spheres — they envelop the whole arrow.
+    const grabs = this.handles.filter(h => h.group.visible).map(h => h.grab);
+    const intersects = this.raycaster.intersectObjects(grabs);
     if (intersects.length === 0) return null;
-    const hitMesh = intersects[0].object;
-    return this.handles.find(h => h.mesh === hitMesh) ?? null;
+    const hit = intersects[0].object;
+    return this.handles.find(h => h.grab === hit) ?? null;
   }
 
   private setRaycasterFromClient(clientX: number, clientY: number): void {
@@ -296,6 +331,6 @@ export class FaceHandleController {
   }
 
   private setHandleColor(handle: FaceHandle, color: number): void {
-    (handle.mesh.material as THREE.MeshBasicMaterial).color.setHex(color);
+    handle.material.color.setHex(color);
   }
 }

@@ -364,10 +364,21 @@ export function Viewport({ className }: ViewportProps) {
     const sm = smRef.current;
     if (!sm) return;
 
-    // Face handle drag — check before other interactions
+    // Face-resize arrows — checked before other interactions
     const fh = clipRef.current?.faceHandles;
     if (fh && fh.isAttached() && e.button === 0) {
       if (fh.onPointerDown(e.clientX, e.clientY)) {
+        e.preventDefault();
+        sm.controls.enabled = false;
+        return;
+      }
+    }
+
+    // Rotation arcs — skipped if the translate gizmo already claimed this press
+    // (its native pointerdown listener fires before React's synthetic event).
+    const rr = clipRef.current?.rotationRings;
+    if (rr && rr.isAttached() && e.button === 0 && !clipRef.current?.isGizmoDragging()) {
+      if (rr.onPointerDown(e.clientX, e.clientY)) {
         e.preventDefault();
         sm.controls.enabled = false;
         return;
@@ -405,16 +416,21 @@ export function Viewport({ className }: ViewportProps) {
   }, [activeTool]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    // Face handle drag
+    // Face-resize arrow drag
     const fh = clipRef.current?.faceHandles;
     if (fh && fh.isDragging()) {
       fh.onPointerMove(e.clientX, e.clientY);
       return;
     }
-    // Face handle hover
-    if (fh && fh.isAttached()) {
-      fh.updateHover(e.clientX, e.clientY);
+    // Rotation-arc drag
+    const rr = clipRef.current?.rotationRings;
+    if (rr && rr.isDragging()) {
+      rr.onPointerMove(e.clientX, e.clientY);
+      return;
     }
+    // Hover highlights
+    if (fh && fh.isAttached()) fh.updateHover(e.clientX, e.clientY);
+    if (rr && rr.isAttached()) rr.updateHover(e.clientX, e.clientY);
 
     // Volume measurement drag preview
     const vd = volumeDragRef.current;
@@ -470,6 +486,14 @@ export function Viewport({ className }: ViewportProps) {
     const fh = clipRef.current?.faceHandles;
     if (fh && fh.isDragging()) {
       fh.onPointerUp();
+      if (sm) sm.controls.enabled = true;
+      return;
+    }
+
+    // Rotation-arc drag end
+    const rrUp = clipRef.current?.rotationRings;
+    if (rrUp && rrUp.isDragging()) {
+      rrUp.onPointerUp();
       if (sm) sm.controls.enabled = true;
       return;
     }
@@ -607,13 +631,13 @@ export function Viewport({ className }: ViewportProps) {
         onContextMenu={handleContextMenu}
         onDragStart={(e) => e.preventDefault()}
         style={{
-          // Hide the OS cursor while point-snapping so only the 3D crosshair
-          // shows (no doubled cross); keep a crosshair for the section tool.
-          cursor: activeTool === "section-box"
+          // Keep the OS cursor visible while measuring — the user must never
+          // lose the pointer. The 3D snap crosshair shows where the pick will
+          // LAND (it can differ from the cursor when snapping), the OS
+          // crosshair shows where the mouse IS.
+          cursor: activeTool === "section-box" || activeTool.startsWith("measure-")
             ? "crosshair"
-            : activeTool.startsWith("measure-")
-              ? "none"
-              : "default",
+            : "default",
         }}
       />
 

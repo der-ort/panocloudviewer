@@ -152,7 +152,7 @@ function createAdapter(source) {
       return new S3SourceAdapter(source.basePath);
   }
 }
-var SceneManager, PointCloudLoader, EASINGS, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, _muxerPromise, ExportManager, MinimapRenderer, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, _nextId, ClipManager, AxisWidget, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
+var SceneManager, PointCloudLoader, EASINGS, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, _muxerPromise, ExportManager, MinimapRenderer, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, RING_COLOR, RING_HOVER_COLOR, RING_DRAG_COLOR, RotationRingController, _nextId, ClipManager, AxisWidget, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
 var init_dist = __esm({
   "../core/dist/index.js"() {
     SceneManager = class {
@@ -1971,26 +1971,46 @@ var init_dist = __esm({
         this.scene.add(this.group);
         this.createHandles();
       }
-      /** Shared sphere geometry for all 6 handles — disposed exactly once in dispose(). */
-      handleGeometry = new THREE5.SphereGeometry(1, 12, 8);
+      // Shared arrow geometries for all 6 handles — each disposed once in dispose().
+      // Local space: arrow points along +Y, base at the origin (mounted on the face).
+      shaftGeometry = new THREE5.CylinderGeometry(0.09, 0.09, 0.55, 10).translate(0, 0.275, 0);
+      coneGeometry = new THREE5.ConeGeometry(0.26, 0.5, 12).translate(0, 0.8, 0);
+      grabGeometry = new THREE5.SphereGeometry(0.6, 8, 6).translate(0, 0.65, 0);
+      /** One invisible material shared by all grab spheres. */
+      grabMaterial = new THREE5.MeshBasicMaterial({
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        depthWrite: false
+      });
       createHandles() {
         const axes = ["x", "y", "z"];
         const signs = [1, -1];
-        const geo = this.handleGeometry;
+        const UP = new THREE5.Vector3(0, 1, 0);
         for (const axis of axes) {
           for (const sign of signs) {
-            const mat = new THREE5.MeshBasicMaterial({
+            const material = new THREE5.MeshBasicMaterial({
               color: AXIS_COLOR[axis],
               transparent: true,
               opacity: 0.95,
               depthTest: false
             });
-            const mesh = new THREE5.Mesh(geo, mat);
-            mesh.renderOrder = 10;
-            mesh.visible = false;
-            mesh.userData = { faceHandle: true, axis, sign };
-            this.group.add(mesh);
-            this.handles.push({ mesh, axis, sign });
+            const shaft = new THREE5.Mesh(this.shaftGeometry, material);
+            const cone = new THREE5.Mesh(this.coneGeometry, material);
+            const grab = new THREE5.Mesh(this.grabGeometry, this.grabMaterial);
+            shaft.renderOrder = cone.renderOrder = 10;
+            const arrow = new THREE5.Group();
+            arrow.add(shaft, cone, grab);
+            arrow.visible = false;
+            arrow.userData = { faceHandle: true, axis, sign };
+            const dir = new THREE5.Vector3(
+              axis === "x" ? sign : 0,
+              axis === "y" ? sign : 0,
+              axis === "z" ? sign : 0
+            );
+            const localQuat = new THREE5.Quaternion().setFromUnitVectors(UP, dir);
+            this.group.add(arrow);
+            this.handles.push({ group: arrow, material, grab, localQuat, axis, sign });
           }
         }
       }
@@ -1998,7 +2018,7 @@ var init_dist = __esm({
         this.box = box;
         this.onChange = onChange;
         this.updatePositions();
-        for (const h of this.handles) h.mesh.visible = true;
+        for (const h of this.handles) h.group.visible = true;
       }
       /** Set the box's orientation (full 3-axis) so handles follow it. */
       setQuaternion(q) {
@@ -2010,7 +2030,7 @@ var init_dist = __esm({
         this.onChange = null;
         this.drag = null;
         this.hoveredHandle = null;
-        for (const h of this.handles) h.mesh.visible = false;
+        for (const h of this.handles) h.group.visible = false;
       }
       isAttached() {
         return this.box !== null;
@@ -2023,7 +2043,7 @@ var init_dist = __esm({
         return this.drag !== null;
       }
       getHandleMeshes() {
-        return this.handles.map((h) => h.mesh);
+        return this.handles.map((h) => h.grab);
       }
       /** Update handle positions and sizes to match the current box */
       updatePositions() {
@@ -2033,7 +2053,7 @@ var init_dist = __esm({
         this.box.getCenter(center);
         this.box.getSize(size);
         const diag = size.length();
-        const radius = Math.max(0.08, Math.min(diag * 0.03, 3));
+        const scale = Math.max(0.1, diag * 0.06);
         for (const h of this.handles) {
           const offset = new THREE5.Vector3();
           if (h.sign === 1) {
@@ -2042,10 +2062,11 @@ var init_dist = __esm({
             offset[h.axis] = this.box.min[h.axis] - center[h.axis];
           }
           const half = Math.abs(offset[h.axis]);
-          offset[h.axis] += h.sign * (half * 0.12 + radius * 1.5);
+          offset[h.axis] += h.sign * (half * 0.04 + scale * 0.1);
           offset.applyQuaternion(this._quaternion);
-          h.mesh.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
-          h.mesh.scale.setScalar(radius);
+          h.group.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
+          h.group.scale.setScalar(scale);
+          h.group.quaternion.copy(this._quaternion).multiply(h.localQuat);
         }
       }
       /**
@@ -2060,7 +2081,7 @@ var init_dist = __esm({
         this.camera.getWorldDirection(cameraDir);
         const plane = new THREE5.Plane().setFromNormalAndCoplanarPoint(
           cameraDir.negate(),
-          handle.mesh.position.clone()
+          handle.group.position.clone()
         );
         this.setRaycasterFromClient(clientX, clientY);
         const startIntersect = new THREE5.Vector3();
@@ -2136,20 +2157,23 @@ var init_dist = __esm({
       dispose() {
         if (this.disposed) return;
         this.disposed = true;
-        this.handleGeometry.dispose();
+        this.shaftGeometry.dispose();
+        this.coneGeometry.dispose();
+        this.grabGeometry.dispose();
+        this.grabMaterial.dispose();
         for (const h of this.handles) {
-          h.mesh.material.dispose();
+          h.material.dispose();
         }
         this.scene.remove(this.group);
       }
       hitTest(clientX, clientY) {
         if (!this.box) return null;
         this.setRaycasterFromClient(clientX, clientY);
-        const meshes = this.handles.filter((h) => h.mesh.visible).map((h) => h.mesh);
-        const intersects = this.raycaster.intersectObjects(meshes);
+        const grabs = this.handles.filter((h) => h.group.visible).map((h) => h.grab);
+        const intersects = this.raycaster.intersectObjects(grabs);
         if (intersects.length === 0) return null;
-        const hitMesh = intersects[0].object;
-        return this.handles.find((h) => h.mesh === hitMesh) ?? null;
+        const hit = intersects[0].object;
+        return this.handles.find((h) => h.grab === hit) ?? null;
       }
       setRaycasterFromClient(clientX, clientY) {
         const rect = this.domElement.getBoundingClientRect();
@@ -2158,7 +2182,193 @@ var init_dist = __esm({
         this.raycaster.setFromCamera(new THREE5.Vector2(nx, ny), this.camera);
       }
       setHandleColor(handle, color) {
-        handle.mesh.material.color.setHex(color);
+        handle.material.color.setHex(color);
+      }
+    };
+    RING_COLOR = {
+      x: 15680580,
+      y: 2278750,
+      z: 3900150
+    };
+    RING_HOVER_COLOR = 16777215;
+    RING_DRAG_COLOR = 16347926;
+    RotationRingController = class {
+      scene;
+      camera;
+      domElement;
+      group;
+      rings = [];
+      raycaster = new THREE5.Raycaster();
+      drag = null;
+      hovered = null;
+      onRotate = null;
+      center = new THREE5.Vector3();
+      quaternion = new THREE5.Quaternion();
+      attached = false;
+      constructor(scene, camera, domElement) {
+        this.scene = scene;
+        this.camera = camera;
+        this.domElement = domElement;
+        this.group = new THREE5.Group();
+        this.group.name = "clip-rotation-rings";
+        this.group.visible = false;
+        this.scene.add(this.group);
+        this.buildRings();
+      }
+      buildRings() {
+        const arcGeo = new THREE5.TorusGeometry(1, 0.012, 8, 48, Math.PI / 2);
+        const pickGeo = new THREE5.TorusGeometry(1, 0.1, 8, 24, Math.PI / 2);
+        const cycle = new THREE5.Quaternion().setFromAxisAngle(
+          new THREE5.Vector3(1, 1, 1).normalize(),
+          2 * Math.PI / 3
+        );
+        const orientations = [
+          { axis: "z", q: new THREE5.Quaternion() },
+          // XY plane: +X→+Y
+          { axis: "x", q: cycle.clone() },
+          // YZ plane: +Y→+Z
+          { axis: "y", q: cycle.clone().multiply(cycle) }
+          // ZX plane: +Z→+X
+        ];
+        for (const { axis, q } of orientations) {
+          const material = new THREE5.MeshBasicMaterial({
+            color: RING_COLOR[axis],
+            depthTest: false,
+            depthWrite: false,
+            transparent: true,
+            opacity: 0.95
+          });
+          const arc = new THREE5.Mesh(arcGeo, material);
+          arc.quaternion.copy(q);
+          arc.renderOrder = 6;
+          const picker = new THREE5.Mesh(pickGeo, new THREE5.MeshBasicMaterial({
+            visible: true,
+            transparent: true,
+            opacity: 0,
+            depthTest: false,
+            depthWrite: false
+          }));
+          picker.quaternion.copy(q);
+          picker.userData.ringAxis = axis;
+          this.group.add(arc, picker);
+          this.rings.push({ axis, arc, picker, material });
+        }
+      }
+      /** Show the rings on a box and receive the new orientation while dragging. */
+      attach(box, quaternion, onRotate) {
+        this.onRotate = onRotate;
+        this.attached = true;
+        this.group.visible = true;
+        this.updatePose(box, quaternion);
+      }
+      detach() {
+        this.attached = false;
+        this.group.visible = false;
+        this.drag = null;
+        this.onRotate = null;
+        this.setHover(null);
+      }
+      isAttached() {
+        return this.attached;
+      }
+      isDragging() {
+        return this.drag !== null;
+      }
+      /** Show/hide without detaching (outline toggle). */
+      setGroupVisible(visible) {
+        this.group.visible = visible && this.attached;
+      }
+      /** Follow the box: center, orientation, and a radius just outside the box. */
+      updatePose(box, quaternion) {
+        const size = new THREE5.Vector3();
+        box.getCenter(this.center);
+        box.getSize(size);
+        this.quaternion.copy(quaternion);
+        this.group.position.copy(this.center);
+        this.group.quaternion.copy(quaternion);
+        const radius = Math.max(size.x, size.y, size.z) * 0.62;
+        this.group.scale.setScalar(Math.max(radius, 0.3));
+      }
+      /** Try to start a rotation drag. Returns true if an arc was grabbed. */
+      onPointerDown(clientX, clientY) {
+        if (!this.attached || !this.group.visible) return false;
+        const ring = this.hitTest(clientX, clientY);
+        if (!ring) return false;
+        const local = new THREE5.Vector3(
+          ring.axis === "x" ? 1 : 0,
+          ring.axis === "y" ? 1 : 0,
+          ring.axis === "z" ? 1 : 0
+        );
+        const worldAxis = local.applyQuaternion(this.quaternion).normalize();
+        const plane = new THREE5.Plane().setFromNormalAndCoplanarPoint(worldAxis, this.center);
+        this.setRay(clientX, clientY);
+        const hit = new THREE5.Vector3();
+        if (!this.raycaster.ray.intersectPlane(plane, hit)) return false;
+        this.drag = {
+          axis: ring.axis,
+          plane,
+          worldAxis,
+          startVec: hit.sub(this.center).normalize(),
+          startQuat: this.quaternion.clone(),
+          center: this.center.clone()
+        };
+        ring.material.color.setHex(RING_DRAG_COLOR);
+        return true;
+      }
+      /** Rotate while dragging: signed angle between start and current plane vector. */
+      onPointerMove(clientX, clientY) {
+        if (!this.drag) return;
+        this.setRay(clientX, clientY);
+        const hit = new THREE5.Vector3();
+        if (!this.raycaster.ray.intersectPlane(this.drag.plane, hit)) return;
+        const cur = hit.sub(this.drag.center).normalize();
+        const angle = Math.atan2(
+          new THREE5.Vector3().crossVectors(this.drag.startVec, cur).dot(this.drag.worldAxis),
+          this.drag.startVec.dot(cur)
+        );
+        const q = new THREE5.Quaternion().setFromAxisAngle(this.drag.worldAxis, angle).multiply(this.drag.startQuat);
+        this.onRotate?.(q);
+      }
+      onPointerUp() {
+        if (!this.drag) return;
+        const ring = this.rings.find((r) => r.axis === this.drag.axis);
+        ring?.material.color.setHex(RING_COLOR[this.drag.axis]);
+        this.drag = null;
+      }
+      /** Hover highlight. Call on pointermove when not dragging. */
+      updateHover(clientX, clientY) {
+        if (this.drag || !this.attached || !this.group.visible) return;
+        this.setHover(this.hitTest(clientX, clientY));
+      }
+      setHover(ring) {
+        if (ring === this.hovered) return;
+        if (this.hovered) this.hovered.material.color.setHex(RING_COLOR[this.hovered.axis]);
+        this.hovered = ring;
+        if (ring) ring.material.color.setHex(RING_HOVER_COLOR);
+      }
+      hitTest(clientX, clientY) {
+        this.setRay(clientX, clientY);
+        const pickers = this.rings.map((r) => r.picker);
+        const hits = this.raycaster.intersectObjects(pickers);
+        if (hits.length === 0) return null;
+        const axis = hits[0].object.userData.ringAxis;
+        return this.rings.find((r) => r.axis === axis) ?? null;
+      }
+      setRay(clientX, clientY) {
+        const rect = this.domElement.getBoundingClientRect();
+        const nx = (clientX - rect.left) / rect.width * 2 - 1;
+        const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
+        this.raycaster.setFromCamera(new THREE5.Vector2(nx, ny), this.camera);
+      }
+      dispose() {
+        this.rings[0]?.arc.geometry.dispose();
+        this.rings[0]?.picker.geometry.dispose();
+        for (const r of this.rings) {
+          r.material.dispose();
+          r.picker.material.dispose();
+        }
+        this.rings = [];
+        this.scene.remove(this.group);
       }
     };
     _nextId = 1;
@@ -2169,12 +2379,13 @@ var init_dist = __esm({
       fills = /* @__PURE__ */ new Map();
       draftHelper = null;
       selectedId = null;
-      /** Move gizmo (translate arrows) — used in "translate" transform mode. */
+      /** Move gizmo (translate arrows at the box center) — three.js TransformControls. */
       tcMove = null;
-      /** Rotate gizmo (full XYZ rings) — used in "rotate" transform mode. */
-      tcRotate = null;
       pivot = null;
+      /** Face-mounted resize arrows (scaling). */
       _faceHandles = null;
+      /** Quarter-circle rotation arcs (custom — exact hitboxes, see RotationRingController). */
+      _rotRings = null;
       /** Active transform mode for the selected box (move / scale / rotate). */
       _transformMode = "scale";
       /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
@@ -2212,29 +2423,27 @@ var init_dist = __esm({
       /** In-flight init promise — guards against concurrent selectBox() double-init. */
       _initTcPromise = null;
       initTransformControls() {
-        if (this.tcMove && this.tcRotate) return Promise.resolve();
+        if (this.tcMove) return Promise.resolve();
         if (!this._initTcPromise) this._initTcPromise = this._doInitTransformControls();
         return this._initTcPromise;
       }
       async _doInitTransformControls() {
         const { TransformControls } = await import('three/examples/jsm/controls/TransformControls.js');
-        const makeTc = (mode, size) => {
-          const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement);
-          tc.setSpace("world");
-          tc.setMode(mode);
-          tc.setSize(size);
-          tc.addEventListener("change", () => this.syncFromPivot());
-          tc.addEventListener("dragging-changed", (e) => {
-            this.sm.controls.enabled = !e.value;
-            const sibling = tc === this.tcMove ? this.tcRotate : this.tcMove;
-            if (sibling) sibling.enabled = !e.value;
-          });
-          this.sm.scene.add(tc.getHelper());
-          return tc;
-        };
-        this.tcMove = makeTc("translate", 0.55);
-        this.tcRotate = makeTc("rotate", 1.25);
+        const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement);
+        tc.setSpace("world");
+        tc.setMode("translate");
+        tc.setSize(0.6);
+        tc.addEventListener("change", () => this.syncFromPivot());
+        tc.addEventListener("dragging-changed", (e) => {
+          this.sm.controls.enabled = !e.value;
+        });
+        this.sm.scene.add(tc.getHelper());
+        this.tcMove = tc;
         this._raiseGizmo();
+      }
+      /** Whether the translate gizmo is mid-drag (viewport uses this for ordering). */
+      isGizmoDragging() {
+        return this.tcMove?.dragging === true;
       }
       /**
        * Force the TransformControls gizmos to render on top of the point cloud.
@@ -2243,20 +2452,18 @@ var init_dist = __esm({
        * testing so the arrows/rings draw through.
        */
       _raiseGizmo() {
-        for (const tc of [this.tcMove, this.tcRotate]) {
-          const helper = tc?.getHelper?.();
-          if (!helper) continue;
-          helper.traverse((child) => {
-            if (!child.material) return;
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            for (const m of mats) {
-              m.depthTest = false;
-              m.depthWrite = false;
-              m.transparent = true;
-            }
-            child.renderOrder = 5;
-          });
-        }
+        const helper = this.tcMove?.getHelper?.();
+        if (!helper) return;
+        helper.traverse((child) => {
+          if (!child.material) return;
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          for (const m of mats) {
+            m.depthTest = false;
+            m.depthWrite = false;
+            m.transparent = true;
+          }
+          child.renderOrder = 5;
+        });
       }
       /**
        * Build an axis-aligned box centered on the current view target, sized to sit
@@ -2313,9 +2520,8 @@ var init_dist = __esm({
       }
       async selectBox(id) {
         this._highlightHelper(this.selectedId, false);
-        this._detachGizmos();
+        this._detachHandles();
         this.disposePivot();
-        this._faceHandles?.detach();
         this.selectedId = id;
         this.onSelectChange?.(id);
         if (!id) return;
@@ -2341,6 +2547,13 @@ var init_dist = __esm({
             this.sm.renderer.domElement
           );
         }
+        if (!this._rotRings) {
+          this._rotRings = new RotationRingController(
+            this.sm.scene,
+            this.sm.camera,
+            this.sm.renderer.domElement
+          );
+        }
         this._showSelectionHandles();
         this._applyOutlineVisibility();
         this._highlightHelper(id, true);
@@ -2359,6 +2572,10 @@ var init_dist = __esm({
       get faceHandles() {
         return this._faceHandles;
       }
+      /** Get the rotation-ring controller (for viewport event forwarding). */
+      get rotationRings() {
+        return this._rotRings;
+      }
       /** Attach the face-resize handles to the selected box with the sync callback. */
       _attachFaceHandles(entry) {
         if (!this._faceHandles) return;
@@ -2374,41 +2591,43 @@ var init_dist = __esm({
             this.pivot.position.copy(c);
             this.pivot.scale.copy(s);
           }
+          this._rotRings?.updatePose(entry.box, entry.quaternion);
           this.onChange?.(this.getBoxes());
         });
       }
       /**
-       * Attach ALL handle sets to the selected box at once: move arrows, full-XYZ
-       * rotate rings, and the 6 face-resize spheres. Overlap conflicts are handled
-       * by size separation (arrows 0.55 inside rings 1.25, spheres off the faces)
-       * plus the mutual drag exclusion wired in _doInitTransformControls.
+       * Attach ALL handle sets to the selected box at once — no mode switching:
+       * - translate arrows at the center (TransformControls),
+       * - 6 face-mounted resize arrows (scaling),
+       * - 3 quarter-circle rotation arcs whose hitboxes match the visible arcs
+       *   exactly, so they cannot contend with the resize arrows.
        */
       _showSelectionHandles() {
         if (!this.pivot || !this.selectedId) return;
         const move = this.tcMove;
-        const rotate = this.tcRotate;
         const entry = this.entryOf(this.selectedId);
         if (entry) {
           if (!this._faceHandles?.isAttached()) this._attachFaceHandles(entry);
           this._faceHandles?.setGroupVisible(true);
           this._faceHandles?.updatePositions();
+          this._rotRings?.attach(entry.box, entry.quaternion, (q) => {
+            this.pivot?.quaternion.copy(q);
+            this.syncFromPivot();
+          });
+          this._rotRings?.setGroupVisible(true);
         }
         if (move) {
           move.attach(this.pivot);
           move.enabled = true;
           move.showX = move.showY = move.showZ = true;
         }
-        if (rotate) {
-          rotate.attach(this.pivot);
-          rotate.enabled = true;
-          rotate.showX = rotate.showY = rotate.showZ = true;
-        }
         this._raiseGizmo();
       }
-      /** Detach both gizmos. */
-      _detachGizmos() {
+      /** Detach every selection handle set: translate gizmo, resize arrows, rotation arcs. */
+      _detachHandles() {
         this.tcMove?.detach();
-        this.tcRotate?.detach();
+        this._faceHandles?.detach();
+        this._rotRings?.detach();
       }
       /**
        * Reset a box's orientation back to axis-aligned (identity rotation). Targets
@@ -2423,6 +2642,7 @@ var init_dist = __esm({
         if (this.selectedId === targetId) {
           this.pivot?.quaternion.identity();
           this._faceHandles?.setQuaternion(entry.quaternion);
+          this._rotRings?.updatePose(entry.box, entry.quaternion);
         }
         this.updateHelper(entry);
         this.applyAll();
@@ -2442,8 +2662,7 @@ var init_dist = __esm({
           this.fills.delete(id);
         }
         if (this.selectedId === id) {
-          this._detachGizmos();
-          this._faceHandles?.detach();
+          this._detachHandles();
           this.disposePivot();
           this.selectedId = null;
           this.onSelectChange?.(null);
@@ -2530,8 +2749,9 @@ var init_dist = __esm({
         if (selected) {
           this._showSelectionHandles();
         } else {
-          this._detachGizmos();
+          this.tcMove?.detach();
           this._faceHandles?.setGroupVisible(false);
+          this._rotRings?.setGroupVisible(false);
         }
       }
       setBoxVisible(id, visible) {
@@ -2573,8 +2793,7 @@ var init_dist = __esm({
         }
       }
       clear() {
-        this._detachGizmos();
-        this._faceHandles?.detach();
+        this._detachHandles();
         this.disposePivot();
         for (const [, helper] of this.helpers) this.disposeBox3Helper(helper);
         this.helpers.clear();
@@ -2594,17 +2813,20 @@ var init_dist = __esm({
       }
       dispose() {
         this.clear();
-        for (const tc of [this.tcMove, this.tcRotate]) {
-          if (!tc) continue;
+        const tc = this.tcMove;
+        if (tc) {
           this.sm.scene.remove(tc.getHelper());
           tc.dispose();
         }
         this.tcMove = null;
-        this.tcRotate = null;
         this._initTcPromise = null;
         if (this._faceHandles) {
           this._faceHandles.dispose();
           this._faceHandles = null;
+        }
+        if (this._rotRings) {
+          this._rotRings.dispose();
+          this._rotRings = null;
         }
       }
       syncFromPivot() {
@@ -2621,6 +2843,7 @@ var init_dist = __esm({
         entry.box.max.copy(center).add(halfSize);
         entry.quaternion.copy(this.pivot.quaternion);
         this._faceHandles?.setQuaternion(entry.quaternion);
+        this._rotRings?.updatePose(entry.box, entry.quaternion);
         this.updateHelper(entry);
         this.applyAll();
         this.onChange?.(this.getBoxes());
@@ -3750,6 +3973,14 @@ function Viewport({ className }) {
         return;
       }
     }
+    const rr = clipRef.current?.rotationRings;
+    if (rr && rr.isAttached() && e.button === 0 && !clipRef.current?.isGizmoDragging()) {
+      if (rr.onPointerDown(e.clientX, e.clientY)) {
+        e.preventDefault();
+        sm.controls.enabled = false;
+        return;
+      }
+    }
     if (activeTool === "measure-volume" && e.button === 0) {
       const vd = volumeDragRef.current;
       if (vd && vd.phase === "height") {
@@ -3779,9 +4010,13 @@ function Viewport({ className }) {
       fh.onPointerMove(e.clientX, e.clientY);
       return;
     }
-    if (fh && fh.isAttached()) {
-      fh.updateHover(e.clientX, e.clientY);
+    const rr = clipRef.current?.rotationRings;
+    if (rr && rr.isDragging()) {
+      rr.onPointerMove(e.clientX, e.clientY);
+      return;
     }
+    if (fh && fh.isAttached()) fh.updateHover(e.clientX, e.clientY);
+    if (rr && rr.isAttached()) rr.updateHover(e.clientX, e.clientY);
     const vd = volumeDragRef.current;
     if (vd && activeTool === "measure-volume") {
       if (vd.phase === "footprint") {
@@ -3826,6 +4061,12 @@ function Viewport({ className }) {
     const fh = clipRef.current?.faceHandles;
     if (fh && fh.isDragging()) {
       fh.onPointerUp();
+      if (sm) sm.controls.enabled = true;
+      return;
+    }
+    const rrUp = clipRef.current?.rotationRings;
+    if (rrUp && rrUp.isDragging()) {
+      rrUp.onPointerUp();
       if (sm) sm.controls.enabled = true;
       return;
     }
@@ -3940,9 +4181,11 @@ function Viewport({ className }) {
         onContextMenu: handleContextMenu,
         onDragStart: (e) => e.preventDefault(),
         style: {
-          // Hide the OS cursor while point-snapping so only the 3D crosshair
-          // shows (no doubled cross); keep a crosshair for the section tool.
-          cursor: activeTool === "section-box" ? "crosshair" : activeTool.startsWith("measure-") ? "none" : "default"
+          // Keep the OS cursor visible while measuring — the user must never
+          // lose the pointer. The 3D snap crosshair shows where the pick will
+          // LAND (it can differ from the cursor when snapping), the OS
+          // crosshair shows where the mouse IS.
+          cursor: activeTool === "section-box" || activeTool.startsWith("measure-") ? "crosshair" : "default"
         }
       }
     ),
@@ -7156,7 +7399,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "3bc0718 \xB7 2026-07-02 12:39Z" ;
+var PCV_BUILD = "e994397 \xB7 2026-07-02 13:37Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

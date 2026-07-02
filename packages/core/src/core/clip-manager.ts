@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { SceneManager } from "./scene-manager";
 import { FaceHandleController } from "./face-handles";
+import { RotationRingController } from "./rotation-rings";
 
 export type ClipMode = "outside" | "inside";
 
@@ -27,12 +28,13 @@ export class ClipManager {
   private fills: Map<string, THREE.Mesh> = new Map();
   private draftHelper: THREE.Box3Helper | null = null;
   private selectedId: string | null = null;
-  /** Move gizmo (translate arrows) — used in "translate" transform mode. */
+  /** Move gizmo (translate arrows at the box center) — three.js TransformControls. */
   private tcMove: unknown = null;
-  /** Rotate gizmo (full XYZ rings) — used in "rotate" transform mode. */
-  private tcRotate: unknown = null;
   private pivot: THREE.Mesh | null = null;
+  /** Face-mounted resize arrows (scaling). */
   private _faceHandles: FaceHandleController | null = null;
+  /** Quarter-circle rotation arcs (custom — exact hitboxes, see RotationRingController). */
+  private _rotRings: RotationRingController | null = null;
   /** Active transform mode for the selected box (move / scale / rotate). */
   private _transformMode: "translate" | "scale" | "rotate" = "scale";
   /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
@@ -77,10 +79,10 @@ export class ClipManager {
   private _initTcPromise: Promise<void> | null = null;
 
   private initTransformControls(): Promise<void> {
-    if (this.tcMove && this.tcRotate) return Promise.resolve();
+    if (this.tcMove) return Promise.resolve();
     // Reuse the pending promise so two rapid selects don't both run the async
-    // body and create four gizmos instead of two (the sync guard above can't
-    // catch a second call while the dynamic import is still awaiting).
+    // body and create two gizmos (the sync guard above can't catch a second
+    // call while the dynamic import is still awaiting).
     if (!this._initTcPromise) this._initTcPromise = this._doInitTransformControls();
     return this._initTcPromise;
   }
@@ -90,33 +92,27 @@ export class ClipManager {
       "three/examples/jsm/controls/TransformControls.js"
     );
 
+    // Single gizmo: compact translate arrows at the box center. Rotation is
+    // handled by the custom RotationRingController (exact quarter-arc hitboxes)
+    // and scaling by the face-mounted resize arrows — all three show together.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const makeTc = (mode: "translate" | "rotate", size: number): any => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement) as any;
-      tc.setSpace("world");
-      tc.setMode(mode);
-      tc.setSize(size);
-      tc.addEventListener("change", () => this.syncFromPivot());
-      tc.addEventListener("dragging-changed", (e: { value: boolean }) => {
-        this.sm.controls.enabled = !e.value;
-        // Mutual exclusion: while one gizmo drags, the sibling must ignore the
-        // same pointer stream, or an overlapping arrow+ring pick drags both.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const sibling = (tc === this.tcMove ? this.tcRotate : this.tcMove) as any;
-        if (sibling) sibling.enabled = !e.value;
-      });
-      this.sm.scene.add(tc.getHelper());
-      return tc;
-    };
-
-    // Both gizmos attach to the same pivot and show SIMULTANEOUSLY, alongside
-    // the face-resize spheres — no mode switching. De-conflicted by geometry:
-    // compact move arrows sit well inside the large rotate rings, and the face
-    // spheres are pushed off the box faces (see FaceHandleController).
-    this.tcMove = makeTc("translate", 0.55);
-    this.tcRotate = makeTc("rotate", 1.25);
+    const tc = new TransformControls(this.sm.camera, this.sm.renderer.domElement) as any;
+    tc.setSpace("world");
+    tc.setMode("translate");
+    tc.setSize(0.6);
+    tc.addEventListener("change", () => this.syncFromPivot());
+    tc.addEventListener("dragging-changed", (e: { value: boolean }) => {
+      this.sm.controls.enabled = !e.value;
+    });
+    this.sm.scene.add(tc.getHelper());
+    this.tcMove = tc;
     this._raiseGizmo();
+  }
+
+  /** Whether the translate gizmo is mid-drag (viewport uses this for ordering). */
+  isGizmoDragging(): boolean {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this.tcMove as any)?.dragging === true;
   }
 
   /**
@@ -127,21 +123,19 @@ export class ClipManager {
    */
   private _raiseGizmo(): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const tc of [this.tcMove, this.tcRotate] as any[]) {
-      const helper = tc?.getHelper?.();
-      if (!helper) continue;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      helper.traverse((child: any) => {
-        if (!child.material) return;
-        const mats = Array.isArray(child.material) ? child.material : [child.material];
-        for (const m of mats) {
-          m.depthTest = false;
-          m.depthWrite = false;
-          m.transparent = true;
-        }
-        child.renderOrder = 5;
-      });
-    }
+    const helper = (this.tcMove as any)?.getHelper?.();
+    if (!helper) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    helper.traverse((child: any) => {
+      if (!child.material) return;
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      for (const m of mats) {
+        m.depthTest = false;
+        m.depthWrite = false;
+        m.transparent = true;
+      }
+      child.renderOrder = 5;
+    });
   }
 
   /**
@@ -213,10 +207,9 @@ export class ClipManager {
     // Unhighlight previous (back to the deselected/black outline)
     this._highlightHelper(this.selectedId, false);
 
-    // Detach previous pivot, gizmos, and face handles
-    this._detachGizmos();
+    // Detach previous pivot and all selection handles
+    this._detachHandles();
     this.disposePivot();
-    this._faceHandles?.detach();
 
     this.selectedId = id;
     this.onSelectChange?.(id);
@@ -242,14 +235,19 @@ export class ClipManager {
     this.pivot.userData.clipId = id;
     this.sm.scene.add(this.pivot);
 
-    // Create the face-handle controller (box-resize) once.
+    // Create the resize-arrow and rotation-ring controllers once.
     if (!this._faceHandles) {
       this._faceHandles = new FaceHandleController(
         this.sm.scene, this.sm.camera, this.sm.renderer.domElement,
       );
     }
+    if (!this._rotRings) {
+      this._rotRings = new RotationRingController(
+        this.sm.scene, this.sm.camera, this.sm.renderer.domElement,
+      );
+    }
 
-    // Show move arrows + rotate rings + face-resize spheres together.
+    // Show move arrows + rotation arcs + face-resize arrows together.
     this._showSelectionHandles();
 
     // Honour the global outlines toggle (handles/gizmos hidden for clean shots).
@@ -275,6 +273,11 @@ export class ClipManager {
     return this._faceHandles;
   }
 
+  /** Get the rotation-ring controller (for viewport event forwarding). */
+  get rotationRings(): RotationRingController | null {
+    return this._rotRings;
+  }
+
   /** Attach the face-resize handles to the selected box with the sync callback. */
   private _attachFaceHandles(entry: ClipBoxEntry): void {
     if (!this._faceHandles) return;
@@ -282,7 +285,7 @@ export class ClipManager {
     this._faceHandles.attach(entry.box, () => {
       this.updateHelper(entry);
       this.applyAll();
-      // Sync pivot to match the updated box
+      // Sync pivot + rotation arcs to match the resized box
       if (this.pivot) {
         const c = new THREE.Vector3();
         const s = new THREE.Vector3();
@@ -291,40 +294,47 @@ export class ClipManager {
         this.pivot.position.copy(c);
         this.pivot.scale.copy(s);
       }
+      this._rotRings?.updatePose(entry.box, entry.quaternion);
       this.onChange?.(this.getBoxes());
     });
   }
 
   /**
-   * Attach ALL handle sets to the selected box at once: move arrows, full-XYZ
-   * rotate rings, and the 6 face-resize spheres. Overlap conflicts are handled
-   * by size separation (arrows 0.55 inside rings 1.25, spheres off the faces)
-   * plus the mutual drag exclusion wired in _doInitTransformControls.
+   * Attach ALL handle sets to the selected box at once — no mode switching:
+   * - translate arrows at the center (TransformControls),
+   * - 6 face-mounted resize arrows (scaling),
+   * - 3 quarter-circle rotation arcs whose hitboxes match the visible arcs
+   *   exactly, so they cannot contend with the resize arrows.
    */
   private _showSelectionHandles(): void {
     if (!this.pivot || !this.selectedId) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const move = this.tcMove as any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rotate = this.tcRotate as any;
     const entry = this.entryOf(this.selectedId);
 
     if (entry) {
       if (!this._faceHandles?.isAttached()) this._attachFaceHandles(entry);
       this._faceHandles?.setGroupVisible(true);
       this._faceHandles?.updatePositions();
+
+      // Rotating an arc feeds the new orientation through the pivot so the
+      // regular pivot→entry sync path (helper, clipping, onChange) applies.
+      this._rotRings?.attach(entry.box, entry.quaternion, (q) => {
+        this.pivot?.quaternion.copy(q);
+        this.syncFromPivot();
+      });
+      this._rotRings?.setGroupVisible(true);
     }
-    if (move)   { move.attach(this.pivot);   move.enabled = true;   move.showX = move.showY = move.showZ = true; }
-    if (rotate) { rotate.attach(this.pivot); rotate.enabled = true; rotate.showX = rotate.showY = rotate.showZ = true; }
+    if (move) { move.attach(this.pivot); move.enabled = true; move.showX = move.showY = move.showZ = true; }
     this._raiseGizmo();
   }
 
-  /** Detach both gizmos. */
-  private _detachGizmos(): void {
+  /** Detach every selection handle set: translate gizmo, resize arrows, rotation arcs. */
+  private _detachHandles(): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (this.tcMove as any)?.detach();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this.tcRotate as any)?.detach();
+    this._faceHandles?.detach();
+    this._rotRings?.detach();
   }
 
   /**
@@ -340,6 +350,7 @@ export class ClipManager {
     if (this.selectedId === targetId) {
       this.pivot?.quaternion.identity();
       this._faceHandles?.setQuaternion(entry.quaternion);
+      this._rotRings?.updatePose(entry.box, entry.quaternion);
     }
     this.updateHelper(entry);
     this.applyAll();
@@ -363,10 +374,7 @@ export class ClipManager {
     }
 
     if (this.selectedId === id) {
-      this._detachGizmos();
-      // Hide the resize handles too, or the six face spheres linger in the
-      // scene as an artifact after the box itself is gone.
-      this._faceHandles?.detach();
+      this._detachHandles();
       this.disposePivot();
       this.selectedId = null;
       this.onSelectChange?.(null);
@@ -471,8 +479,10 @@ export class ClipManager {
     if (selected) {
       this._showSelectionHandles();
     } else {
-      this._detachGizmos();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this.tcMove as any)?.detach();
       this._faceHandles?.setGroupVisible(false);
+      this._rotRings?.setGroupVisible(false);
     }
   }
 
@@ -521,10 +531,7 @@ export class ClipManager {
   }
 
   clear(): void {
-    // Detach gizmos
-    this._detachGizmos();
-    // Hide the resize handles so they don't linger after every box is cleared.
-    this._faceHandles?.detach();
+    this._detachHandles();
     this.disposePivot();
 
     for (const [, helper] of this.helpers) this.disposeBox3Helper(helper);
@@ -551,17 +558,20 @@ export class ClipManager {
   dispose(): void {
     this.clear();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const tc of [this.tcMove, this.tcRotate] as any[]) {
-      if (!tc) continue;
+    const tc = this.tcMove as any;
+    if (tc) {
       this.sm.scene.remove(tc.getHelper());
       tc.dispose();
     }
     this.tcMove = null;
-    this.tcRotate = null;
     this._initTcPromise = null;
     if (this._faceHandles) {
       this._faceHandles.dispose();
       this._faceHandles = null;
+    }
+    if (this._rotRings) {
+      this._rotRings.dispose();
+      this._rotRings = null;
     }
   }
 
@@ -570,9 +580,9 @@ export class ClipManager {
     const entry = this.entryOf(this.selectedId);
     if (!entry) return;
 
-    // Move + rotate gizmos share the pivot: center follows its position, full
-    // orientation follows its quaternion. Size (pivot.scale) is owned by the
-    // face-resize handles and is left untouched here.
+    // The move gizmo and rotation arcs share the pivot: center follows its
+    // position, orientation its quaternion. Size (pivot.scale) is owned by the
+    // face-resize arrows and is left untouched here.
     const center = this.pivot.position.clone();
     const halfSize = new THREE.Vector3(
       Math.abs(this.pivot.scale.x) * 0.5,
@@ -583,6 +593,7 @@ export class ClipManager {
     entry.box.max.copy(center).add(halfSize);
     entry.quaternion.copy(this.pivot.quaternion);
     this._faceHandles?.setQuaternion(entry.quaternion);
+    this._rotRings?.updatePose(entry.box, entry.quaternion);
 
     this.updateHelper(entry);
     this.applyAll();

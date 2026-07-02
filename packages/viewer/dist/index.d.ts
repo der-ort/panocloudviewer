@@ -583,8 +583,10 @@ declare class MinimapRenderer {
 }
 
 /**
- * Manages 6 face-center handles for interactive Box3 resizing.
- * Each handle controls one face of the box (min.x, max.x, min.y, max.y, min.z, max.z).
+ * Manages 6 face-center handles for interactive Box3 resizing, rendered as
+ * outward-pointing AXIS ARROWS (shaft + cone) mounted on each face — drag an
+ * arrow to push/pull that face. Each arrow carries an invisible grab sphere as
+ * its hitbox, kept deliberately tight so the rotation rings never contend with it.
  */
 declare class FaceHandleController {
     private scene;
@@ -601,8 +603,11 @@ declare class FaceHandleController {
     /** Orientation of the box (full 3-axis rotation). */
     private _quaternion;
     constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement);
-    /** Shared sphere geometry for all 6 handles — disposed exactly once in dispose(). */
-    private handleGeometry;
+    private shaftGeometry;
+    private coneGeometry;
+    private grabGeometry;
+    /** One invisible material shared by all grab spheres. */
+    private grabMaterial;
     private createHandles;
     attach(box: THREE.Box3, onChange: (box: THREE.Box3) => void): void;
     /** Set the box's orientation (full 3-axis) so handles follow it. */
@@ -634,6 +639,54 @@ declare class FaceHandleController {
     private setHandleColor;
 }
 
+/**
+ * Three quarter-circle rotation handles for the clip box, replacing the stock
+ * TransformControls rotate gizmo. The stock gizmo's invisible picker tori span
+ * (nearly) the full circle, so its hitboxes constantly overlapped the resize
+ * handles — here the hitbox is a fat torus over EXACTLY the visible quarter,
+ * so the rings can never grab a drag outside what the user sees.
+ *
+ * The three quarters meet at the box's +X/+Y/+Z corner region (Blender-style
+ * corner triad): X-ring spans +Y→+Z, Y-ring +Z→+X, Z-ring +X→+Y. They follow
+ * the box's position, size and orientation.
+ */
+declare class RotationRingController {
+    private scene;
+    private camera;
+    private domElement;
+    private group;
+    private rings;
+    private raycaster;
+    private drag;
+    private hovered;
+    private onRotate;
+    private center;
+    private quaternion;
+    private attached;
+    constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement);
+    private buildRings;
+    /** Show the rings on a box and receive the new orientation while dragging. */
+    attach(box: THREE.Box3, quaternion: THREE.Quaternion, onRotate: (q: THREE.Quaternion) => void): void;
+    detach(): void;
+    isAttached(): boolean;
+    isDragging(): boolean;
+    /** Show/hide without detaching (outline toggle). */
+    setGroupVisible(visible: boolean): void;
+    /** Follow the box: center, orientation, and a radius just outside the box. */
+    updatePose(box: THREE.Box3, quaternion: THREE.Quaternion): void;
+    /** Try to start a rotation drag. Returns true if an arc was grabbed. */
+    onPointerDown(clientX: number, clientY: number): boolean;
+    /** Rotate while dragging: signed angle between start and current plane vector. */
+    onPointerMove(clientX: number, clientY: number): void;
+    onPointerUp(): void;
+    /** Hover highlight. Call on pointermove when not dragging. */
+    updateHover(clientX: number, clientY: number): void;
+    private setHover;
+    private hitTest;
+    private setRay;
+    dispose(): void;
+}
+
 type ClipMode = "outside" | "inside";
 interface ClipBoxEntry {
     id: string;
@@ -652,12 +705,13 @@ declare class ClipManager {
     private fills;
     private draftHelper;
     private selectedId;
-    /** Move gizmo (translate arrows) — used in "translate" transform mode. */
+    /** Move gizmo (translate arrows at the box center) — three.js TransformControls. */
     private tcMove;
-    /** Rotate gizmo (full XYZ rings) — used in "rotate" transform mode. */
-    private tcRotate;
     private pivot;
+    /** Face-mounted resize arrows (scaling). */
     private _faceHandles;
+    /** Quarter-circle rotation arcs (custom — exact hitboxes, see RotationRingController). */
+    private _rotRings;
     /** Active transform mode for the selected box (move / scale / rotate). */
     private _transformMode;
     /** Global clipping enable flag. When false, boxes stay visible but no clipping is applied. */
@@ -681,6 +735,8 @@ declare class ClipManager {
     private _initTcPromise;
     private initTransformControls;
     private _doInitTransformControls;
+    /** Whether the translate gizmo is mid-drag (viewport uses this for ordering). */
+    isGizmoDragging(): boolean;
     /**
      * Force the TransformControls gizmos to render on top of the point cloud.
      * The gizmos use default materials (depthTest=true, renderOrder=0) so they are
@@ -712,17 +768,20 @@ declare class ClipManager {
     getTransformMode(): "translate" | "scale" | "rotate";
     /** Get the face handle controller (for viewport event forwarding) */
     get faceHandles(): FaceHandleController | null;
+    /** Get the rotation-ring controller (for viewport event forwarding). */
+    get rotationRings(): RotationRingController | null;
     /** Attach the face-resize handles to the selected box with the sync callback. */
     private _attachFaceHandles;
     /**
-     * Attach ALL handle sets to the selected box at once: move arrows, full-XYZ
-     * rotate rings, and the 6 face-resize spheres. Overlap conflicts are handled
-     * by size separation (arrows 0.55 inside rings 1.25, spheres off the faces)
-     * plus the mutual drag exclusion wired in _doInitTransformControls.
+     * Attach ALL handle sets to the selected box at once — no mode switching:
+     * - translate arrows at the center (TransformControls),
+     * - 6 face-mounted resize arrows (scaling),
+     * - 3 quarter-circle rotation arcs whose hitboxes match the visible arcs
+     *   exactly, so they cannot contend with the resize arrows.
      */
     private _showSelectionHandles;
-    /** Detach both gizmos. */
-    private _detachGizmos;
+    /** Detach every selection handle set: translate gizmo, resize arrows, rotation arcs. */
+    private _detachHandles;
     /**
      * Reset a box's orientation back to axis-aligned (identity rotation). Targets
      * the given box, or the selected one when omitted.
