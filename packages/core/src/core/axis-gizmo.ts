@@ -3,31 +3,27 @@ import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
 import type { SceneManager } from "./scene-manager";
 
 /**
- * World-orientation gizmo in the bottom-left corner, using three.js's native
+ * World-orientation gizmo in the bottom-right corner, using three.js's native
  * {@link ViewHelper} for the visual (the colored X/Y/Z axis balls + labels).
  *
- * Two deliberate deviations from `ViewHelper`'s out-of-the-box behavior, both
- * because this scene is **Z-up** with a single OrbitControls:
- *  1. **Placement** — `ViewHelper.render()` hard-codes the bottom-RIGHT corner,
- *     where our minimap lives. We render its gizmo Object3D ourselves into a
- *     bottom-LEFT viewport instead (reusing ViewHelper's own ortho camera params).
- *  2. **Click-to-snap** — `ViewHelper.handleClick()` animates the camera with
- *     hard-coded **Y-up** target orientations and never touches OrbitControls,
- *     which would fight our Z-up setup (the "axis shift" bug). So we do our own
- *     hit-test against the gizmo axes and fly via the callback, which the
- *     Viewport wires to the Z-up-safe CameraAnimator.
+ * One deliberate deviation from `ViewHelper`'s out-of-the-box behavior, because
+ * this scene is **Z-up** with a single OrbitControls: **click-to-snap**.
+ * `ViewHelper.handleClick()` animates the camera with hard-coded **Y-up** target
+ * orientations and never touches OrbitControls, which would fight our Z-up setup
+ * (the "axis shift" bug). So we do our own hit-test against the gizmo axes and
+ * fly via the callback, which the Viewport wires to the Z-up-safe CameraAnimator.
+ * Placement is ViewHelper's own bottom-right corner (the minimap now lives
+ * bottom-left), so `render()` just calls the native `ViewHelper.render`.
  */
 export class AxisGizmo {
   readonly sm: SceneManager;
   private helper: ViewHelper;
-  /** Matches ViewHelper's internal ortho camera (frustum + position). */
+  /** Replica of ViewHelper's internal ortho camera (frustum + position) for hit-testing. */
   private orthoCamera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0, 4);
   private raycaster = new THREE.Raycaster();
-  private _savedVp = new THREE.Vector4();
   private _mouse = new THREE.Vector2();
 
-  private readonly dim = 128;   // gizmo size in px (ViewHelper's own dim)
-  private readonly margin = 8;  // inset from the corner
+  private readonly dim = 128; // gizmo size in px (ViewHelper's own dim)
 
   /**
    * Called when the user clicks an axis. `dir` is the unit direction from the
@@ -41,53 +37,43 @@ export class AxisGizmo {
     this.helper = new ViewHelper(sm.camera, sm.renderer.domElement);
     this.helper.setLabels("X", "Y", "Z");
     this.orthoCamera.position.set(0, 0, 2);
+    // Static camera; matrixWorld would otherwise never update (we never render
+    // through this replica — the native ViewHelper uses its own copy).
+    this.orthoCamera.updateMatrixWorld();
   }
 
   /**
-   * Render the gizmo into the bottom-left corner. Call from a post-render
-   * callback (after the main scene renders). Mirrors ViewHelper.render() but
-   * with our own viewport rect.
+   * Render the gizmo (bottom-right, ViewHelper's native corner). Call from a
+   * post-render callback after the main scene renders. ViewHelper.render mirrors
+   * the main camera's orientation and confines itself to a corner viewport;
+   * scissor is already off (the loop resets it before post-render callbacks).
    */
   render(): void {
-    const renderer = this.sm.renderer;
-    const el = renderer.domElement;
+    const el = this.sm.renderer.domElement;
     if (el.clientWidth === 0 || el.clientHeight === 0) return;
-
-    // Mirror the main camera's orientation (ViewHelper.render does this).
-    this.helper.quaternion.copy(this.sm.camera.quaternion).invert();
-    this.helper.updateMatrixWorld();
-
-    renderer.getViewport(this._savedVp);
-    const savedScissorTest = renderer.getScissorTest();
-
-    renderer.setScissorTest(false);
-    renderer.clearDepth();
-    renderer.setViewport(this.margin, this.margin, this.dim, this.dim);
-    renderer.render(this.helper, this.orthoCamera);
-
-    renderer.setViewport(this._savedVp.x, this._savedVp.y, this._savedVp.z, this._savedVp.w);
-    renderer.setScissorTest(savedScissorTest);
+    this.helper.render(this.sm.renderer);
   }
 
   /**
-   * Hit-test a click against the gizmo axes. Returns true (and invokes
-   * `onAxisSelect`) if an axis was clicked; false to let the click fall through
-   * to normal viewport handling.
+   * Hit-test a click against the gizmo axes (bottom-right dim×dim square).
+   * Returns true (and invokes `onAxisSelect`) if an axis was clicked; false to
+   * let the click fall through to normal viewport handling.
    */
   handleClick(clientX: number, clientY: number): boolean {
     if (!this.onAxisSelect) return false;
     const el = this.sm.renderer.domElement;
     const rect = el.getBoundingClientRect();
+    const dim = this.dim;
 
-    const px = clientX - rect.left;
-    const pyFromBottom = rect.height - (clientY - rect.top);
-    // Outside the bottom-left gizmo square → not ours.
-    if (px < this.margin || px > this.margin + this.dim) return false;
-    if (pyFromBottom < this.margin || pyFromBottom > this.margin + this.dim) return false;
+    // ViewHelper draws in the bottom-right dim×dim square (same math it uses).
+    const offsetX = rect.left + (el.offsetWidth - dim);
+    const offsetY = rect.top + (el.offsetHeight - dim);
+    if (clientX < offsetX || clientX > offsetX + dim) return false;
+    if (clientY < offsetY || clientY > offsetY + dim) return false;
 
     this._mouse.set(
-      ((px - this.margin) / this.dim) * 2 - 1,
-      ((pyFromBottom - this.margin) / this.dim) * 2 - 1,
+      ((clientX - offsetX) / dim) * 2 - 1,
+      -((clientY - offsetY) / dim) * 2 + 1,
     );
     this.raycaster.setFromCamera(this._mouse, this.orthoCamera);
     const hits = this.raycaster.intersectObjects(this.helper.children, false);

@@ -743,14 +743,17 @@ export function Viewport({ className }: ViewportProps) {
       />
 
 
-      {/* Minimap overlay */}
+      {/* Minimap overlay — bottom-LEFT (the axis gizmo sits bottom-right). The
+          layout publishes `--pcv-minimap-left` to clear its left tool rail; it
+          defaults to the corner for layouts without one. Being on the left, it
+          never overlaps the right-hand sidebar. */}
       {showMinimap && (
         <div
-          className="absolute rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer transition-[right] duration-200"
+          className="absolute rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer transition-[left] duration-200"
           style={{
             width: minimapSize,
             height: minimapSize,
-            right: "var(--pcv-minimap-right, 0.75rem)",
+            left: "var(--pcv-minimap-left, 0.75rem)",
             // Lift above the OS home indicator / browser nav bar on mobile.
             bottom: "calc(2.5rem + env(safe-area-inset-bottom))",
           }}

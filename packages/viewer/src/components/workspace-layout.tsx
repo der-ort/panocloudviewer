@@ -76,14 +76,11 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
     <div
       className={cn(
         "relative h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden",
-        // Publish the minimap's right offset so it sits just left of the sidebar
-        // when open and snaps back to the edge when closed (the minimap, inside
-        // the viewport, consumes `--pcv-minimap-right`).
-        // On mobile the sidebar is a full-bleed overlay, so the minimap stays at
-        // the edge; only shift it on md+ where the sidebar sits beside the view.
-        sidebarOpen
-          ? "[--pcv-minimap-right:0.75rem] md:[--pcv-minimap-right:19.25rem] xl:[--pcv-minimap-right:21.25rem]"
-          : "[--pcv-minimap-right:0.75rem]",
+        // The minimap sits bottom-left (the axis gizmo is bottom-right). Publish
+        // `--pcv-minimap-left` so it clears the left tool rail (~0.75rem + its
+        // 2.5rem width + a gap) and the notch inset on mobile. Being on the left,
+        // it never overlaps the right-hand sidebar in any state.
+        "[--pcv-minimap-left:calc(3.75rem+env(safe-area-inset-left))]",
         className,
       )}
     >
@@ -139,7 +136,10 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
           // Mobile: full-bleed overlay inset from the notch / home indicator so
           // its scroll area isn't hidden by the OS status bar or browser nav bar.
           "top-[calc(3.5rem+env(safe-area-inset-top))] md:top-16",
-          "bottom-[env(safe-area-inset-bottom)] md:bottom-10",
+          // md+: stop ~9rem above the bottom so the bottom-right axis gizmo
+          // (native ViewHelper, 128px corner) stays fully clear of the sidebar.
+          // Mobile: full-bleed overlay (it covers the gizmo intentionally when open).
+          "bottom-[env(safe-area-inset-bottom)] md:bottom-36",
           "right-[env(safe-area-inset-right)] md:right-3",
           "w-full max-w-sm md:w-72 xl:w-80",
           sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]",

@@ -920,30 +920,26 @@ declare class ClipManager {
 }
 
 /**
- * World-orientation gizmo in the bottom-left corner, using three.js's native
+ * World-orientation gizmo in the bottom-right corner, using three.js's native
  * {@link ViewHelper} for the visual (the colored X/Y/Z axis balls + labels).
  *
- * Two deliberate deviations from `ViewHelper`'s out-of-the-box behavior, both
- * because this scene is **Z-up** with a single OrbitControls:
- *  1. **Placement** — `ViewHelper.render()` hard-codes the bottom-RIGHT corner,
- *     where our minimap lives. We render its gizmo Object3D ourselves into a
- *     bottom-LEFT viewport instead (reusing ViewHelper's own ortho camera params).
- *  2. **Click-to-snap** — `ViewHelper.handleClick()` animates the camera with
- *     hard-coded **Y-up** target orientations and never touches OrbitControls,
- *     which would fight our Z-up setup (the "axis shift" bug). So we do our own
- *     hit-test against the gizmo axes and fly via the callback, which the
- *     Viewport wires to the Z-up-safe CameraAnimator.
+ * One deliberate deviation from `ViewHelper`'s out-of-the-box behavior, because
+ * this scene is **Z-up** with a single OrbitControls: **click-to-snap**.
+ * `ViewHelper.handleClick()` animates the camera with hard-coded **Y-up** target
+ * orientations and never touches OrbitControls, which would fight our Z-up setup
+ * (the "axis shift" bug). So we do our own hit-test against the gizmo axes and
+ * fly via the callback, which the Viewport wires to the Z-up-safe CameraAnimator.
+ * Placement is ViewHelper's own bottom-right corner (the minimap now lives
+ * bottom-left), so `render()` just calls the native `ViewHelper.render`.
  */
 declare class AxisGizmo {
     readonly sm: SceneManager;
     private helper;
-    /** Matches ViewHelper's internal ortho camera (frustum + position). */
+    /** Replica of ViewHelper's internal ortho camera (frustum + position) for hit-testing. */
     private orthoCamera;
     private raycaster;
-    private _savedVp;
     private _mouse;
     private readonly dim;
-    private readonly margin;
     /**
      * Called when the user clicks an axis. `dir` is the unit direction from the
      * orbit target toward the desired camera position (already nudged off the
@@ -952,15 +948,16 @@ declare class AxisGizmo {
     onAxisSelect: ((dir: THREE.Vector3) => void) | null;
     constructor(sm: SceneManager);
     /**
-     * Render the gizmo into the bottom-left corner. Call from a post-render
-     * callback (after the main scene renders). Mirrors ViewHelper.render() but
-     * with our own viewport rect.
+     * Render the gizmo (bottom-right, ViewHelper's native corner). Call from a
+     * post-render callback after the main scene renders. ViewHelper.render mirrors
+     * the main camera's orientation and confines itself to a corner viewport;
+     * scissor is already off (the loop resets it before post-render callbacks).
      */
     render(): void;
     /**
-     * Hit-test a click against the gizmo axes. Returns true (and invokes
-     * `onAxisSelect`) if an axis was clicked; false to let the click fall through
-     * to normal viewport handling.
+     * Hit-test a click against the gizmo axes (bottom-right dim×dim square).
+     * Returns true (and invokes `onAxisSelect`) if an axis was clicked; false to
+     * let the click fall through to normal viewport handling.
      */
     handleClick(clientX: number, clientY: number): boolean;
     dispose(): void;

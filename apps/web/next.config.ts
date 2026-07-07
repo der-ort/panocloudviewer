@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
   // Disable image optimization for static export
   images: { unoptimized: true },
 
+  // Hide the Next.js dev-mode indicator (bottom-left badge) — dev-only clutter.
+  devIndicators: false,
+
   // Required for Three.js / potree-core
   webpack(config) {
     config.module.rules.push({

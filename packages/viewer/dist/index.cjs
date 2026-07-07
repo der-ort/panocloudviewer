@@ -3164,15 +3164,12 @@ var init_dist = __esm({
     exports.AxisGizmo = class {
       sm;
       helper;
-      /** Matches ViewHelper's internal ortho camera (frustum + position). */
+      /** Replica of ViewHelper's internal ortho camera (frustum + position) for hit-testing. */
       orthoCamera = new THREE5__namespace.OrthographicCamera(-2, 2, 2, -2, 0, 4);
       raycaster = new THREE5__namespace.Raycaster();
-      _savedVp = new THREE5__namespace.Vector4();
       _mouse = new THREE5__namespace.Vector2();
       dim = 128;
       // gizmo size in px (ViewHelper's own dim)
-      margin = 8;
-      // inset from the corner
       /**
        * Called when the user clicks an axis. `dir` is the unit direction from the
        * orbit target toward the desired camera position (already nudged off the
@@ -3184,43 +3181,36 @@ var init_dist = __esm({
         this.helper = new ViewHelper_js.ViewHelper(sm.camera, sm.renderer.domElement);
         this.helper.setLabels("X", "Y", "Z");
         this.orthoCamera.position.set(0, 0, 2);
+        this.orthoCamera.updateMatrixWorld();
       }
       /**
-       * Render the gizmo into the bottom-left corner. Call from a post-render
-       * callback (after the main scene renders). Mirrors ViewHelper.render() but
-       * with our own viewport rect.
+       * Render the gizmo (bottom-right, ViewHelper's native corner). Call from a
+       * post-render callback after the main scene renders. ViewHelper.render mirrors
+       * the main camera's orientation and confines itself to a corner viewport;
+       * scissor is already off (the loop resets it before post-render callbacks).
        */
       render() {
-        const renderer = this.sm.renderer;
-        const el = renderer.domElement;
+        const el = this.sm.renderer.domElement;
         if (el.clientWidth === 0 || el.clientHeight === 0) return;
-        this.helper.quaternion.copy(this.sm.camera.quaternion).invert();
-        this.helper.updateMatrixWorld();
-        renderer.getViewport(this._savedVp);
-        const savedScissorTest = renderer.getScissorTest();
-        renderer.setScissorTest(false);
-        renderer.clearDepth();
-        renderer.setViewport(this.margin, this.margin, this.dim, this.dim);
-        renderer.render(this.helper, this.orthoCamera);
-        renderer.setViewport(this._savedVp.x, this._savedVp.y, this._savedVp.z, this._savedVp.w);
-        renderer.setScissorTest(savedScissorTest);
+        this.helper.render(this.sm.renderer);
       }
       /**
-       * Hit-test a click against the gizmo axes. Returns true (and invokes
-       * `onAxisSelect`) if an axis was clicked; false to let the click fall through
-       * to normal viewport handling.
+       * Hit-test a click against the gizmo axes (bottom-right dim×dim square).
+       * Returns true (and invokes `onAxisSelect`) if an axis was clicked; false to
+       * let the click fall through to normal viewport handling.
        */
       handleClick(clientX, clientY) {
         if (!this.onAxisSelect) return false;
         const el = this.sm.renderer.domElement;
         const rect = el.getBoundingClientRect();
-        const px = clientX - rect.left;
-        const pyFromBottom = rect.height - (clientY - rect.top);
-        if (px < this.margin || px > this.margin + this.dim) return false;
-        if (pyFromBottom < this.margin || pyFromBottom > this.margin + this.dim) return false;
+        const dim = this.dim;
+        const offsetX = rect.left + (el.offsetWidth - dim);
+        const offsetY = rect.top + (el.offsetHeight - dim);
+        if (clientX < offsetX || clientX > offsetX + dim) return false;
+        if (clientY < offsetY || clientY > offsetY + dim) return false;
         this._mouse.set(
-          (px - this.margin) / this.dim * 2 - 1,
-          (pyFromBottom - this.margin) / this.dim * 2 - 1
+          (clientX - offsetX) / dim * 2 - 1,
+          -((clientY - offsetY) / dim) * 2 + 1
         );
         this.raycaster.setFromCamera(this._mouse, this.orthoCamera);
         const hits = this.raycaster.intersectObjects(this.helper.children, false);
@@ -4604,11 +4594,11 @@ function Viewport({ className }) {
     showMinimap && /* @__PURE__ */ jsxRuntime.jsxs(
       "div",
       {
-        className: "absolute rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer transition-[right] duration-200",
+        className: "absolute rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer transition-[left] duration-200",
         style: {
           width: minimapSize,
           height: minimapSize,
-          right: "var(--pcv-minimap-right, 0.75rem)",
+          left: "var(--pcv-minimap-left, 0.75rem)",
           // Lift above the OS home indicator / browser nav bar on mobile.
           bottom: "calc(2.5rem + env(safe-area-inset-bottom))"
         },
@@ -7472,12 +7462,11 @@ function WorkspaceLayout({ className }) {
     {
       className: cn(
         "relative h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden",
-        // Publish the minimap's right offset so it sits just left of the sidebar
-        // when open and snaps back to the edge when closed (the minimap, inside
-        // the viewport, consumes `--pcv-minimap-right`).
-        // On mobile the sidebar is a full-bleed overlay, so the minimap stays at
-        // the edge; only shift it on md+ where the sidebar sits beside the view.
-        sidebarOpen ? "[--pcv-minimap-right:0.75rem] md:[--pcv-minimap-right:19.25rem] xl:[--pcv-minimap-right:21.25rem]" : "[--pcv-minimap-right:0.75rem]",
+        // The minimap sits bottom-left (the axis gizmo is bottom-right). Publish
+        // `--pcv-minimap-left` so it clears the left tool rail (~0.75rem + its
+        // 2.5rem width + a gap) and the notch inset on mobile. Being on the left,
+        // it never overlaps the right-hand sidebar in any state.
+        "[--pcv-minimap-left:calc(3.75rem+env(safe-area-inset-left))]",
         className
       ),
       children: [
@@ -7507,7 +7496,10 @@ function WorkspaceLayout({ className }) {
               // Mobile: full-bleed overlay inset from the notch / home indicator so
               // its scroll area isn't hidden by the OS status bar or browser nav bar.
               "top-[calc(3.5rem+env(safe-area-inset-top))] md:top-16",
-              "bottom-[env(safe-area-inset-bottom)] md:bottom-10",
+              // md+: stop ~9rem above the bottom so the bottom-right axis gizmo
+              // (native ViewHelper, 128px corner) stays fully clear of the sidebar.
+              // Mobile: full-bleed overlay (it covers the gizmo intentionally when open).
+              "bottom-[env(safe-area-inset-bottom)] md:bottom-36",
               "right-[env(safe-area-inset-right)] md:right-3",
               "w-full max-w-sm md:w-72 xl:w-80",
               sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]"
@@ -8034,7 +8026,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "7ac41d8 \xB7 2026-07-07 09:05Z" ;
+var PCV_BUILD = "59199e4 \xB7 2026-07-07 09:59Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
