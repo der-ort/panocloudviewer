@@ -160,8 +160,11 @@ export function Viewport({ className }: ViewportProps) {
     const axisFrame = () => axisWidget.render();
     sm.addPostRenderCallback(axisFrame);
 
-    // Picking magnifier — zoom inset while measuring (post-render, no-op when off)
+    // Picking magnifier — zoom inset while measuring (post-render, no-op when off).
+    // Hide the (pixelated) measurement snap crosshair inside the inset — the
+    // magnifier draws its own crisp crosshair at the same point.
     const magnifier = new MagnifierRenderer(sm);
+    magnifier.hideDuringRender(() => measureMgr.snapIndicator);
     magRef.current = magnifier;
     const magFrame = () => magnifier.render();
     sm.addPostRenderCallback(magFrame);

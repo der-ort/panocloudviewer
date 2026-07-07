@@ -30,6 +30,18 @@ export class MinimapRenderer {
   private worldBottom = -50;
 
   private frameCount = 0;
+  /** Wall-clock time (ms) of the last expensive top-down 3D render. */
+  private _last3DTime = 0;
+  /**
+   * Minimum gap between top-down 3D renders. The overview is a SECOND full
+   * render of the point cloud, so it is the minimap's whole cost — but the
+   * top-down image is invariant to main-camera motion (it only changes as
+   * points stream in or the scene content changes), so a slow fixed timer is
+   * imperceptible yet bounds the extra work to ~4 renders/sec regardless of
+   * how fast the main loop runs (no feedback loop where a heavy minimap render
+   * drags the main FPS down and then re-fires proportionally).
+   */
+  private static readonly RENDER_3D_INTERVAL_MS = 300;
 
   constructor(sceneManager: SceneManager) {
     this.sceneManager = sceneManager;
@@ -133,12 +145,19 @@ export class MinimapRenderer {
     // them straight from the loaded octrees so the minimap never stays blank.
     if (!this.bounds) this._deriveBoundsFromClouds();
 
-    // Throttle: render 3D every 6th frame (~10fps at 60fps main loop), overlay every 2nd
     this.frameCount++;
-    const render3D = this.frameCount % 6 === 0;
 
-    if (render3D) this._render3D();
-    // Draw overlay every 2nd frame
+    // Expensive top-down 3D render: time-gated to ~4 fps (see the interval
+    // comment). Decoupled from the main frame rate so it costs the same whether
+    // the main loop runs at 15 or 120 fps.
+    const now = performance.now();
+    if (now - this._last3DTime >= MinimapRenderer.RENDER_3D_INTERVAL_MS) {
+      this._last3DTime = now;
+      this._render3D();
+    }
+
+    // Cheap 2D overlay (camera frustum, dots) — keep it responsive so the
+    // "where am I looking" indicator tracks the camera every 2nd frame.
     if (this.frameCount % 2 === 0) this._drawOverlay();
   }
 

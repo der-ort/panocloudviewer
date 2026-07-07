@@ -48,6 +48,16 @@ export class MeasurementManager {
     return Array.from(this.measurements.values()).map(v => v.data);
   }
 
+  /**
+   * The transient snap-cursor crosshair sprite (null when not measuring). The
+   * magnifier hides this during its render pass — its low-res canvas texture
+   * looks pixelated when zoomed, and the magnifier draws its own crisp
+   * vector crosshair at the same point instead.
+   */
+  get snapIndicator(): THREE.Sprite | null {
+    return this._snapCross;
+  }
+
   /** Apply new display settings and rebuild all existing measurements */
   applyDisplaySettings(settings: DisplaySettings): void {
     this._displaySettings = settings;

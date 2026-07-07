@@ -456,6 +456,13 @@ declare class MeasurementManager {
     private _dotTexture?;
     constructor(scene: THREE.Scene);
     getAll(): Measurement[];
+    /**
+     * The transient snap-cursor crosshair sprite (null when not measuring). The
+     * magnifier hides this during its render pass — its low-res canvas texture
+     * looks pixelated when zoomed, and the magnifier draws its own crisp
+     * vector crosshair at the same point instead.
+     */
+    get snapIndicator(): THREE.Sprite | null;
     /** Apply new display settings and rebuild all existing measurements */
     applyDisplaySettings(settings: DisplaySettings): void;
     /** Rebuild all existing measurement visuals with current display settings */
@@ -586,6 +593,18 @@ declare class MinimapRenderer {
     private worldTop;
     private worldBottom;
     private frameCount;
+    /** Wall-clock time (ms) of the last expensive top-down 3D render. */
+    private _last3DTime;
+    /**
+     * Minimum gap between top-down 3D renders. The overview is a SECOND full
+     * render of the point cloud, so it is the minimap's whole cost — but the
+     * top-down image is invariant to main-camera motion (it only changes as
+     * points stream in or the scene content changes), so a slow fixed timer is
+     * imperceptible yet bounds the extra work to ~4 renders/sec regardless of
+     * how fast the main loop runs (no feedback loop where a heavy minimap render
+     * drags the main FPS down and then re-fires proportionally).
+     */
+    private static readonly RENDER_3D_INTERVAL_MS;
     constructor(sceneManager: SceneManager);
     /**
      * Attach to a container element. Creates internal canvases.
@@ -952,7 +971,16 @@ declare class MagnifierRenderer {
     /** Inset size (CSS px) and zoom factor. */
     static readonly SIZE = 180;
     static readonly ZOOM = 8;
+    /**
+     * Objects hidden ONLY during the magnifier's scene render (restored right
+     * after). Used for the measurement snap crosshair, whose low-res sprite
+     * looks pixelated when zoomed — the magnifier draws its own crisp crosshair.
+     */
+    private hideProviders;
     constructor(sm: SceneManager);
+    /** Register an object (via a getter, since it may be created lazily) to hide
+     *  during the magnifier's render pass only. */
+    hideDuringRender(provider: () => THREE.Object3D | null | undefined): void;
     private _buildFrame;
     setEnabled(enabled: boolean): void;
     isEnabled(): boolean;
@@ -1546,7 +1574,7 @@ interface ViewerContextValue {
     setShowMinimap: (v: boolean) => void;
     showMeasurements: boolean;
     setShowMeasurements: (v: boolean) => void;
-    /** Picking magnifier (zoom inset while measuring). Default off. */
+    /** Picking magnifier (zoom inset while measuring). Default on; renders only while a measure tool is active. */
     showMagnifier: boolean;
     setShowMagnifier: (v: boolean) => void;
     selectedCamera: CameraData | null;

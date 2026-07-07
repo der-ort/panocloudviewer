@@ -510,7 +510,7 @@ var init_dist = __esm({
           metadataPath,
           requestManager
         );
-        pointCloud.material.size = 1.5;
+        pointCloud.material.size = 1;
         pointCloud.material.pointSizeType = 2;
         pointCloud.material.shape = 1;
         if (hasRgb) {
@@ -1044,6 +1044,15 @@ var init_dist = __esm({
       }
       getAll() {
         return Array.from(this.measurements.values()).map((v) => v.data);
+      }
+      /**
+       * The transient snap-cursor crosshair sprite (null when not measuring). The
+       * magnifier hides this during its render pass — its low-res canvas texture
+       * looks pixelated when zoomed, and the magnifier draws its own crisp
+       * vector crosshair at the same point instead.
+       */
+      get snapIndicator() {
+        return this._snapCross;
       }
       /** Apply new display settings and rebuild all existing measurements */
       applyDisplaySettings(settings) {
@@ -1830,7 +1839,7 @@ var init_dist = __esm({
         a.click();
       }
     };
-    exports.MinimapRenderer = class {
+    exports.MinimapRenderer = class _MinimapRenderer {
       sceneManager;
       bounds = null;
       // Rendering elements
@@ -1850,6 +1859,18 @@ var init_dist = __esm({
       worldTop = 50;
       worldBottom = -50;
       frameCount = 0;
+      /** Wall-clock time (ms) of the last expensive top-down 3D render. */
+      _last3DTime = 0;
+      /**
+       * Minimum gap between top-down 3D renders. The overview is a SECOND full
+       * render of the point cloud, so it is the minimap's whole cost — but the
+       * top-down image is invariant to main-camera motion (it only changes as
+       * points stream in or the scene content changes), so a slow fixed timer is
+       * imperceptible yet bounds the extra work to ~4 renders/sec regardless of
+       * how fast the main loop runs (no feedback loop where a heavy minimap render
+       * drags the main FPS down and then re-fires proportionally).
+       */
+      static RENDER_3D_INTERVAL_MS = 300;
       constructor(sceneManager) {
         this.sceneManager = sceneManager;
         this.orthoCamera = new THREE5__namespace.OrthographicCamera(-50, 50, 50, -50, -1e4, 1e4);
@@ -1926,8 +1947,11 @@ var init_dist = __esm({
       update() {
         if (!this.bounds) this._deriveBoundsFromClouds();
         this.frameCount++;
-        const render3D = this.frameCount % 6 === 0;
-        if (render3D) this._render3D();
+        const now = performance.now();
+        if (now - this._last3DTime >= _MinimapRenderer.RENDER_3D_INTERVAL_MS) {
+          this._last3DTime = now;
+          this._render3D();
+        }
         if (this.frameCount % 2 === 0) this._drawOverlay();
       }
       /** Fallback bounds from the loaded potree octrees (tight box + offset). */
@@ -3252,9 +3276,20 @@ var init_dist = __esm({
       /** Inset size (CSS px) and zoom factor. */
       static SIZE = 180;
       static ZOOM = 8;
+      /**
+       * Objects hidden ONLY during the magnifier's scene render (restored right
+       * after). Used for the measurement snap crosshair, whose low-res sprite
+       * looks pixelated when zoomed — the magnifier draws its own crisp crosshair.
+       */
+      hideProviders = [];
       constructor(sm) {
         this.sm = sm;
         this._buildFrame();
+      }
+      /** Register an object (via a getter, since it may be created lazily) to hide
+       *  during the magnifier's render pass only. */
+      hideDuringRender(provider) {
+        this.hideProviders.push(provider);
       }
       _buildFrame() {
         const border = new THREE5__namespace.LineLoop(
@@ -3337,8 +3372,17 @@ var init_dist = __esm({
         renderer.setScissorTest(true);
         renderer.setScissor(left, bottom, size, size);
         renderer.setViewport(left, bottom, size, size);
+        const restore = [];
+        for (const provider of this.hideProviders) {
+          const obj = provider();
+          if (obj && obj.visible) {
+            obj.visible = false;
+            restore.push(obj);
+          }
+        }
         renderer.clearDepth();
         renderer.render(this.sm.scene, zoomCamera);
+        for (const obj of restore) obj.visible = true;
         renderer.clearDepth();
         renderer.render(this.frameScene, this.frameCamera);
         renderer.setViewport(savedVp);
@@ -3507,7 +3551,7 @@ function ViewerProvider({ config, children }) {
   const [clipManager, _setClipManager] = React27.useState(null);
   const [activeTool, setActiveTool] = React27.useState("none");
   const [pointBudget, setPointBudget] = React27.useState(config.pointBudget ?? 2e6);
-  const [pointSize, setPointSize] = React27.useState(1.5);
+  const [pointSize, setPointSize] = React27.useState(1);
   const [fps, setFps] = React27.useState(0);
   const [pointCount, setPointCount] = React27.useState(0);
   const [measurementList, setMeasurementList] = React27.useState([]);
@@ -4117,6 +4161,7 @@ function Viewport({ className }) {
     const axisFrame = () => axisWidget.render();
     sm.addPostRenderCallback(axisFrame);
     const magnifier = new exports.MagnifierRenderer(sm);
+    magnifier.hideDuringRender(() => measureMgr.snapIndicator);
     magRef.current = magnifier;
     const magFrame = () => magnifier.render();
     sm.addPostRenderCallback(magFrame);
@@ -7028,6 +7073,7 @@ function RenderingSettings({ open, onClose }) {
                 min: 0.2,
                 max: 5,
                 step: 0.1,
+                decimals: 1,
                 onChange: (v) => {
                   setPointSize(v);
                   loader?.setPointSize(v);
@@ -7042,11 +7088,13 @@ function RenderingSettings({ open, onClose }) {
                 min: budgetRange.min,
                 max: budgetRange.max,
                 step: budgetRange.step,
+                scale: 1e6,
+                unit: "M",
+                decimals: 1,
                 onChange: (v) => {
                   setPointBudget(v);
                   loader?.setPointBudget(v);
-                },
-                display: (v) => (v / 1e6).toFixed(1) + "M"
+                }
               }
             ),
             /* @__PURE__ */ jsxRuntime.jsx("div", { className: "flex items-center gap-1 pt-0.5", children: QUALITY.map((q) => /* @__PURE__ */ jsxRuntime.jsx(
@@ -7164,8 +7212,9 @@ function RenderingSettings({ open, onClose }) {
                 min: zMin - zRange * 0.1,
                 max: zMax + zRange * 0.1,
                 step: zRange / 200,
-                onChange: (v) => setElevation(v, heightMax),
-                display: (v) => v.toFixed(1) + "m"
+                unit: "m",
+                decimals: 1,
+                onChange: (v) => setElevation(v, heightMax)
               }
             ),
             /* @__PURE__ */ jsxRuntime.jsx(
@@ -7176,8 +7225,9 @@ function RenderingSettings({ open, onClose }) {
                 min: zMin - zRange * 0.1,
                 max: zMax + zRange * 0.1,
                 step: zRange / 200,
-                onChange: (v) => setElevation(heightMin, v),
-                display: (v) => v.toFixed(1) + "m"
+                unit: "m",
+                decimals: 1,
+                onChange: (v) => setElevation(heightMin, v)
               }
             )
           ] }),
@@ -7201,8 +7251,9 @@ function RenderingSettings({ open, onClose }) {
                 min: 0.3,
                 max: 2.5,
                 step: 0.1,
-                onChange: (v) => updateDisplay("measurementLabelScale", v),
-                display: (v) => v.toFixed(1) + "\xD7"
+                unit: "\xD7",
+                decimals: 1,
+                onChange: (v) => updateDisplay("measurementLabelScale", v)
               }
             ),
             /* @__PURE__ */ jsxRuntime.jsx(
@@ -7213,8 +7264,10 @@ function RenderingSettings({ open, onClose }) {
                 min: 0.05,
                 max: 0.4,
                 step: 0.01,
-                onChange: (v) => updateDisplay("measurementSphereRadius", v),
-                display: (v) => (v / 0.15).toFixed(1) + "\xD7"
+                scale: 0.15,
+                unit: "\xD7",
+                decimals: 1,
+                onChange: (v) => updateDisplay("measurementSphereRadius", v)
               }
             ),
             /* @__PURE__ */ jsxRuntime.jsx(
@@ -7225,8 +7278,9 @@ function RenderingSettings({ open, onClose }) {
                 min: 0.4,
                 max: 2,
                 step: 0.1,
-                onChange: (v) => updateDisplay("markerSphereScale", v),
-                display: (v) => v.toFixed(1) + "\xD7"
+                unit: "\xD7",
+                decimals: 1,
+                onChange: (v) => updateDisplay("markerSphereScale", v)
               }
             ),
             /* @__PURE__ */ jsxRuntime.jsx(
@@ -7275,7 +7329,7 @@ function Section({ title, children }) {
     /* @__PURE__ */ jsxRuntime.jsx("div", { className: "space-y-1.5", children })
   ] });
 }
-function Slider({ label, value, min, max, step, onChange, display }) {
+function Slider({ label, value, min, max, step, onChange, scale = 1, unit, decimals = 2 }) {
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex items-center gap-2", children: [
     /* @__PURE__ */ jsxRuntime.jsx("span", { className: "w-16 text-muted-foreground shrink-0", children: label }),
     /* @__PURE__ */ jsxRuntime.jsx(
@@ -7290,7 +7344,59 @@ function Slider({ label, value, min, max, step, onChange, display }) {
         className: "flex-1 accent-[hsl(var(--brand))] h-1"
       }
     ),
-    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "w-12 text-right font-mono text-[10px] tabular-nums", children: display ? display(value) : value.toFixed(2) })
+    /* @__PURE__ */ jsxRuntime.jsx(
+      ValueBox,
+      {
+        value,
+        min,
+        max,
+        step,
+        scale,
+        unit,
+        decimals,
+        onCommit: onChange
+      }
+    )
+  ] });
+}
+function ValueBox({ value, min, max, step, scale, unit, decimals, onCommit }) {
+  const fmt = (v) => {
+    const s = (v / scale).toFixed(decimals);
+    return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
+  };
+  const [text, setText] = React27__default.default.useState(() => fmt(value));
+  const [editing, setEditing] = React27__default.default.useState(false);
+  React27__default.default.useEffect(() => {
+    if (!editing) setText(fmt(value));
+  }, [value, editing]);
+  const commit = (s) => {
+    const n = parseFloat(s);
+    if (!Number.isFinite(n)) return;
+    onCommit(Math.min(max, Math.max(min, n * scale)));
+  };
+  return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex items-center gap-0.5 shrink-0", children: [
+    /* @__PURE__ */ jsxRuntime.jsx(
+      "input",
+      {
+        type: "number",
+        inputMode: "decimal",
+        min: min / scale,
+        max: max / scale,
+        step: step / scale,
+        value: text,
+        onFocus: () => setEditing(true),
+        onChange: (e) => {
+          setText(e.target.value);
+          commit(e.target.value);
+        },
+        onBlur: () => {
+          setEditing(false);
+          setText(fmt(value));
+        },
+        className: "w-11 text-right font-mono text-[10px] tabular-nums bg-muted/40 border border-[hsl(var(--border))] rounded px-1 py-0.5 outline-none focus:border-[hsl(var(--brand))]"
+      }
+    ),
+    unit && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-[10px] text-muted-foreground/70 w-3", children: unit })
   ] });
 }
 var Viewport2 = React27.lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
@@ -7895,7 +8001,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "6812ef6 \xB7 2026-07-02 23:49Z" ;
+var PCV_BUILD = "33cbe87 \xB7 2026-07-07 07:17Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

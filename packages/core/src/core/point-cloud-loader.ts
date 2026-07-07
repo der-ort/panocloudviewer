@@ -106,7 +106,7 @@ export class PointCloudLoader {
       requestManager
     );
 
-    pointCloud.material.size = 1.5;
+    pointCloud.material.size = 1.0; // smaller default → crisper (raise via UI)
     pointCloud.material.pointSizeType = 2; // ADAPTIVE
     pointCloud.material.shape = 1; // CIRCLE
 

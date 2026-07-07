@@ -36,9 +36,22 @@ export class MagnifierRenderer {
   static readonly SIZE = 180;
   static readonly ZOOM = 8;
 
+  /**
+   * Objects hidden ONLY during the magnifier's scene render (restored right
+   * after). Used for the measurement snap crosshair, whose low-res sprite
+   * looks pixelated when zoomed — the magnifier draws its own crisp crosshair.
+   */
+  private hideProviders: Array<() => THREE.Object3D | null | undefined> = [];
+
   constructor(sm: SceneManager) {
     this.sm = sm;
     this._buildFrame();
+  }
+
+  /** Register an object (via a getter, since it may be created lazily) to hide
+   *  during the magnifier's render pass only. */
+  hideDuringRender(provider: () => THREE.Object3D | null | undefined): void {
+    this.hideProviders.push(provider);
   }
 
   private _buildFrame(): void {
@@ -132,11 +145,21 @@ export class MagnifierRenderer {
     renderer.setScissor(left, bottom, size, size);
     renderer.setViewport(left, bottom, size, size);
 
+    // Hide registered objects (the pixelated snap crosshair) for this pass only.
+    const restore: THREE.Object3D[] = [];
+    for (const provider of this.hideProviders) {
+      const obj = provider();
+      if (obj && obj.visible) { obj.visible = false; restore.push(obj); }
+    }
+
     // The scene's own background fills the square (clearDepth keeps the main
     // image outside the scissor untouched).
     renderer.clearDepth();
     renderer.render(this.sm.scene, zoomCamera);
-    // Frame + crosshair on top
+
+    for (const obj of restore) obj.visible = true;
+
+    // Frame + crisp vector crosshair on top
     renderer.clearDepth();
     renderer.render(this.frameScene, this.frameCamera);
 

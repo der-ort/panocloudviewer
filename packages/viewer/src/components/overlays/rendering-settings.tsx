@@ -174,10 +174,11 @@ export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
             ))}
           </div>
           <Slider label="Point size" value={pointSize} min={0.2} max={5} step={0.1}
+            decimals={1}
             onChange={v => { setPointSize(v); loader?.setPointSize(v); }} />
           <Slider label="Budget" value={pointBudget} min={budgetRange.min} max={budgetRange.max} step={budgetRange.step}
-            onChange={v => { setPointBudget(v); loader?.setPointBudget(v); }}
-            display={v => (v / 1e6).toFixed(1) + "M"} />
+            scale={1e6} unit="M" decimals={1}
+            onChange={v => { setPointBudget(v); loader?.setPointBudget(v); }} />
           <div className="flex items-center gap-1 pt-0.5">
             {QUALITY.map(q => (
               <button key={q.value} onClick={() => setQualityPreset(q.value)}
@@ -221,9 +222,9 @@ export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
         {/* ── Elevation ──────────────────────────────────────────── */}
         <Section title={t.elevationSection}>
           <Slider label={t.elevMin} value={heightMin} min={zMin - zRange * 0.1} max={zMax + zRange * 0.1} step={zRange / 200}
-            onChange={v => setElevation(v, heightMax)} display={v => v.toFixed(1) + "m"} />
+            unit="m" decimals={1} onChange={v => setElevation(v, heightMax)} />
           <Slider label={t.elevMax} value={heightMax} min={zMin - zRange * 0.1} max={zMax + zRange * 0.1} step={zRange / 200}
-            onChange={v => setElevation(heightMin, v)} display={v => v.toFixed(1) + "m"} />
+            unit="m" decimals={1} onChange={v => setElevation(heightMin, v)} />
         </Section>
 
         {/* ── General ────────────────────────────────────────────── */}
@@ -237,12 +238,11 @@ export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
             managers on every change, so these apply in real time. */}
         <Section title="Measurements & markers">
           <Slider label="Label size" value={display.measurementLabelScale} min={0.3} max={2.5} step={0.1}
-            onChange={v => updateDisplay("measurementLabelScale", v)} display={v => v.toFixed(1) + "×"} />
+            unit="×" decimals={1} onChange={v => updateDisplay("measurementLabelScale", v)} />
           <Slider label="Point size" value={display.measurementSphereRadius} min={0.05} max={0.4} step={0.01}
-            onChange={v => updateDisplay("measurementSphereRadius", v)}
-            display={v => (v / 0.15).toFixed(1) + "×"} />
+            scale={0.15} unit="×" decimals={1} onChange={v => updateDisplay("measurementSphereRadius", v)} />
           <Slider label="Pin size" value={display.markerSphereScale} min={0.4} max={2} step={0.1}
-            onChange={v => updateDisplay("markerSphereScale", v)} display={v => v.toFixed(1) + "×"} />
+            unit="×" decimals={1} onChange={v => updateDisplay("markerSphereScale", v)} />
           <Slider label="Pin opacity" value={display.markerSphereOpacity} min={0.2} max={1} step={0.05}
             onChange={v => updateDisplay("markerSphereOpacity", v)} />
           <div className="flex items-center gap-2">
@@ -293,10 +293,15 @@ interface SliderProps {
   max: number;
   step: number;
   onChange: (v: number) => void;
-  display?: (v: number) => string;
+  /** Divisor between the raw value and the number shown/typed (e.g. 1e6 → millions). Default 1. */
+  scale?: number;
+  /** Unit suffix after the editable box (e.g. "M", "m", "×"). */
+  unit?: string;
+  /** Decimals in the editable box. Default 2. */
+  decimals?: number;
 }
 
-function Slider({ label, value, min, max, step, onChange, display }: SliderProps) {
+function Slider({ label, value, min, max, step, onChange, scale = 1, unit, decimals = 2 }: SliderProps) {
   return (
     <div className="flex items-center gap-2">
       <span className="w-16 text-muted-foreground shrink-0">{label}</span>
@@ -309,9 +314,52 @@ function Slider({ label, value, min, max, step, onChange, display }: SliderProps
         onChange={e => onChange(Number(e.target.value))}
         className="flex-1 accent-[hsl(var(--brand))] h-1"
       />
-      <span className="w-12 text-right font-mono text-[10px] tabular-nums">
-        {display ? display(value) : value.toFixed(2)}
-      </span>
+      <ValueBox value={value} min={min} max={max} step={step}
+        scale={scale} unit={unit} decimals={decimals} onCommit={onChange} />
+    </div>
+  );
+}
+
+/**
+ * Editable numeric box beside a slider — type an exact value instead of
+ * fiddling the handle. Keeps local text state while focused so mid-edit input
+ * (e.g. "1.") isn't clobbered; syncs to the external value otherwise; commits
+ * clamped to [min,max]. `scale` lets the box show/accept a friendlier unit
+ * (e.g. budget in millions).
+ */
+function ValueBox({ value, min, max, step, scale, unit, decimals, onCommit }: {
+  value: number; min: number; max: number; step: number;
+  scale: number; unit?: string; decimals: number; onCommit: (v: number) => void;
+}) {
+  const fmt = (v: number) => {
+    const s = (v / scale).toFixed(decimals);
+    return s.includes(".") ? s.replace(/\.?0+$/, "") : s; // trim trailing zeros
+  };
+  const [text, setText] = React.useState(() => fmt(value));
+  const [editing, setEditing] = React.useState(false);
+  React.useEffect(() => { if (!editing) setText(fmt(value)); }, [value, editing]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commit = (s: string) => {
+    const n = parseFloat(s);
+    if (!Number.isFinite(n)) return;
+    onCommit(Math.min(max, Math.max(min, n * scale)));
+  };
+
+  return (
+    <div className="flex items-center gap-0.5 shrink-0">
+      <input
+        type="number"
+        inputMode="decimal"
+        min={min / scale}
+        max={max / scale}
+        step={step / scale}
+        value={text}
+        onFocus={() => setEditing(true)}
+        onChange={e => { setText(e.target.value); commit(e.target.value); }}
+        onBlur={() => { setEditing(false); setText(fmt(value)); }}
+        className="w-11 text-right font-mono text-[10px] tabular-nums bg-muted/40 border border-[hsl(var(--border))] rounded px-1 py-0.5 outline-none focus:border-[hsl(var(--brand))]"
+      />
+      {unit && <span className="text-[10px] text-muted-foreground/70 w-3">{unit}</span>}
     </div>
   );
 }

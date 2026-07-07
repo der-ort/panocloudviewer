@@ -347,7 +347,7 @@ var PointCloudLoader = class _PointCloudLoader {
       metadataPath,
       requestManager
     );
-    pointCloud.material.size = 1.5;
+    pointCloud.material.size = 1;
     pointCloud.material.pointSizeType = 2;
     pointCloud.material.shape = 1;
     if (hasRgb) {
@@ -974,6 +974,15 @@ var MeasurementManager = class {
   }
   getAll() {
     return Array.from(this.measurements.values()).map((v) => v.data);
+  }
+  /**
+   * The transient snap-cursor crosshair sprite (null when not measuring). The
+   * magnifier hides this during its render pass — its low-res canvas texture
+   * looks pixelated when zoomed, and the magnifier draws its own crisp
+   * vector crosshair at the same point instead.
+   */
+  get snapIndicator() {
+    return this._snapCross;
   }
   /** Apply new display settings and rebuild all existing measurements */
   applyDisplaySettings(settings) {
@@ -1767,7 +1776,7 @@ var ExportManager = class _ExportManager {
     a.click();
   }
 };
-var MinimapRenderer = class {
+var MinimapRenderer = class _MinimapRenderer {
   sceneManager;
   bounds = null;
   // Rendering elements
@@ -1787,6 +1796,18 @@ var MinimapRenderer = class {
   worldTop = 50;
   worldBottom = -50;
   frameCount = 0;
+  /** Wall-clock time (ms) of the last expensive top-down 3D render. */
+  _last3DTime = 0;
+  /**
+   * Minimum gap between top-down 3D renders. The overview is a SECOND full
+   * render of the point cloud, so it is the minimap's whole cost — but the
+   * top-down image is invariant to main-camera motion (it only changes as
+   * points stream in or the scene content changes), so a slow fixed timer is
+   * imperceptible yet bounds the extra work to ~4 renders/sec regardless of
+   * how fast the main loop runs (no feedback loop where a heavy minimap render
+   * drags the main FPS down and then re-fires proportionally).
+   */
+  static RENDER_3D_INTERVAL_MS = 300;
   constructor(sceneManager) {
     this.sceneManager = sceneManager;
     this.orthoCamera = new THREE5__namespace.OrthographicCamera(-50, 50, 50, -50, -1e4, 1e4);
@@ -1863,8 +1884,11 @@ var MinimapRenderer = class {
   update() {
     if (!this.bounds) this._deriveBoundsFromClouds();
     this.frameCount++;
-    const render3D = this.frameCount % 6 === 0;
-    if (render3D) this._render3D();
+    const now = performance.now();
+    if (now - this._last3DTime >= _MinimapRenderer.RENDER_3D_INTERVAL_MS) {
+      this._last3DTime = now;
+      this._render3D();
+    }
     if (this.frameCount % 2 === 0) this._drawOverlay();
   }
   /** Fallback bounds from the loaded potree octrees (tight box + offset). */
@@ -3194,9 +3218,20 @@ var MagnifierRenderer = class _MagnifierRenderer {
   /** Inset size (CSS px) and zoom factor. */
   static SIZE = 180;
   static ZOOM = 8;
+  /**
+   * Objects hidden ONLY during the magnifier's scene render (restored right
+   * after). Used for the measurement snap crosshair, whose low-res sprite
+   * looks pixelated when zoomed — the magnifier draws its own crisp crosshair.
+   */
+  hideProviders = [];
   constructor(sm) {
     this.sm = sm;
     this._buildFrame();
+  }
+  /** Register an object (via a getter, since it may be created lazily) to hide
+   *  during the magnifier's render pass only. */
+  hideDuringRender(provider) {
+    this.hideProviders.push(provider);
   }
   _buildFrame() {
     const border = new THREE5__namespace.LineLoop(
@@ -3279,8 +3314,17 @@ var MagnifierRenderer = class _MagnifierRenderer {
     renderer.setScissorTest(true);
     renderer.setScissor(left, bottom, size, size);
     renderer.setViewport(left, bottom, size, size);
+    const restore = [];
+    for (const provider of this.hideProviders) {
+      const obj = provider();
+      if (obj && obj.visible) {
+        obj.visible = false;
+        restore.push(obj);
+      }
+    }
     renderer.clearDepth();
     renderer.render(this.sm.scene, zoomCamera);
+    for (const obj of restore) obj.visible = true;
     renderer.clearDepth();
     renderer.render(this.frameScene, this.frameCamera);
     renderer.setViewport(savedVp);

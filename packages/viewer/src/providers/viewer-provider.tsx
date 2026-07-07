@@ -54,7 +54,7 @@ interface ViewerContextValue {
   setShowMinimap: (v: boolean) => void;
   showMeasurements: boolean;
   setShowMeasurements: (v: boolean) => void;
-  /** Picking magnifier (zoom inset while measuring). Default off. */
+  /** Picking magnifier (zoom inset while measuring). Default on; renders only while a measure tool is active. */
   showMagnifier: boolean;
   setShowMagnifier: (v: boolean) => void;
   selectedCamera: CameraData | null;
@@ -107,7 +107,9 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
 
   const [activeTool, setActiveTool] = useState<ActiveTool>("none");
   const [pointBudget, setPointBudget] = useState(config.pointBudget ?? 2_000_000);
-  const [pointSize, setPointSize] = useState(1.5);
+  // Smaller default → crisper rendering (points don't bloat into blobs);
+  // users can raise it via the Settings slider.
+  const [pointSize, setPointSize] = useState(1.0);
   const [fps, setFps] = useState(0);
   const [pointCount, setPointCount] = useState(0);
   const [measurementList, setMeasurementList] = useState<Measurement[]>([]);
