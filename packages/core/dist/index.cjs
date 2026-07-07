@@ -3106,12 +3106,15 @@ var ClipManager = class {
 var AxisGizmo = class {
   sm;
   helper;
-  /** Replica of ViewHelper's internal ortho camera (frustum + position) for hit-testing. */
+  /** Replica of ViewHelper's internal ortho camera (frustum + position) for render + hit-testing. */
   orthoCamera = new THREE5__namespace.OrthographicCamera(-2, 2, 2, -2, 0, 4);
   raycaster = new THREE5__namespace.Raycaster();
   _mouse = new THREE5__namespace.Vector2();
+  _savedVp = new THREE5__namespace.Vector4();
   dim = 128;
   // gizmo size in px (ViewHelper's own dim)
+  /** Shift the gizmo this many px left of the bottom-right corner (0 = corner). */
+  rightOffset = 0;
   /**
    * Called when the user clicks an axis. `dir` is the unit direction from the
    * orbit target toward the desired camera position (already nudged off the
@@ -3126,28 +3129,36 @@ var AxisGizmo = class {
     this.orthoCamera.updateMatrixWorld();
   }
   /**
-   * Render the gizmo (bottom-right, ViewHelper's native corner). Call from a
-   * post-render callback after the main scene renders. ViewHelper.render mirrors
-   * the main camera's orientation and confines itself to a corner viewport;
-   * scissor is already off (the loop resets it before post-render callbacks).
+   * Render the gizmo into the bottom-right corner (shifted left by `rightOffset`).
+   * Call from a post-render callback after the main scene renders. Mirrors
+   * ViewHelper.render() but with our own viewport rect; scissor is already off
+   * (the loop resets it before post-render callbacks).
    */
   render() {
-    const el = this.sm.renderer.domElement;
+    const renderer = this.sm.renderer;
+    const el = renderer.domElement;
     if (el.clientWidth === 0 || el.clientHeight === 0) return;
-    this.helper.render(this.sm.renderer);
+    this.helper.quaternion.copy(this.sm.camera.quaternion).invert();
+    this.helper.updateMatrixWorld();
+    const x = el.clientWidth - this.dim - this.rightOffset;
+    renderer.getViewport(this._savedVp);
+    renderer.clearDepth();
+    renderer.setViewport(x, 0, this.dim, this.dim);
+    renderer.render(this.helper, this.orthoCamera);
+    renderer.setViewport(this._savedVp.x, this._savedVp.y, this._savedVp.z, this._savedVp.w);
   }
   /**
-   * Hit-test a click against the gizmo axes (bottom-right dim×dim square).
-   * Returns true (and invokes `onAxisSelect`) if an axis was clicked; false to
-   * let the click fall through to normal viewport handling.
+   * Hit-test a click against the gizmo axes (bottom-right dim×dim square, shifted
+   * left by `rightOffset`). Returns true (and invokes `onAxisSelect`) if an axis
+   * was clicked; false to let the click fall through to normal viewport handling.
    */
   handleClick(clientX, clientY) {
     if (!this.onAxisSelect) return false;
     const el = this.sm.renderer.domElement;
     const rect = el.getBoundingClientRect();
     const dim = this.dim;
-    const offsetX = rect.left + (el.offsetWidth - dim);
-    const offsetY = rect.top + (el.offsetHeight - dim);
+    const offsetX = rect.right - this.rightOffset - dim;
+    const offsetY = rect.bottom - dim;
     if (clientX < offsetX || clientX > offsetX + dim) return false;
     if (clientY < offsetY || clientY > offsetY + dim) return false;
     this._mouse.set(

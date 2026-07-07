@@ -180,7 +180,22 @@ export function Viewport({ className }: ViewportProps) {
       else { sm.camera.position.copy(position); sm.camera.up.copy(up); sm.controls.update(); }
     };
     axisRef.current = axisGizmo;
-    const axisFrame = () => axisGizmo.render();
+    // Slide the gizmo left of the sidebar when it overlaps the corner. Reading
+    // the sidebar's live rect (translateX transition included) makes the gizmo
+    // track the open/close animation and self-handle zoom/breakpoint/closed
+    // (off-screen → negative → clamped to 0 = corner). null in layouts without one.
+    let sidebarEl: Element | null = null;
+    const axisFrame = () => {
+      if (!sidebarEl) sidebarEl = document.querySelector("[data-pcv-sidebar]");
+      if (sidebarEl) {
+        const cr = sm.renderer.domElement.getBoundingClientRect();
+        const sr = sidebarEl.getBoundingClientRect();
+        axisGizmo.rightOffset = Math.max(0, cr.right - sr.left + 12);
+      } else {
+        axisGizmo.rightOffset = 0;
+      }
+      axisGizmo.render();
+    };
     sm.addPostRenderCallback(axisFrame);
 
     // Picking magnifier — zoom inset while measuring (post-render, no-op when off).

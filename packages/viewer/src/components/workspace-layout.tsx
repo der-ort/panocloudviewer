@@ -131,15 +131,15 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
       {/* On md+ it sits beside the viewport and slides off the right edge when
           collapsed; on mobile it's a full-bleed overlay over the viewport. */}
       <div
+        // The Viewport measures this element each frame to slide the bottom-right
+        // axis gizmo left of the sidebar when it's open (and back when closed).
+        data-pcv-sidebar
         className={cn(
           "absolute z-30 transition-transform duration-200",
           // Mobile: full-bleed overlay inset from the notch / home indicator so
           // its scroll area isn't hidden by the OS status bar or browser nav bar.
           "top-[calc(3.5rem+env(safe-area-inset-top))] md:top-16",
-          // md+: stop ~9rem above the bottom so the bottom-right axis gizmo
-          // (native ViewHelper, 128px corner) stays fully clear of the sidebar.
-          // Mobile: full-bleed overlay (it covers the gizmo intentionally when open).
-          "bottom-[env(safe-area-inset-bottom)] md:bottom-36",
+          "bottom-[env(safe-area-inset-bottom)] md:bottom-10",
           "right-[env(safe-area-inset-right)] md:right-3",
           "w-full max-w-sm md:w-72 xl:w-80",
           sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]",

@@ -3164,12 +3164,15 @@ var init_dist = __esm({
     exports.AxisGizmo = class {
       sm;
       helper;
-      /** Replica of ViewHelper's internal ortho camera (frustum + position) for hit-testing. */
+      /** Replica of ViewHelper's internal ortho camera (frustum + position) for render + hit-testing. */
       orthoCamera = new THREE5__namespace.OrthographicCamera(-2, 2, 2, -2, 0, 4);
       raycaster = new THREE5__namespace.Raycaster();
       _mouse = new THREE5__namespace.Vector2();
+      _savedVp = new THREE5__namespace.Vector4();
       dim = 128;
       // gizmo size in px (ViewHelper's own dim)
+      /** Shift the gizmo this many px left of the bottom-right corner (0 = corner). */
+      rightOffset = 0;
       /**
        * Called when the user clicks an axis. `dir` is the unit direction from the
        * orbit target toward the desired camera position (already nudged off the
@@ -3184,28 +3187,36 @@ var init_dist = __esm({
         this.orthoCamera.updateMatrixWorld();
       }
       /**
-       * Render the gizmo (bottom-right, ViewHelper's native corner). Call from a
-       * post-render callback after the main scene renders. ViewHelper.render mirrors
-       * the main camera's orientation and confines itself to a corner viewport;
-       * scissor is already off (the loop resets it before post-render callbacks).
+       * Render the gizmo into the bottom-right corner (shifted left by `rightOffset`).
+       * Call from a post-render callback after the main scene renders. Mirrors
+       * ViewHelper.render() but with our own viewport rect; scissor is already off
+       * (the loop resets it before post-render callbacks).
        */
       render() {
-        const el = this.sm.renderer.domElement;
+        const renderer = this.sm.renderer;
+        const el = renderer.domElement;
         if (el.clientWidth === 0 || el.clientHeight === 0) return;
-        this.helper.render(this.sm.renderer);
+        this.helper.quaternion.copy(this.sm.camera.quaternion).invert();
+        this.helper.updateMatrixWorld();
+        const x = el.clientWidth - this.dim - this.rightOffset;
+        renderer.getViewport(this._savedVp);
+        renderer.clearDepth();
+        renderer.setViewport(x, 0, this.dim, this.dim);
+        renderer.render(this.helper, this.orthoCamera);
+        renderer.setViewport(this._savedVp.x, this._savedVp.y, this._savedVp.z, this._savedVp.w);
       }
       /**
-       * Hit-test a click against the gizmo axes (bottom-right dim×dim square).
-       * Returns true (and invokes `onAxisSelect`) if an axis was clicked; false to
-       * let the click fall through to normal viewport handling.
+       * Hit-test a click against the gizmo axes (bottom-right dim×dim square, shifted
+       * left by `rightOffset`). Returns true (and invokes `onAxisSelect`) if an axis
+       * was clicked; false to let the click fall through to normal viewport handling.
        */
       handleClick(clientX, clientY) {
         if (!this.onAxisSelect) return false;
         const el = this.sm.renderer.domElement;
         const rect = el.getBoundingClientRect();
         const dim = this.dim;
-        const offsetX = rect.left + (el.offsetWidth - dim);
-        const offsetY = rect.top + (el.offsetHeight - dim);
+        const offsetX = rect.right - this.rightOffset - dim;
+        const offsetY = rect.bottom - dim;
         if (clientX < offsetX || clientX > offsetX + dim) return false;
         if (clientY < offsetY || clientY > offsetY + dim) return false;
         this._mouse.set(
@@ -4165,7 +4176,18 @@ function Viewport({ className }) {
       }
     };
     axisRef.current = axisGizmo;
-    const axisFrame = () => axisGizmo.render();
+    let sidebarEl = null;
+    const axisFrame = () => {
+      if (!sidebarEl) sidebarEl = document.querySelector("[data-pcv-sidebar]");
+      if (sidebarEl) {
+        const cr = sm.renderer.domElement.getBoundingClientRect();
+        const sr = sidebarEl.getBoundingClientRect();
+        axisGizmo.rightOffset = Math.max(0, cr.right - sr.left + 12);
+      } else {
+        axisGizmo.rightOffset = 0;
+      }
+      axisGizmo.render();
+    };
     sm.addPostRenderCallback(axisFrame);
     const magnifier = new exports.MagnifierRenderer(sm);
     magnifier.hideDuringRender(() => measureMgr.snapIndicator);
@@ -7491,15 +7513,13 @@ function WorkspaceLayout({ className }) {
         /* @__PURE__ */ jsxRuntime.jsxs(
           "div",
           {
+            "data-pcv-sidebar": true,
             className: cn(
               "absolute z-30 transition-transform duration-200",
               // Mobile: full-bleed overlay inset from the notch / home indicator so
               // its scroll area isn't hidden by the OS status bar or browser nav bar.
               "top-[calc(3.5rem+env(safe-area-inset-top))] md:top-16",
-              // md+: stop ~9rem above the bottom so the bottom-right axis gizmo
-              // (native ViewHelper, 128px corner) stays fully clear of the sidebar.
-              // Mobile: full-bleed overlay (it covers the gizmo intentionally when open).
-              "bottom-[env(safe-area-inset-bottom)] md:bottom-36",
+              "bottom-[env(safe-area-inset-bottom)] md:bottom-10",
               "right-[env(safe-area-inset-right)] md:right-3",
               "w-full max-w-sm md:w-72 xl:w-80",
               sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+0.75rem)]"
@@ -8026,7 +8046,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "59199e4 \xB7 2026-07-07 09:59Z" ;
+var PCV_BUILD = "59934a4 \xB7 2026-07-07 10:50Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
