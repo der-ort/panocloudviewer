@@ -489,6 +489,8 @@ declare class MeasurementManager {
     addVolumeMeasurement(box: THREE.Box3): Measurement | null;
     private buildVolumeBoxObjects;
     private compute;
+    /** Total 3D length along a polyline (sum of consecutive segment lengths). */
+    private pathLength;
     private polygonArea;
     private convexVolume;
     /**
@@ -906,32 +908,49 @@ declare class ClipManager {
 }
 
 /**
- * Renders a small XYZ orientation widget in the bottom-left corner of the
- * viewport using a second render pass with scissor clipping.
+ * World-orientation gizmo in the bottom-left corner, using three.js's native
+ * {@link ViewHelper} for the visual (the colored X/Y/Z axis balls + labels).
  *
- * Flat, technical-drawing style — no lighting, MeshBasicMaterial only.
- * Shows world-space orientation: the widget camera mirrors the main camera's
- * rotation so the user always sees how X, Y, Z axes are oriented relative
- * to the current view.
+ * Two deliberate deviations from `ViewHelper`'s out-of-the-box behavior, both
+ * because this scene is **Z-up** with a single OrbitControls:
+ *  1. **Placement** — `ViewHelper.render()` hard-codes the bottom-RIGHT corner,
+ *     where our minimap lives. We render its gizmo Object3D ourselves into a
+ *     bottom-LEFT viewport instead (reusing ViewHelper's own ortho camera params).
+ *  2. **Click-to-snap** — `ViewHelper.handleClick()` animates the camera with
+ *     hard-coded **Y-up** target orientations and never touches OrbitControls,
+ *     which would fight our Z-up setup (the "axis shift" bug). So we do our own
+ *     hit-test against the gizmo axes and fly via the callback, which the
+ *     Viewport wires to the Z-up-safe CameraAnimator.
  */
-declare class AxisWidget {
-    private _scene;
-    private _camera;
-    private _disposables;
-    private _materials;
+declare class AxisGizmo {
     readonly sm: SceneManager;
-    constructor(sm: SceneManager);
-    private _buildAxes;
-    /** Create a canvas-based sprite with the axis letter */
-    private _makeLabel;
-    /**
-     * Render the widget into a scissor region in the bottom-left corner.
-     * Must be called from a post-render callback after the main scene renders.
-     */
+    private helper;
+    /** Matches ViewHelper's internal ortho camera (frustum + position). */
+    private orthoCamera;
+    private raycaster;
     private _savedVp;
-    private _savedSc;
-    private _offset;
+    private _mouse;
+    private readonly dim;
+    private readonly margin;
+    /**
+     * Called when the user clicks an axis. `dir` is the unit direction from the
+     * orbit target toward the desired camera position (already nudged off the
+     * ±Z pole so the Z-up orbit stays stable). The Viewport flies the camera there.
+     */
+    onAxisSelect: ((dir: THREE.Vector3) => void) | null;
+    constructor(sm: SceneManager);
+    /**
+     * Render the gizmo into the bottom-left corner. Call from a post-render
+     * callback (after the main scene renders). Mirrors ViewHelper.render() but
+     * with our own viewport rect.
+     */
     render(): void;
+    /**
+     * Hit-test a click against the gizmo axes. Returns true (and invokes
+     * `onAxisSelect`) if an axis was clicked; false to let the click fall through
+     * to normal viewport handling.
+     */
+    handleClick(clientX: number, clientY: number): boolean;
     dispose(): void;
 }
 
@@ -1065,4 +1084,4 @@ declare function formatCoord(x: number, y: number, z: number, decimals?: number)
 /** Export measurements as a CSV string */
 declare function exportMeasurementsCSV(measurements: Measurement[]): string;
 
-export { type ActiveTool, AxisWidget, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type GeoInfo, type LocalSource, MagnifierRenderer, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type RecordOptions, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };
+export { type ActiveTool, AxisGizmo, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type GeoInfo, type LocalSource, MagnifierRenderer, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type RecordOptions, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };

@@ -63,7 +63,7 @@ export class SceneManager {
     // internally in its shaders. SRGBColorSpace would double-apply gamma.
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     // Disable autoClear — we call renderer.clear() explicitly at the top of
-    // each frame so that post-render callbacks (AxisWidget scissor pass) can
+    // each frame so that post-render callbacks (AxisGizmo overlay pass) can
     // render overlays without wiping the main scene.
     this.renderer.autoClear = false;
     canvas.appendChild(this.renderer.domElement);
@@ -161,7 +161,7 @@ export class SceneManager {
       // may leave scissorTest enabled or modify the viewport during its render.
       this.renderer.setScissorTest(false);
 
-      // Post-render callbacks (AxisWidget scissor pass, etc.)
+      // Post-render callbacks (AxisGizmo overlay pass, etc.)
       for (const cb of this.postRenderCallbacks) cb();
 
       // FPS counter

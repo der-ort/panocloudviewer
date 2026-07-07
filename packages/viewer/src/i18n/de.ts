@@ -151,6 +151,7 @@ export const de = createLocale(en, {
     hintHeight: "Start- dann Endpunkt klicken",
     hintArea: "Polygonpunkte klicken • Rechtsklick zum Schließen",
     hintAngle: "3 Punkte klicken (Mittelpunkt ist der Scheitelpunkt)",
+    hintProfile: "Punkte entlang eines Pfades klicken • Rechtsklick zum Beenden",
     hintSectionBox: "Ziehen um Ausschnittrahmen zu definieren",
     hintVolumeFootprint: "Ziehen um die Volumen-Grundfläche zu zeichnen",
     hintVolumeHeight: "Maus hoch/runter für die Höhe • Klick zum Bestätigen",

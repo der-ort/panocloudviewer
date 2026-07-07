@@ -414,8 +414,16 @@ export class MeasurementManager {
       }
       case "area": return this.polygonArea(pts);
       case "volume": return this.convexVolume(pts);
+      case "profile": return this.pathLength(pts);
       default: return 0;
     }
+  }
+
+  /** Total 3D length along a polyline (sum of consecutive segment lengths). */
+  private pathLength(pts: THREE.Vector3[]): number {
+    let total = 0;
+    for (let i = 0; i < pts.length - 1; i++) total += pts[i].distanceTo(pts[i + 1]);
+    return total;
   }
 
   private polygonArea(pts: THREE.Vector3[]): number {
@@ -531,6 +539,7 @@ export class MeasurementManager {
       switch (m.type) {
         case "distance": text = formatLength(m.value); break;
         case "height":   text = formatLength(m.value); break;
+        case "profile":  text = formatLength(m.value); break;
         case "area":     text = formatArea(m.value); break;
         case "angle":    text = formatAngle(m.value); break;
         case "volume":   text = formatVolume(m.value); break;

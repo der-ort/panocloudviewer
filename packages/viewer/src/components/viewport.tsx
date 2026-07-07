@@ -13,7 +13,7 @@ import { CameraAnimator } from "@der-ort/pano-cloud-viewer-core";
 import { ExportManager } from "@der-ort/pano-cloud-viewer-core";
 import { MinimapRenderer } from "@der-ort/pano-cloud-viewer-core";
 import { ClipManager } from "@der-ort/pano-cloud-viewer-core";
-import { AxisWidget } from "@der-ort/pano-cloud-viewer-core";
+import { AxisGizmo } from "@der-ort/pano-cloud-viewer-core";
 import { MagnifierRenderer } from "@der-ort/pano-cloud-viewer-core";
 import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
 import { useMinimapResize } from "../hooks/use-minimap-resize";
@@ -60,7 +60,7 @@ export function Viewport({ className }: ViewportProps) {
   const minimapRef = useRef<MinimapRenderer | null>(null);
   const clipRef = useRef<ClipManager | null>(null);
   const animRef = useRef<CameraAnimator | null>(null);
-  const axisRef = useRef<AxisWidget | null>(null);
+  const axisRef = useRef<AxisGizmo | null>(null);
   const magRef = useRef<MagnifierRenderer | null>(null);
 
   // Minimap pixel size + corner-drag resize (window listeners cleaned up on unmount).
@@ -166,10 +166,21 @@ export function Viewport({ className }: ViewportProps) {
     const minimapFrame = () => minimapRdr.update();
     sm.addFrameCallback(minimapFrame);
 
-    // Axis widget — post-render so it draws on top
-    const axisWidget = new AxisWidget(sm);
-    axisRef.current = axisWidget;
-    const axisFrame = () => axisWidget.render();
+    // Native three.js ViewHelper gizmo (bottom-left) — post-render so it draws
+    // on top. Clicking an axis flies the camera there via the Z-up-safe
+    // animator (keeping camera.up = (0,0,1); ViewHelper's own Y-up click
+    // animation would fight OrbitControls — see AxisGizmo).
+    const axisGizmo = new AxisGizmo(sm);
+    axisGizmo.onAxisSelect = (dir) => {
+      const target = sm.controls.target.clone();
+      const dist = sm.camera.position.distanceTo(target) || 10;
+      const position = target.clone().addScaledVector(dir, dist);
+      const up = new THREE.Vector3(0, 0, 1);
+      if (anim) anim.flyTo({ position, target, up, duration: 500 });
+      else { sm.camera.position.copy(position); sm.camera.up.copy(up); sm.controls.update(); }
+    };
+    axisRef.current = axisGizmo;
+    const axisFrame = () => axisGizmo.render();
     sm.addPostRenderCallback(axisFrame);
 
     // Picking magnifier — zoom inset while measuring (post-render, no-op when off).
@@ -226,7 +237,7 @@ export function Viewport({ className }: ViewportProps) {
       markerMgr.dispose();
       minimapRdr.dispose();
       clipMgr.dispose();
-      axisWidget.dispose();
+      axisGizmo.dispose();
       initialized.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -642,6 +653,10 @@ export function Viewport({ className }: ViewportProps) {
   }, [activeTool, buildClipDraftAt, footprintSlab]);
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // Axis gizmo (bottom-left) — clicking an axis flies to that view and
+    // consumes the click, in ANY tool mode.
+    if (axisRef.current?.handleClick(e.clientX, e.clientY)) return;
+
     if (activeTool === "section-box") return;
 
     const sm = smRef.current;
@@ -774,6 +789,7 @@ export function Viewport({ className }: ViewportProps) {
           {activeTool === "measure-height" && t.hintHeight}
           {activeTool === "measure-area" && t.hintArea}
           {activeTool === "measure-angle" && t.hintAngle}
+          {activeTool === "measure-profile" && t.hintProfile}
           {activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? t.hintVolumeHeight : t.hintVolumeFootprint)}
           {activeTool === "section-box" && t.hintSectionBox}
         </div>

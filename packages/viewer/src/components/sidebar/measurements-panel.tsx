@@ -12,7 +12,7 @@ import type { Measurement } from "@der-ort/pano-cloud-viewer-core";
 function formatValue(m: Measurement): string {
   if (m.value === undefined) return "—";
   switch (m.type) {
-    case "distance": case "height": return formatLength(m.value);
+    case "distance": case "height": case "profile": return formatLength(m.value);
     case "area":     return formatArea(m.value);
     case "volume":   return formatVolume(m.value);
     case "angle":    return formatAngle(m.value);

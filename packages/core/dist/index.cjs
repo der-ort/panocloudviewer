@@ -2,6 +2,7 @@
 
 var THREE5 = require('three');
 var OrbitControls_js = require('three/examples/jsm/controls/OrbitControls.js');
+var ViewHelper_js = require('three/examples/jsm/helpers/ViewHelper.js');
 
 function _interopNamespace(e) {
   if (e && e.__esModule) return e;
@@ -1302,9 +1303,17 @@ var MeasurementManager = class {
         return this.polygonArea(pts);
       case "volume":
         return this.convexVolume(pts);
+      case "profile":
+        return this.pathLength(pts);
       default:
         return 0;
     }
+  }
+  /** Total 3D length along a polyline (sum of consecutive segment lengths). */
+  pathLength(pts) {
+    let total = 0;
+    for (let i = 0; i < pts.length - 1; i++) total += pts[i].distanceTo(pts[i + 1]);
+    return total;
   }
   polygonArea(pts) {
     if (pts.length < 3) return 0;
@@ -1413,6 +1422,9 @@ var MeasurementManager = class {
           text = formatLength(m.value);
           break;
         case "height":
+          text = formatLength(m.value);
+          break;
+        case "profile":
           text = formatLength(m.value);
           break;
         case "area":
@@ -3091,128 +3103,87 @@ var ClipManager = class {
     }
   }
 };
-var AxisWidget = class {
-  _scene;
-  _camera;
-  _disposables = [];
-  _materials = [];
+var AxisGizmo = class {
   sm;
+  helper;
+  /** Matches ViewHelper's internal ortho camera (frustum + position). */
+  orthoCamera = new THREE5__namespace.OrthographicCamera(-2, 2, 2, -2, 0, 4);
+  raycaster = new THREE5__namespace.Raycaster();
+  _savedVp = new THREE5__namespace.Vector4();
+  _mouse = new THREE5__namespace.Vector2();
+  dim = 128;
+  // gizmo size in px (ViewHelper's own dim)
+  margin = 8;
+  // inset from the corner
+  /**
+   * Called when the user clicks an axis. `dir` is the unit direction from the
+   * orbit target toward the desired camera position (already nudged off the
+   * ±Z pole so the Z-up orbit stays stable). The Viewport flies the camera there.
+   */
+  onAxisSelect = null;
   constructor(sm) {
     this.sm = sm;
-    this._scene = new THREE5__namespace.Scene();
-    this._scene.background = null;
-    this._camera = new THREE5__namespace.PerspectiveCamera(50, 1, 0.1, 100);
-    this._buildAxes();
-  }
-  _buildAxes() {
-    const axes = [
-      { dir: new THREE5__namespace.Vector3(1, 0, 0), color: 15087942, label: "X" },
-      // red
-      { dir: new THREE5__namespace.Vector3(0, 1, 0), color: 2792847, label: "Y" },
-      // teal
-      { dir: new THREE5__namespace.Vector3(0, 0, 1), color: 4553629, label: "Z" }
-      // blue
-    ];
-    for (const axis of axes) {
-      const mat = new THREE5__namespace.MeshBasicMaterial({ color: axis.color });
-      this._materials.push(mat);
-      const quat = new THREE5__namespace.Quaternion().setFromUnitVectors(
-        new THREE5__namespace.Vector3(0, 1, 0),
-        axis.dir
-      );
-      const shaftGeo = new THREE5__namespace.CylinderGeometry(0.03, 0.03, 0.65, 6);
-      shaftGeo.translate(0, 0.325, 0);
-      shaftGeo.applyQuaternion(quat);
-      this._scene.add(new THREE5__namespace.Mesh(shaftGeo, mat));
-      this._disposables.push(shaftGeo);
-      const coneGeo = new THREE5__namespace.ConeGeometry(0.08, 0.2, 8);
-      coneGeo.translate(0, 0.76, 0);
-      coneGeo.applyQuaternion(quat);
-      this._scene.add(new THREE5__namespace.Mesh(coneGeo, mat));
-      this._disposables.push(coneGeo);
-      const sprite = this._makeLabel(axis.label, axis.color);
-      const tipPos = axis.dir.clone().multiplyScalar(1.05);
-      sprite.position.copy(tipPos);
-      sprite.scale.set(0.28, 0.28, 1);
-      this._scene.add(sprite);
-    }
-  }
-  /** Create a canvas-based sprite with the axis letter */
-  _makeLabel(letter, color) {
-    const res = 64;
-    const canvas = document.createElement("canvas");
-    canvas.width = res;
-    canvas.height = res;
-    const ctx = canvas.getContext("2d");
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = `bold ${res * 0.6}px "Inter", system-ui, sans-serif`;
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.fillText(letter, res / 2 + 1, res / 2 + 1);
-    const hex = "#" + color.toString(16).padStart(6, "0");
-    ctx.fillStyle = hex;
-    ctx.fillText(letter, res / 2, res / 2);
-    const tex = new THREE5__namespace.CanvasTexture(canvas);
-    tex.minFilter = THREE5__namespace.LinearFilter;
-    const mat = new THREE5__namespace.SpriteMaterial({
-      map: tex,
-      transparent: true,
-      depthTest: false
-    });
-    this._materials.push(mat);
-    return new THREE5__namespace.Sprite(mat);
+    this.helper = new ViewHelper_js.ViewHelper(sm.camera, sm.renderer.domElement);
+    this.helper.setLabels("X", "Y", "Z");
+    this.orthoCamera.position.set(0, 0, 2);
   }
   /**
-   * Render the widget into a scissor region in the bottom-left corner.
-   * Must be called from a post-render callback after the main scene renders.
+   * Render the gizmo into the bottom-left corner. Call from a post-render
+   * callback (after the main scene renders). Mirrors ViewHelper.render() but
+   * with our own viewport rect.
    */
-  // Reused scratch — render() runs every frame; don't allocate per frame.
-  _savedVp = new THREE5__namespace.Vector4();
-  _savedSc = new THREE5__namespace.Vector4();
-  _offset = new THREE5__namespace.Vector3();
   render() {
     const renderer = this.sm.renderer;
     const el = renderer.domElement;
-    const W = el.clientWidth;
-    const H = el.clientHeight;
-    if (W === 0 || H === 0) return;
-    const size = 100;
-    const margin = 10;
-    const savedVp = this._savedVp;
-    const savedSc = this._savedSc;
-    renderer.getViewport(savedVp);
-    renderer.getScissor(savedSc);
-    const savedScTest = renderer.getScissorTest();
-    const savedAutoClear = renderer.autoClear;
-    const dist = 3;
-    const offset = this._offset.set(0, 0, dist).applyQuaternion(
-      this.sm.camera.quaternion
-    );
-    this._camera.position.copy(offset);
-    this._camera.up.copy(this.sm.camera.up);
-    this._camera.lookAt(0, 0, 0);
-    const x = margin;
-    const y = margin;
-    renderer.autoClear = false;
-    renderer.setScissorTest(true);
-    renderer.setScissor(x, y, size, size);
-    renderer.setViewport(x, y, size, size);
+    if (el.clientWidth === 0 || el.clientHeight === 0) return;
+    this.helper.quaternion.copy(this.sm.camera.quaternion).invert();
+    this.helper.updateMatrixWorld();
+    renderer.getViewport(this._savedVp);
+    const savedScissorTest = renderer.getScissorTest();
+    renderer.setScissorTest(false);
     renderer.clearDepth();
-    renderer.render(this._scene, this._camera);
-    renderer.setViewport(savedVp);
-    renderer.setScissor(savedSc);
-    renderer.setScissorTest(savedScTest);
-    renderer.autoClear = savedAutoClear;
+    renderer.setViewport(this.margin, this.margin, this.dim, this.dim);
+    renderer.render(this.helper, this.orthoCamera);
+    renderer.setViewport(this._savedVp.x, this._savedVp.y, this._savedVp.z, this._savedVp.w);
+    renderer.setScissorTest(savedScissorTest);
+  }
+  /**
+   * Hit-test a click against the gizmo axes. Returns true (and invokes
+   * `onAxisSelect`) if an axis was clicked; false to let the click fall through
+   * to normal viewport handling.
+   */
+  handleClick(clientX, clientY) {
+    if (!this.onAxisSelect) return false;
+    const el = this.sm.renderer.domElement;
+    const rect = el.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const pyFromBottom = rect.height - (clientY - rect.top);
+    if (px < this.margin || px > this.margin + this.dim) return false;
+    if (pyFromBottom < this.margin || pyFromBottom > this.margin + this.dim) return false;
+    this._mouse.set(
+      (px - this.margin) / this.dim * 2 - 1,
+      (pyFromBottom - this.margin) / this.dim * 2 - 1
+    );
+    this.raycaster.setFromCamera(this._mouse, this.orthoCamera);
+    const hits = this.raycaster.intersectObjects(this.helper.children, false);
+    const hit = hits.find((h) => typeof h.object.userData.type === "string");
+    if (!hit) return false;
+    const dir = AXIS_DIR[hit.object.userData.type];
+    if (!dir) return false;
+    this.onAxisSelect(dir.clone());
+    return true;
   }
   dispose() {
-    for (const g of this._disposables) g.dispose();
-    for (const m of this._materials) {
-      if (m instanceof THREE5__namespace.SpriteMaterial) m.map?.dispose();
-      m.dispose();
-    }
-    this._disposables = [];
-    this._materials = [];
+    this.helper.dispose();
   }
+};
+var AXIS_DIR = {
+  posX: new THREE5__namespace.Vector3(1, 0, 0),
+  negX: new THREE5__namespace.Vector3(-1, 0, 0),
+  posY: new THREE5__namespace.Vector3(0, 1, 0),
+  negY: new THREE5__namespace.Vector3(0, -1, 0),
+  posZ: new THREE5__namespace.Vector3(0, -0.035, 1).normalize(),
+  negZ: new THREE5__namespace.Vector3(0, -0.035, -1).normalize()
 };
 var MagnifierRenderer = class _MagnifierRenderer {
   sm;
@@ -3525,7 +3496,7 @@ function createAdapter(source) {
   }
 }
 
-exports.AxisWidget = AxisWidget;
+exports.AxisGizmo = AxisGizmo;
 exports.CameraAnimator = CameraAnimator;
 exports.ClipManager = ClipManager;
 exports.DISPLAY_PRESETS = DISPLAY_PRESETS;

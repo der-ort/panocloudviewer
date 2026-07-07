@@ -150,6 +150,7 @@ export const en: ViewerLocale = {
     hintHeight: "Click start then end point",
     hintArea: "Click polygon vertices • Right-click to close",
     hintAngle: "Click 3 points (vertex is middle)",
+    hintProfile: "Click points along a path • Right-click to finish",
     hintSectionBox: "Drag to define clipping box",
     hintVolumeFootprint: "Drag to draw volume footprint",
     hintVolumeHeight: "Move mouse up/down to set height • Click to confirm",

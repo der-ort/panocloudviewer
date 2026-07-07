@@ -501,6 +501,8 @@ declare class MeasurementManager {
     addVolumeMeasurement(box: THREE.Box3): Measurement | null;
     private buildVolumeBoxObjects;
     private compute;
+    /** Total 3D length along a polyline (sum of consecutive segment lengths). */
+    private pathLength;
     private polygonArea;
     private convexVolume;
     /**
@@ -918,32 +920,49 @@ declare class ClipManager {
 }
 
 /**
- * Renders a small XYZ orientation widget in the bottom-left corner of the
- * viewport using a second render pass with scissor clipping.
+ * World-orientation gizmo in the bottom-left corner, using three.js's native
+ * {@link ViewHelper} for the visual (the colored X/Y/Z axis balls + labels).
  *
- * Flat, technical-drawing style — no lighting, MeshBasicMaterial only.
- * Shows world-space orientation: the widget camera mirrors the main camera's
- * rotation so the user always sees how X, Y, Z axes are oriented relative
- * to the current view.
+ * Two deliberate deviations from `ViewHelper`'s out-of-the-box behavior, both
+ * because this scene is **Z-up** with a single OrbitControls:
+ *  1. **Placement** — `ViewHelper.render()` hard-codes the bottom-RIGHT corner,
+ *     where our minimap lives. We render its gizmo Object3D ourselves into a
+ *     bottom-LEFT viewport instead (reusing ViewHelper's own ortho camera params).
+ *  2. **Click-to-snap** — `ViewHelper.handleClick()` animates the camera with
+ *     hard-coded **Y-up** target orientations and never touches OrbitControls,
+ *     which would fight our Z-up setup (the "axis shift" bug). So we do our own
+ *     hit-test against the gizmo axes and fly via the callback, which the
+ *     Viewport wires to the Z-up-safe CameraAnimator.
  */
-declare class AxisWidget {
-    private _scene;
-    private _camera;
-    private _disposables;
-    private _materials;
+declare class AxisGizmo {
     readonly sm: SceneManager;
-    constructor(sm: SceneManager);
-    private _buildAxes;
-    /** Create a canvas-based sprite with the axis letter */
-    private _makeLabel;
-    /**
-     * Render the widget into a scissor region in the bottom-left corner.
-     * Must be called from a post-render callback after the main scene renders.
-     */
+    private helper;
+    /** Matches ViewHelper's internal ortho camera (frustum + position). */
+    private orthoCamera;
+    private raycaster;
     private _savedVp;
-    private _savedSc;
-    private _offset;
+    private _mouse;
+    private readonly dim;
+    private readonly margin;
+    /**
+     * Called when the user clicks an axis. `dir` is the unit direction from the
+     * orbit target toward the desired camera position (already nudged off the
+     * ±Z pole so the Z-up orbit stays stable). The Viewport flies the camera there.
+     */
+    onAxisSelect: ((dir: THREE.Vector3) => void) | null;
+    constructor(sm: SceneManager);
+    /**
+     * Render the gizmo into the bottom-left corner. Call from a post-render
+     * callback (after the main scene renders). Mirrors ViewHelper.render() but
+     * with our own viewport rect.
+     */
     render(): void;
+    /**
+     * Hit-test a click against the gizmo axes. Returns true (and invokes
+     * `onAxisSelect`) if an axis was clicked; false to let the click fall through
+     * to normal viewport handling.
+     */
+    handleClick(clientX: number, clientY: number): boolean;
     dispose(): void;
 }
 
@@ -1219,6 +1238,7 @@ interface ViewerLocale {
         hintHeight: string;
         hintArea: string;
         hintAngle: string;
+        hintProfile: string;
         hintSectionBox: string;
         hintVolumeFootprint: string;
         hintVolumeHeight: string;
@@ -1875,4 +1895,4 @@ declare const en: ViewerLocale;
 
 declare const de: ViewerLocale;
 
-export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type GeoInfo, type LocalSource, LocaleProvider, MagnifierRenderer, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, type RecordOptions, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useFps, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, type ActiveTool, AxisGizmo, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type GeoInfo, type LocalSource, LocaleProvider, MagnifierRenderer, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, type RecordOptions, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useFps, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };

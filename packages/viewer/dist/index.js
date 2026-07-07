@@ -1,5 +1,6 @@
 import * as THREE5 from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper.js';
 import React27, { createContext, lazy, useContext, useSyncExternalStore, useState, useRef, useCallback, useEffect, useReducer, useMemo, Suspense } from 'react';
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
 import { clsx } from 'clsx';
@@ -152,7 +153,7 @@ function createAdapter(source) {
       return new S3SourceAdapter(source.basePath);
   }
 }
-var SceneManager, PointCloudLoader, EASINGS, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, _muxerPromise, ExportManager, MinimapRenderer, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, RING_COLOR, RING_HOVER_COLOR, RING_DRAG_COLOR, RotationRingController, _nextId, ClipManager, AxisWidget, MagnifierRenderer, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
+var SceneManager, PointCloudLoader, EASINGS, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, _muxerPromise, ExportManager, MinimapRenderer, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, RING_COLOR, RING_HOVER_COLOR, RING_DRAG_COLOR, RotationRingController, _nextId, ClipManager, AxisGizmo, AXIS_DIR, MagnifierRenderer, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
 var init_dist = __esm({
   "../core/dist/index.js"() {
     SceneManager = class {
@@ -1340,9 +1341,17 @@ var init_dist = __esm({
             return this.polygonArea(pts);
           case "volume":
             return this.convexVolume(pts);
+          case "profile":
+            return this.pathLength(pts);
           default:
             return 0;
         }
+      }
+      /** Total 3D length along a polyline (sum of consecutive segment lengths). */
+      pathLength(pts) {
+        let total = 0;
+        for (let i = 0; i < pts.length - 1; i++) total += pts[i].distanceTo(pts[i + 1]);
+        return total;
       }
       polygonArea(pts) {
         if (pts.length < 3) return 0;
@@ -1451,6 +1460,9 @@ var init_dist = __esm({
               text = formatLength(m.value);
               break;
             case "height":
+              text = formatLength(m.value);
+              break;
+            case "profile":
               text = formatLength(m.value);
               break;
             case "area":
@@ -3117,128 +3129,87 @@ var init_dist = __esm({
         }
       }
     };
-    AxisWidget = class {
-      _scene;
-      _camera;
-      _disposables = [];
-      _materials = [];
+    AxisGizmo = class {
       sm;
+      helper;
+      /** Matches ViewHelper's internal ortho camera (frustum + position). */
+      orthoCamera = new THREE5.OrthographicCamera(-2, 2, 2, -2, 0, 4);
+      raycaster = new THREE5.Raycaster();
+      _savedVp = new THREE5.Vector4();
+      _mouse = new THREE5.Vector2();
+      dim = 128;
+      // gizmo size in px (ViewHelper's own dim)
+      margin = 8;
+      // inset from the corner
+      /**
+       * Called when the user clicks an axis. `dir` is the unit direction from the
+       * orbit target toward the desired camera position (already nudged off the
+       * ±Z pole so the Z-up orbit stays stable). The Viewport flies the camera there.
+       */
+      onAxisSelect = null;
       constructor(sm) {
         this.sm = sm;
-        this._scene = new THREE5.Scene();
-        this._scene.background = null;
-        this._camera = new THREE5.PerspectiveCamera(50, 1, 0.1, 100);
-        this._buildAxes();
-      }
-      _buildAxes() {
-        const axes = [
-          { dir: new THREE5.Vector3(1, 0, 0), color: 15087942, label: "X" },
-          // red
-          { dir: new THREE5.Vector3(0, 1, 0), color: 2792847, label: "Y" },
-          // teal
-          { dir: new THREE5.Vector3(0, 0, 1), color: 4553629, label: "Z" }
-          // blue
-        ];
-        for (const axis of axes) {
-          const mat = new THREE5.MeshBasicMaterial({ color: axis.color });
-          this._materials.push(mat);
-          const quat = new THREE5.Quaternion().setFromUnitVectors(
-            new THREE5.Vector3(0, 1, 0),
-            axis.dir
-          );
-          const shaftGeo = new THREE5.CylinderGeometry(0.03, 0.03, 0.65, 6);
-          shaftGeo.translate(0, 0.325, 0);
-          shaftGeo.applyQuaternion(quat);
-          this._scene.add(new THREE5.Mesh(shaftGeo, mat));
-          this._disposables.push(shaftGeo);
-          const coneGeo = new THREE5.ConeGeometry(0.08, 0.2, 8);
-          coneGeo.translate(0, 0.76, 0);
-          coneGeo.applyQuaternion(quat);
-          this._scene.add(new THREE5.Mesh(coneGeo, mat));
-          this._disposables.push(coneGeo);
-          const sprite = this._makeLabel(axis.label, axis.color);
-          const tipPos = axis.dir.clone().multiplyScalar(1.05);
-          sprite.position.copy(tipPos);
-          sprite.scale.set(0.28, 0.28, 1);
-          this._scene.add(sprite);
-        }
-      }
-      /** Create a canvas-based sprite with the axis letter */
-      _makeLabel(letter, color) {
-        const res = 64;
-        const canvas = document.createElement("canvas");
-        canvas.width = res;
-        canvas.height = res;
-        const ctx = canvas.getContext("2d");
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.font = `bold ${res * 0.6}px "Inter", system-ui, sans-serif`;
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillText(letter, res / 2 + 1, res / 2 + 1);
-        const hex = "#" + color.toString(16).padStart(6, "0");
-        ctx.fillStyle = hex;
-        ctx.fillText(letter, res / 2, res / 2);
-        const tex = new THREE5.CanvasTexture(canvas);
-        tex.minFilter = THREE5.LinearFilter;
-        const mat = new THREE5.SpriteMaterial({
-          map: tex,
-          transparent: true,
-          depthTest: false
-        });
-        this._materials.push(mat);
-        return new THREE5.Sprite(mat);
+        this.helper = new ViewHelper(sm.camera, sm.renderer.domElement);
+        this.helper.setLabels("X", "Y", "Z");
+        this.orthoCamera.position.set(0, 0, 2);
       }
       /**
-       * Render the widget into a scissor region in the bottom-left corner.
-       * Must be called from a post-render callback after the main scene renders.
+       * Render the gizmo into the bottom-left corner. Call from a post-render
+       * callback (after the main scene renders). Mirrors ViewHelper.render() but
+       * with our own viewport rect.
        */
-      // Reused scratch — render() runs every frame; don't allocate per frame.
-      _savedVp = new THREE5.Vector4();
-      _savedSc = new THREE5.Vector4();
-      _offset = new THREE5.Vector3();
       render() {
         const renderer = this.sm.renderer;
         const el = renderer.domElement;
-        const W = el.clientWidth;
-        const H = el.clientHeight;
-        if (W === 0 || H === 0) return;
-        const size = 100;
-        const margin = 10;
-        const savedVp = this._savedVp;
-        const savedSc = this._savedSc;
-        renderer.getViewport(savedVp);
-        renderer.getScissor(savedSc);
-        const savedScTest = renderer.getScissorTest();
-        const savedAutoClear = renderer.autoClear;
-        const dist = 3;
-        const offset = this._offset.set(0, 0, dist).applyQuaternion(
-          this.sm.camera.quaternion
-        );
-        this._camera.position.copy(offset);
-        this._camera.up.copy(this.sm.camera.up);
-        this._camera.lookAt(0, 0, 0);
-        const x = margin;
-        const y = margin;
-        renderer.autoClear = false;
-        renderer.setScissorTest(true);
-        renderer.setScissor(x, y, size, size);
-        renderer.setViewport(x, y, size, size);
+        if (el.clientWidth === 0 || el.clientHeight === 0) return;
+        this.helper.quaternion.copy(this.sm.camera.quaternion).invert();
+        this.helper.updateMatrixWorld();
+        renderer.getViewport(this._savedVp);
+        const savedScissorTest = renderer.getScissorTest();
+        renderer.setScissorTest(false);
         renderer.clearDepth();
-        renderer.render(this._scene, this._camera);
-        renderer.setViewport(savedVp);
-        renderer.setScissor(savedSc);
-        renderer.setScissorTest(savedScTest);
-        renderer.autoClear = savedAutoClear;
+        renderer.setViewport(this.margin, this.margin, this.dim, this.dim);
+        renderer.render(this.helper, this.orthoCamera);
+        renderer.setViewport(this._savedVp.x, this._savedVp.y, this._savedVp.z, this._savedVp.w);
+        renderer.setScissorTest(savedScissorTest);
+      }
+      /**
+       * Hit-test a click against the gizmo axes. Returns true (and invokes
+       * `onAxisSelect`) if an axis was clicked; false to let the click fall through
+       * to normal viewport handling.
+       */
+      handleClick(clientX, clientY) {
+        if (!this.onAxisSelect) return false;
+        const el = this.sm.renderer.domElement;
+        const rect = el.getBoundingClientRect();
+        const px = clientX - rect.left;
+        const pyFromBottom = rect.height - (clientY - rect.top);
+        if (px < this.margin || px > this.margin + this.dim) return false;
+        if (pyFromBottom < this.margin || pyFromBottom > this.margin + this.dim) return false;
+        this._mouse.set(
+          (px - this.margin) / this.dim * 2 - 1,
+          (pyFromBottom - this.margin) / this.dim * 2 - 1
+        );
+        this.raycaster.setFromCamera(this._mouse, this.orthoCamera);
+        const hits = this.raycaster.intersectObjects(this.helper.children, false);
+        const hit = hits.find((h) => typeof h.object.userData.type === "string");
+        if (!hit) return false;
+        const dir = AXIS_DIR[hit.object.userData.type];
+        if (!dir) return false;
+        this.onAxisSelect(dir.clone());
+        return true;
       }
       dispose() {
-        for (const g of this._disposables) g.dispose();
-        for (const m of this._materials) {
-          if (m instanceof THREE5.SpriteMaterial) m.map?.dispose();
-          m.dispose();
-        }
-        this._disposables = [];
-        this._materials = [];
+        this.helper.dispose();
       }
+    };
+    AXIS_DIR = {
+      posX: new THREE5.Vector3(1, 0, 0),
+      negX: new THREE5.Vector3(-1, 0, 0),
+      posY: new THREE5.Vector3(0, 1, 0),
+      negY: new THREE5.Vector3(0, -1, 0),
+      posZ: new THREE5.Vector3(0, -0.035, 1).normalize(),
+      negZ: new THREE5.Vector3(0, -0.035, -1).normalize()
     };
     MagnifierRenderer = class _MagnifierRenderer {
       sm;
@@ -3852,6 +3823,7 @@ var init_en = __esm({
         hintHeight: "Click start then end point",
         hintArea: "Click polygon vertices \u2022 Right-click to close",
         hintAngle: "Click 3 points (vertex is middle)",
+        hintProfile: "Click points along a path \u2022 Right-click to finish",
         hintSectionBox: "Drag to define clipping box",
         hintVolumeFootprint: "Drag to draw volume footprint",
         hintVolumeHeight: "Move mouse up/down to set height \u2022 Click to confirm",
@@ -4157,9 +4129,21 @@ function Viewport({ className }) {
     setClipManager(clipMgr);
     const minimapFrame = () => minimapRdr.update();
     sm.addFrameCallback(minimapFrame);
-    const axisWidget = new AxisWidget(sm);
-    axisRef.current = axisWidget;
-    const axisFrame = () => axisWidget.render();
+    const axisGizmo = new AxisGizmo(sm);
+    axisGizmo.onAxisSelect = (dir) => {
+      const target = sm.controls.target.clone();
+      const dist = sm.camera.position.distanceTo(target) || 10;
+      const position = target.clone().addScaledVector(dir, dist);
+      const up = new THREE5.Vector3(0, 0, 1);
+      if (anim) anim.flyTo({ position, target, up, duration: 500 });
+      else {
+        sm.camera.position.copy(position);
+        sm.camera.up.copy(up);
+        sm.controls.update();
+      }
+    };
+    axisRef.current = axisGizmo;
+    const axisFrame = () => axisGizmo.render();
     sm.addPostRenderCallback(axisFrame);
     const magnifier = new MagnifierRenderer(sm);
     magnifier.hideDuringRender(() => measureMgr.snapIndicator);
@@ -4201,7 +4185,7 @@ function Viewport({ className }) {
       markerMgr.dispose();
       minimapRdr.dispose();
       clipMgr.dispose();
-      axisWidget.dispose();
+      axisGizmo.dispose();
       initialized.current = false;
     };
   }, []);
@@ -4514,6 +4498,7 @@ function Viewport({ className }) {
     }
   }, [activeTool, buildClipDraftAt, footprintSlab]);
   const handleClick = useCallback((e) => {
+    if (axisRef.current?.handleClick(e.clientX, e.clientY)) return;
     if (activeTool === "section-box") return;
     const sm = smRef.current;
     if (!sm) return;
@@ -4627,6 +4612,7 @@ function Viewport({ className }) {
       activeTool === "measure-height" && t.hintHeight,
       activeTool === "measure-area" && t.hintArea,
       activeTool === "measure-angle" && t.hintAngle,
+      activeTool === "measure-profile" && t.hintProfile,
       activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? t.hintVolumeHeight : t.hintVolumeFootprint),
       activeTool === "section-box" && t.hintSectionBox
     ] }),
@@ -6034,6 +6020,7 @@ function formatValue(m) {
   switch (m.type) {
     case "distance":
     case "height":
+    case "profile":
       return formatLength(m.value);
     case "area":
       return formatArea(m.value);
@@ -8015,7 +8002,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "d600137 \xB7 2026-07-07 08:39Z" ;
+var PCV_BUILD = "7ac41d8 \xB7 2026-07-07 09:05Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
@@ -9297,6 +9284,7 @@ var de = createLocale(en, {
     hintHeight: "Start- dann Endpunkt klicken",
     hintArea: "Polygonpunkte klicken \u2022 Rechtsklick zum Schlie\xDFen",
     hintAngle: "3 Punkte klicken (Mittelpunkt ist der Scheitelpunkt)",
+    hintProfile: "Punkte entlang eines Pfades klicken \u2022 Rechtsklick zum Beenden",
     hintSectionBox: "Ziehen um Ausschnittrahmen zu definieren",
     hintVolumeFootprint: "Ziehen um die Volumen-Grundfl\xE4che zu zeichnen",
     hintVolumeHeight: "Maus hoch/runter f\xFCr die H\xF6he \u2022 Klick zum Best\xE4tigen",
@@ -9385,6 +9373,6 @@ var de = createLocale(en, {
   }
 });
 
-export { AboutDialog, AxisWidget, Button, CameraAnimator, ClassificationPanel, ClipManager, ClipToolbar, CollapsibleSidebar, ComponentsProvider, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, DisplaySettingsDialog, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MagnifierRenderer, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, MinimapRenderer, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider2 as Slider, Tabs, TabsContent, TabsList, TabsTrigger, ThemeProvider, Toggle, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useFps, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, AxisGizmo, Button, CameraAnimator, ClassificationPanel, ClipManager, ClipToolbar, CollapsibleSidebar, ComponentsProvider, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, DisplaySettingsDialog, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MagnifierRenderer, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, MinimapRenderer, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider2 as Slider, Tabs, TabsContent, TabsList, TabsTrigger, ThemeProvider, Toggle, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useFps, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

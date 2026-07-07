@@ -148,6 +148,7 @@ export interface ViewerLocale {
     hintHeight: string;
     hintArea: string;
     hintAngle: string;
+    hintProfile: string;
     hintSectionBox: string;
     hintVolumeFootprint: string;
     hintVolumeHeight: string;

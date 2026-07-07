@@ -15,7 +15,7 @@ export type { RecordOptions } from "./core/export-manager";
 export { MinimapRenderer } from "./core/minimap-renderer";
 export { ClipManager } from "./core/clip-manager";
 export type { ClipMode, ClipBoxEntry } from "./core/clip-manager";
-export { AxisWidget } from "./core/axis-widget";
+export { AxisGizmo } from "./core/axis-gizmo";
 export { MagnifierRenderer } from "./core/magnifier";
 export { PresentationManager, captureScene } from "./core/presentation-manager";
 export type { ViewerScene } from "./core/presentation-manager";
