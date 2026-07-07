@@ -297,9 +297,12 @@ export class MinimapRenderer {
     return (1 - (wy - this.worldBottom) / (this.worldTop - this.worldBottom)) * H;
   }
 
+  /** Reused scratch for the camera direction — drawn ~30×/sec. */
+  private _camDir = new THREE.Vector3();
+
   private _drawCamera(ctx: CanvasRenderingContext2D, W: number, H: number) {
     const cam = this.sceneManager.camera;
-    const dir = new THREE.Vector3();
+    const dir = this._camDir;
     cam.getWorldDirection(dir);
 
     // Clamp the indicator to the minimap edge when the camera is outside the

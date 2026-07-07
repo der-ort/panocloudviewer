@@ -278,14 +278,14 @@ var init_dist = __esm({
               this.renderer
             );
           }
-          this.frameCallbacks.forEach((cb) => cb());
+          for (const cb of this.frameCallbacks) cb();
           if (this._projection === "orthographic") {
             this.renderer.render(this.scene, this._syncOrthoCamera());
           } else {
             this.renderer.render(this.scene, this.camera);
           }
           this.renderer.setScissorTest(false);
-          this.postRenderCallbacks.forEach((cb) => cb());
+          for (const cb of this.postRenderCallbacks) cb();
           this.frameCount++;
           if (now - this.fpsInterval >= 1e3) {
             this.onFpsUpdate?.(this.frameCount);
@@ -1034,6 +1034,8 @@ var init_dist = __esm({
       _snapCross = null;
       _snapLine = null;
       _crossTexture;
+      /** Reused Color for the per-frame snap update. */
+      _snapColor = new THREE5__namespace.Color("#DCD546");
       // Shared vertex-dot texture (white disc + dark ring, tinted per measurement).
       _dotTexture;
       constructor(scene) {
@@ -1134,7 +1136,7 @@ var init_dist = __esm({
        *  - A rubber-band line from the last placed point to the snap position
        */
       updateSnap(worldPos, color) {
-        const c = new THREE5__namespace.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
+        const c = this._snapColor.set(color ?? this.activeMeasurement?.color ?? "#DCD546");
         if (!this._snapCross) {
           const mat = new THREE5__namespace.SpriteMaterial({
             map: this._getCrossTexture(),
@@ -2079,9 +2081,11 @@ var init_dist = __esm({
         const H = this.overlayCanvas?.height ?? 176;
         return (1 - (wy - this.worldBottom) / (this.worldTop - this.worldBottom)) * H;
       }
+      /** Reused scratch for the camera direction — drawn ~30×/sec. */
+      _camDir = new THREE5__namespace.Vector3();
       _drawCamera(ctx, W, H) {
         const cam = this.sceneManager.camera;
-        const dir = new THREE5__namespace.Vector3();
+        const dir = this._camDir;
         cam.getWorldDirection(dir);
         const cx = Math.min(Math.max(this._worldToCanvasX(cam.position.x), 5), W - 5);
         const cy = Math.min(Math.max(this._worldToCanvasY(cam.position.y), 5), H - 5);
@@ -3220,6 +3224,10 @@ var init_dist = __esm({
        * Render the widget into a scissor region in the bottom-left corner.
        * Must be called from a post-render callback after the main scene renders.
        */
+      // Reused scratch — render() runs every frame; don't allocate per frame.
+      _savedVp = new THREE5__namespace.Vector4();
+      _savedSc = new THREE5__namespace.Vector4();
+      _offset = new THREE5__namespace.Vector3();
       render() {
         const renderer = this.sm.renderer;
         const el = renderer.domElement;
@@ -3228,14 +3236,14 @@ var init_dist = __esm({
         if (W === 0 || H === 0) return;
         const size = 100;
         const margin = 10;
-        const savedVp = new THREE5__namespace.Vector4();
-        const savedSc = new THREE5__namespace.Vector4();
+        const savedVp = this._savedVp;
+        const savedSc = this._savedSc;
         renderer.getViewport(savedVp);
         renderer.getScissor(savedSc);
         const savedScTest = renderer.getScissorTest();
         const savedAutoClear = renderer.autoClear;
         const dist = 3;
-        const offset = new THREE5__namespace.Vector3(0, 0, dist).applyQuaternion(
+        const offset = this._offset.set(0, 0, dist).applyQuaternion(
           this.sm.camera.quaternion
         );
         this._camera.position.copy(offset);
@@ -3267,8 +3275,11 @@ var init_dist = __esm({
     exports.MagnifierRenderer = class _MagnifierRenderer {
       sm;
       enabled = false;
-      /** Latest cursor position, or null when the cursor left the canvas. */
+      /** Latest cursor position (canvas-relative CSS px), or null when off-canvas. */
       cursor = null;
+      /** Reused per-frame crop camera — copied from the main camera each render
+       *  (cloning per frame allocated a camera + matrices → GC churn). */
+      zoomCamera = new THREE5__namespace.PerspectiveCamera();
       // Frame + crosshair drawn over the inset in a second tiny pass.
       frameScene = new THREE5__namespace.Scene();
       frameCamera = new THREE5__namespace.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -3331,11 +3342,11 @@ var init_dist = __esm({
         return this.enabled;
       }
       /**
-       * Feed the latest cursor position (canvas-relative CSS px + NDC).
+       * Feed the latest cursor position (canvas-relative CSS px).
        * Call on mousemove while a measurement tool is active.
        */
-      update(nx, ny, cx, cy) {
-        this.cursor = { nx, ny, cx, cy };
+      update(cx, cy) {
+        this.cursor = { cx, cy };
       }
       /** Hide the inset (cursor left the canvas / tool deactivated). */
       clearCursor() {
@@ -3350,7 +3361,7 @@ var init_dist = __esm({
         const H = el.clientHeight;
         if (W === 0 || H === 0) return;
         const size = _MagnifierRenderer.SIZE;
-        const { nx, ny, cx, cy } = this.cursor;
+        const { cx, cy } = this.cursor;
         const pad = 24;
         let left = cx + pad;
         if (left + size > W) left = cx - pad - size;
@@ -3359,7 +3370,8 @@ var init_dist = __esm({
         left = Math.max(0, Math.min(left, W - size));
         bottom = Math.max(0, Math.min(bottom, H - size));
         const sub = size / _MagnifierRenderer.ZOOM;
-        const zoomCamera = this.sm.camera.clone();
+        const zoomCamera = this.zoomCamera;
+        zoomCamera.copy(this.sm.camera);
         zoomCamera.setViewOffset(W, H, cx - sub / 2, cy - sub / 2, sub, sub);
         zoomCamera.updateProjectionMatrix();
         const savedVp = new THREE5__namespace.Vector4();
@@ -3540,6 +3552,10 @@ function useViewer() {
   if (!ctx) throw new Error("useViewer must be used inside <ViewerProvider>");
   return ctx;
 }
+function useFps() {
+  const { subscribeFps, getFps } = useViewer();
+  return React27.useSyncExternalStore(subscribeFps, getFps, getFps);
+}
 function ViewerProvider({ config, children }) {
   const [sceneManager, _setSceneManager] = React27.useState(null);
   const [loader, _setLoader] = React27.useState(null);
@@ -3552,8 +3568,19 @@ function ViewerProvider({ config, children }) {
   const [activeTool, setActiveTool] = React27.useState("none");
   const [pointBudget, setPointBudget] = React27.useState(config.pointBudget ?? 2e6);
   const [pointSize, setPointSize] = React27.useState(1);
-  const [fps, setFps] = React27.useState(0);
-  const [pointCount, setPointCount] = React27.useState(0);
+  const fpsRef = React27.useRef(0);
+  const fpsListeners = React27.useRef(/* @__PURE__ */ new Set());
+  const setFps = React27.useCallback((v) => {
+    fpsRef.current = v;
+    fpsListeners.current.forEach((l) => l());
+  }, []);
+  const subscribeFps = React27.useCallback((cb) => {
+    fpsListeners.current.add(cb);
+    return () => {
+      fpsListeners.current.delete(cb);
+    };
+  }, []);
+  const getFps = React27.useCallback(() => fpsRef.current, []);
   const [measurementList, setMeasurementList] = React27.useState([]);
   const [showMarkers, setShowMarkers] = React27.useState(true);
   const [showMinimap, setShowMinimap] = React27.useState(config.showMinimap ?? true);
@@ -3608,10 +3635,9 @@ function ViewerProvider({ config, children }) {
     setPointBudget,
     pointSize,
     setPointSize,
-    fps,
     setFps,
-    pointCount,
-    setPointCount,
+    subscribeFps,
+    getFps,
     measurementList,
     setMeasurementList,
     showMarkers,
@@ -4137,7 +4163,14 @@ function Viewport({ className }) {
     const exporter = new exports.ExportManager(sm);
     const minimapRdr = new exports.MinimapRenderer(sm);
     const clipMgr = new exports.ClipManager(sm);
-    clipMgr.onChange = (boxes) => setClipBoxEntries(boxes);
+    let clipChangeRaf = null;
+    clipMgr.onChange = () => {
+      if (clipChangeRaf != null) return;
+      clipChangeRaf = requestAnimationFrame(() => {
+        clipChangeRaf = null;
+        setClipBoxEntries(clipMgr.getBoxes());
+      });
+    };
     clipMgr.onSelectChange = (id) => setSelectedClipBoxId(id);
     smRef.current = sm;
     loaderRef.current = loader;
@@ -4190,6 +4223,7 @@ function Viewport({ className }) {
       }
     }).catch(console.error);
     return () => {
+      if (clipChangeRaf != null) cancelAnimationFrame(clipChangeRaf);
       sm.removeFrameCallback(minimapFrame);
       sm.removePostRenderCallback(axisFrame);
       sm.removePostRenderCallback(magFrame);
@@ -4445,10 +4479,13 @@ function Viewport({ className }) {
       return;
     }
     if (activeTool.startsWith("measure-") && smRef.current) {
-      const { nx, ny } = getNDC(e);
-      scheduleSnap(nx, ny);
       const rect = e.currentTarget.getBoundingClientRect();
-      magRef.current?.update(nx, ny, e.clientX - rect.left, e.clientY - rect.top);
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const nx = cx / rect.width * 2 - 1;
+      const ny = -(cy / rect.height) * 2 + 1;
+      scheduleSnap(nx, ny);
+      magRef.current?.update(cx, cy);
     }
   }, [activeTool, scheduleSnap, buildClipDraftAt, footprintSlab, worldUnitsPerPixel]);
   const handleMouseUp = React27.useCallback((e) => {
@@ -7399,6 +7436,15 @@ function ValueBox({ value, min, max, step, scale, unit, decimals, onCommit }) {
     unit && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-[10px] text-muted-foreground/70 w-3", children: unit })
   ] });
 }
+
+// src/components/status-fps.tsx
+init_viewer_provider();
+init_locale_context();
+function StatusFps() {
+  const fps = useFps();
+  const t = useLocale().viewport;
+  return /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusFps(fps) });
+}
 var Viewport2 = React27.lazy(() => Promise.resolve().then(() => (init_viewport(), viewport_exports)).then((m) => ({ default: m.Viewport })));
 function ViewportFallback() {
   const t = useLocale().viewport;
@@ -7427,7 +7473,7 @@ function WorkspaceLayout({ className }) {
     () => typeof window === "undefined" || window.innerWidth >= 768
   );
   const [renderSettingsOpen, setRenderSettingsOpen] = React27.useState(false);
-  const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
+  const { pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
   const { metadata } = useData();
   const t = useLocale().viewport;
   const isPro = uiMode === "professional";
@@ -7506,7 +7552,7 @@ function WorkspaceLayout({ className }) {
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden md:block", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsxRuntime.jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none", children: [
           metadata && /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
           /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
-          /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.statusFps(fps) }),
+          /* @__PURE__ */ jsxRuntime.jsx(StatusFps, {}),
           activeTool !== "none" && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-[hsl(var(--brand))]", children: activeTool })
         ] }) }) })
       ]
@@ -8001,7 +8047,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "33cbe87 \xB7 2026-07-07 07:17Z" ;
+var PCV_BUILD = "d600137 \xB7 2026-07-07 08:39Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
@@ -8638,7 +8684,7 @@ function ExportPalette() {
   ] });
 }
 function WorkstationLayout({ viewport, sidebarSide = "left" }) {
-  const { fps, pointBudget, activeTool } = useViewer();
+  const { pointBudget, activeTool } = useViewer();
   const { metadata } = useData();
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "relative w-full h-full overflow-hidden bg-[hsl(var(--background))]", children: [
     /* @__PURE__ */ jsxRuntime.jsx("div", { className: "absolute inset-0", children: viewport }),
@@ -8663,10 +8709,7 @@ function WorkstationLayout({ viewport, sidebarSide = "left" }) {
             (pointBudget / 1e6).toFixed(1),
             "M"
           ] }),
-          /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
-            fps,
-            " fps"
-          ] }),
+          /* @__PURE__ */ jsxRuntime.jsx(StatusFps, {}),
           activeTool !== "none" && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-[hsl(var(--brand))]", children: activeTool })
         ]
       }
@@ -9463,6 +9506,7 @@ exports.useDisplayActions = useDisplayActions;
 exports.useDisplaySettings = useDisplaySettings;
 exports.useDraggable = useDraggable;
 exports.useExportActions = useExportActions;
+exports.useFps = useFps;
 exports.useLocale = useLocale;
 exports.useMeasurementActions = useMeasurementActions;
 exports.useNavigationActions = useNavigationActions;

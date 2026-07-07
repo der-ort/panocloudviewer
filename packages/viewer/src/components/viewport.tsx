@@ -130,7 +130,19 @@ export function Viewport({ className }: ViewportProps) {
     const minimapRdr = new MinimapRenderer(sm);
 
     const clipMgr = new ClipManager(sm);
-    clipMgr.onChange = (boxes) => setClipBoxEntries(boxes);
+    // Coalesce onChange to one React update per animation frame. During a
+    // handle drag this fires on every pointermove (high-frequency mice poll
+    // faster than the display), and each call re-renders every useViewer()
+    // consumer; the 3D box updates live through the manager regardless, so
+    // pushing the latest entries once per frame is all React needs.
+    let clipChangeRaf: number | null = null;
+    clipMgr.onChange = () => {
+      if (clipChangeRaf != null) return;
+      clipChangeRaf = requestAnimationFrame(() => {
+        clipChangeRaf = null;
+        setClipBoxEntries(clipMgr.getBoxes());
+      });
+    };
     clipMgr.onSelectChange = (id) => setSelectedClipBoxId(id);
 
     smRef.current = sm;
@@ -204,6 +216,7 @@ export function Viewport({ className }: ViewportProps) {
     }).catch(console.error);
 
     return () => {
+      if (clipChangeRaf != null) cancelAnimationFrame(clipChangeRaf);
       sm.removeFrameCallback(minimapFrame);
       sm.removePostRenderCallback(axisFrame);
       sm.removePostRenderCallback(magFrame);
@@ -544,12 +557,16 @@ export function Viewport({ className }: ViewportProps) {
 
     // Measurement snap preview — show where the point will land before clicking.
     // Throttled (see useSnapThrottle) to stay responsive on dense clouds.
+    // One getBoundingClientRect for both the NDC and the magnifier feed (each
+    // call forces a layout reflow; this runs on every mousemove while measuring).
     if (activeTool.startsWith("measure-") && smRef.current) {
-      const { nx, ny } = getNDC(e);
-      scheduleSnap(nx, ny);
-      // Feed the magnifier inset (no-op unless enabled)
       const rect = e.currentTarget.getBoundingClientRect();
-      magRef.current?.update(nx, ny, e.clientX - rect.left, e.clientY - rect.top);
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const nx = (cx / rect.width) * 2 - 1;
+      const ny = -(cy / rect.height) * 2 + 1;
+      scheduleSnap(nx, ny);
+      magRef.current?.update(cx, cy); // no-op unless the magnifier is enabled
     }
   }, [activeTool, scheduleSnap, buildClipDraftAt, footprintSlab, worldUnitsPerPixel]);
 

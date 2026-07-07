@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useRef, useState, useCallback, type ReactNode } from "react";
+import React, { createContext, useContext, useRef, useState, useCallback, useSyncExternalStore, type ReactNode } from "react";
 import type { SceneManager } from "@der-ort/pano-cloud-viewer-core";
 import type { PointCloudLoader } from "@der-ort/pano-cloud-viewer-core";
 import type { MeasurementManager } from "@der-ort/pano-cloud-viewer-core";
@@ -42,10 +42,15 @@ interface ViewerContextValue {
   setPointBudget: (v: number) => void;
   pointSize: number;
   setPointSize: (v: number) => void;
-  fps: number;
+  /**
+   * Publish the current FPS. FPS is NOT a context value (it changes every
+   * second, which would re-render every `useViewer()` consumer — i.e. the whole
+   * shell — once per second); it's published to a subscription store instead.
+   * Read it with `useFps()`, which re-renders only the calling component.
+   */
   setFps: (v: number) => void;
-  pointCount: number;
-  setPointCount: (v: number) => void;
+  subscribeFps: (cb: () => void) => () => void;
+  getFps: () => number;
   measurementList: Measurement[];
   setMeasurementList: React.Dispatch<React.SetStateAction<Measurement[]>>;
   showMarkers: boolean;
@@ -90,6 +95,17 @@ export function useViewer() {
   return ctx;
 }
 
+/**
+ * Subscribe to the live FPS. Re-renders ONLY the calling component when FPS
+ * changes (once per second) — use this in a small leaf (e.g. a status pill)
+ * rather than reading fps from `useViewer()`, which would re-render the whole
+ * subtree every second.
+ */
+export function useFps(): number {
+  const { subscribeFps, getFps } = useViewer();
+  return useSyncExternalStore(subscribeFps, getFps, getFps);
+}
+
 interface ViewerProviderProps {
   config: ViewerConfig;
   children: ReactNode;
@@ -110,8 +126,20 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   // Smaller default → crisper rendering (points don't bloat into blobs);
   // users can raise it via the Settings slider.
   const [pointSize, setPointSize] = useState(1.0);
-  const [fps, setFps] = useState(0);
-  const [pointCount, setPointCount] = useState(0);
+  // FPS lives in a ref + listener set, NOT React state — updating it every
+  // second would otherwise re-render every useViewer() consumer (the whole
+  // shell) once per second. Consumers read it via useFps() (useSyncExternalStore).
+  const fpsRef = useRef(0);
+  const fpsListeners = useRef<Set<() => void>>(new Set());
+  const setFps = useCallback((v: number) => {
+    fpsRef.current = v;
+    fpsListeners.current.forEach(l => l());
+  }, []);
+  const subscribeFps = useCallback((cb: () => void) => {
+    fpsListeners.current.add(cb);
+    return () => { fpsListeners.current.delete(cb); };
+  }, []);
+  const getFps = useCallback(() => fpsRef.current, []);
   const [measurementList, setMeasurementList] = useState<Measurement[]>([]);
   const [showMarkers, setShowMarkers] = useState(true);
   const [showMinimap, setShowMinimap] = useState(config.showMinimap ?? true);
@@ -156,8 +184,7 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
     activeTool, setActiveTool,
     pointBudget, setPointBudget,
     pointSize, setPointSize,
-    fps, setFps,
-    pointCount, setPointCount,
+    setFps, subscribeFps, getFps,
     measurementList, setMeasurementList,
     showMarkers, setShowMarkers,
     showMinimap, setShowMinimap,

@@ -13,7 +13,7 @@ export type { PanoCloudViewerProps } from "./components/pano-cloud-viewer";
 export { PCV_VERSION, PCV_BUILD, PCV_VERSION_STRING } from "./version";
 
 // ─── Providers ────────────────────────────────────────────────────────────────
-export { ViewerProvider, useViewer } from "./providers/viewer-provider";
+export { ViewerProvider, useViewer, useFps } from "./providers/viewer-provider";
 export { ThemeProvider, useTheme } from "./providers/theme-provider";
 export { DataProvider, useData } from "./providers/data-provider";
 

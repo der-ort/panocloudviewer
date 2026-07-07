@@ -24,8 +24,11 @@ import type { SceneManager } from "./scene-manager";
 export class MagnifierRenderer {
   private sm: SceneManager;
   private enabled = false;
-  /** Latest cursor position, or null when the cursor left the canvas. */
-  private cursor: { nx: number; ny: number; cx: number; cy: number } | null = null;
+  /** Latest cursor position (canvas-relative CSS px), or null when off-canvas. */
+  private cursor: { cx: number; cy: number } | null = null;
+  /** Reused per-frame crop camera — copied from the main camera each render
+   *  (cloning per frame allocated a camera + matrices → GC churn). */
+  private zoomCamera = new THREE.PerspectiveCamera();
 
   // Frame + crosshair drawn over the inset in a second tiny pass.
   private frameScene = new THREE.Scene();
@@ -90,11 +93,11 @@ export class MagnifierRenderer {
   }
 
   /**
-   * Feed the latest cursor position (canvas-relative CSS px + NDC).
+   * Feed the latest cursor position (canvas-relative CSS px).
    * Call on mousemove while a measurement tool is active.
    */
-  update(nx: number, ny: number, cx: number, cy: number): void {
-    this.cursor = { nx, ny, cx, cy };
+  update(cx: number, cy: number): void {
+    this.cursor = { cx, cy };
   }
 
   /** Hide the inset (cursor left the canvas / tool deactivated). */
@@ -112,7 +115,7 @@ export class MagnifierRenderer {
     if (W === 0 || H === 0) return;
 
     const size = MagnifierRenderer.SIZE;
-    const { nx, ny, cx, cy } = this.cursor;
+    const { cx, cy } = this.cursor;
 
     // Inset placement: offset up-right of the cursor, flipped near edges so it
     // stays fully on screen. GL viewport origin is BOTTOM-left.
@@ -124,11 +127,13 @@ export class MagnifierRenderer {
     left = Math.max(0, Math.min(left, W - size));
     bottom = Math.max(0, Math.min(bottom, H - size));
 
-    // Zoom camera: an exact clone of the main camera rendering only a
+    // Zoom camera: the main camera's pose/projection rendering only a
     // (size / ZOOM)² crop centered on the cursor — crop → magnification.
-    void nx; void ny; // NDC not needed for the crop; kept in the cursor payload for pickers
+    // copy() resets .view to the main camera's (null), then setViewOffset
+    // installs this frame's crop, so no stale offset carries over.
     const sub = size / MagnifierRenderer.ZOOM;
-    const zoomCamera = this.sm.camera.clone();
+    const zoomCamera = this.zoomCamera;
+    zoomCamera.copy(this.sm.camera);
     zoomCamera.setViewOffset(W, H, cx - sub / 2, cy - sub / 2, sub, sub);
     zoomCamera.updateProjectionMatrix();
 

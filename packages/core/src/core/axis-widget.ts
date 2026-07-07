@@ -107,6 +107,11 @@ export class AxisWidget {
    * Render the widget into a scissor region in the bottom-left corner.
    * Must be called from a post-render callback after the main scene renders.
    */
+  // Reused scratch — render() runs every frame; don't allocate per frame.
+  private _savedVp = new THREE.Vector4();
+  private _savedSc = new THREE.Vector4();
+  private _offset = new THREE.Vector3();
+
   render(): void {
     const renderer = this.sm.renderer;
     const el = renderer.domElement;
@@ -118,8 +123,8 @@ export class AxisWidget {
     const margin = 10;
 
     // Save state
-    const savedVp = new THREE.Vector4();
-    const savedSc = new THREE.Vector4();
+    const savedVp = this._savedVp;
+    const savedSc = this._savedSc;
     renderer.getViewport(savedVp);
     renderer.getScissor(savedSc);
     const savedScTest = renderer.getScissorTest();
@@ -127,7 +132,7 @@ export class AxisWidget {
 
     // Sync widget camera to main camera orientation
     const dist = 3.0;
-    const offset = new THREE.Vector3(0, 0, dist).applyQuaternion(
+    const offset = this._offset.set(0, 0, dist).applyQuaternion(
       this.sm.camera.quaternion,
     );
     this._camera.position.copy(offset);

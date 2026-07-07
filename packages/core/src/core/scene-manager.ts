@@ -148,7 +148,7 @@ export class SceneManager {
       }
 
       // Pre-render frame callbacks (minimap, etc.)
-      this.frameCallbacks.forEach(cb => cb());
+      for (const cb of this.frameCallbacks) cb();
 
       // Main render — use ortho camera when projection is orthographic
       if (this._projection === "orthographic") {
@@ -162,7 +162,7 @@ export class SceneManager {
       this.renderer.setScissorTest(false);
 
       // Post-render callbacks (AxisWidget scissor pass, etc.)
-      this.postRenderCallbacks.forEach(cb => cb());
+      for (const cb of this.postRenderCallbacks) cb();
 
       // FPS counter
       this.frameCount++;

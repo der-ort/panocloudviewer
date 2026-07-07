@@ -34,6 +34,8 @@ export class MeasurementManager {
   private _snapCross: THREE.Sprite | null = null;
   private _snapLine: THREE.Line | null = null;
   private _crossTexture?: THREE.CanvasTexture;
+  /** Reused Color for the per-frame snap update. */
+  private _snapColor = new THREE.Color("#DCD546");
   // Shared vertex-dot texture (white disc + dark ring, tinted per measurement).
   private _dotTexture?: THREE.CanvasTexture;
 
@@ -158,7 +160,8 @@ export class MeasurementManager {
    *  - A rubber-band line from the last placed point to the snap position
    */
   updateSnap(worldPos: THREE.Vector3, color?: string): void {
-    const c = new THREE.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
+    // Reused Color — updateSnap runs ~once/frame while measuring.
+    const c = this._snapColor.set(color ?? this.activeMeasurement?.color ?? "#DCD546");
 
     // ── Snap crosshair (constant on-screen size) ──
     if (!this._snapCross) {

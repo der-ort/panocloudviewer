@@ -116,7 +116,7 @@ Central Three.js scene, camera, renderer, and animation loop.
 - **`raycast(nx, ny, objects)`**: Screen-space raycast returning `THREE.Intersection[]`.
 - **`dispose()`**: Cancels animation, disconnects ResizeObserver, disposes renderer.
 - **Key fields**: `scene`, `camera`, `renderer`, `controls`, `potree` (set after lazy import), `pointClouds[]`, `flySpeed`.
-- **Provider state written**: `fps` via `onFpsUpdate` callback.
+- **Provider state written**: FPS via `onFpsUpdate` callback → `setFps` (published to the fps subscription store, NOT React state — see `useFps()`).
 
 ### `PointCloudLoader` (`core/point-cloud-loader.ts`)
 Loads Potree 2.0 point clouds via `potree-core`.
@@ -276,8 +276,10 @@ This prevents potree-core and Three.js from loading on the server.
 Core state store. Exposes:
 - Manager refs: `sceneManager`, `loader`, `measurementManager`, `markerManager`, `cameraAnimator`, `exporter`, `minimap`, `clipManager` (all `null` until Viewport initialises)
 - Setter methods for each manager (called by Viewport)
-- UI state: `activeTool`, `pointBudget`, `pointSize`, `fps`, `pointCount`, `measurementList`, `showMarkers`, `showMinimap`, `selectedCamera`, `clipBoxEntries`, `selectedClipBoxId`, `colorMode`, `navigationMode`, `projection`, `displaySettings`
+- UI state: `activeTool`, `pointBudget`, `pointSize`, `measurementList`, `showMarkers`, `showMinimap`, `showMeasurements`, `showMagnifier`, `selectedCamera`, `clipBoxEntries`, `selectedClipBoxId`, `colorMode`, `navigationMode`, `projection`, `displaySettings`
 - `config: ViewerConfig`
+
+**FPS is NOT context state — read it with `useFps()`.** FPS updates once per second; if it were a `useViewer()` value it would re-render every consumer (the whole shell) every second. Instead the provider keeps it in a ref + listener set (`setFps` publishes; `subscribeFps`/`getFps` back a `useSyncExternalStore`), and `useFps()` re-renders only the calling component. The status pills use a tiny `<StatusFps>` leaf so the per-second tick repaints just that pill. (Same reasoning motivates coalescing `clipManager.onChange → setClipBoxEntries` to one rAF per frame in the Viewport, so a high-frequency-mouse clip-handle drag doesn't re-render every consumer multiple times per frame.)
 
 **`uiScale?: number` prop (chrome-only scaling)**: `PanoCloudViewer` accepts an optional `uiScale` that scales only the UI **chrome** — toolbars, tool-rail, sidebar, floating palettes, dialogs — by setting a `--pcv-scale` CSS variable plus `zoom` on the chrome wrapper. **Default is auto from `devicePixelRatio`** (`useAutoUiScale`: 1 standard / 1.15 at DPR ≥ 1.5 / 1.25 at DPR ≥ 2, SSR-safe — renders at 1 until mounted, rebinds on DPR change); an explicit prop always wins. The 3D viewport/canvas is deliberately left at full device resolution so point-cloud rendering stays crisp.
 

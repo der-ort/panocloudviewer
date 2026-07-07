@@ -79,19 +79,6 @@ export interface Measurement {
   selected: boolean;
 }
 
-// ── Sections / clipping ──────────────────────────────────────
-
-export type SectionType = "box" | "plane";
-
-export interface ClipSection {
-  id: string;
-  type: SectionType;
-  label: string;
-  visible: boolean;
-  active: boolean;
-  /** For box: center + dimensions. For plane: position + normal. */
-  transform: THREE.Matrix4;
-}
 
 // ── Export ───────────────────────────────────────────────────
 
@@ -151,20 +138,6 @@ export interface ViewerConfig {
    * Defaults to `"photo-sphere-viewer"`.
    */
   panoEngine?: PanoEngine;
-}
-
-// ── Viewer state (context) ───────────────────────────────────
-
-export interface ViewerState {
-  pointBudget: number;
-  pointSize: number;
-  edlEnabled: boolean;
-  edlStrength: number;
-  theme: Theme;
-  activeTool: ActiveTool;
-  fps: number;
-  pointCount: number;
-  loadedPointCount: number;
 }
 
 export type ActiveTool =

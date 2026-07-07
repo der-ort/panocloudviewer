@@ -441,6 +441,8 @@ declare class MeasurementManager {
     private _snapCross;
     private _snapLine;
     private _crossTexture?;
+    /** Reused Color for the per-frame snap update. */
+    private _snapColor;
     private _dotTexture?;
     constructor(scene: THREE.Scene);
     getAll(): Measurement[];
@@ -627,6 +629,8 @@ declare class MinimapRenderer {
     private _drawNorthArrow;
     private _worldToCanvasX;
     private _worldToCanvasY;
+    /** Reused scratch for the camera direction — drawn ~30×/sec. */
+    private _camDir;
     private _drawCamera;
     /** Convert canvas pixel to world XY position */
     canvasToWorld(cx: number, cy: number): THREE.Vector2;
@@ -924,6 +928,9 @@ declare class AxisWidget {
      * Render the widget into a scissor region in the bottom-left corner.
      * Must be called from a post-render callback after the main scene renders.
      */
+    private _savedVp;
+    private _savedSc;
+    private _offset;
     render(): void;
     dispose(): void;
 }
@@ -951,8 +958,11 @@ declare class AxisWidget {
 declare class MagnifierRenderer {
     private sm;
     private enabled;
-    /** Latest cursor position, or null when the cursor left the canvas. */
+    /** Latest cursor position (canvas-relative CSS px), or null when off-canvas. */
     private cursor;
+    /** Reused per-frame crop camera — copied from the main camera each render
+     *  (cloning per frame allocated a camera + matrices → GC churn). */
+    private zoomCamera;
     private frameScene;
     private frameCamera;
     private frameDisposables;
@@ -973,10 +983,10 @@ declare class MagnifierRenderer {
     setEnabled(enabled: boolean): void;
     isEnabled(): boolean;
     /**
-     * Feed the latest cursor position (canvas-relative CSS px + NDC).
+     * Feed the latest cursor position (canvas-relative CSS px).
      * Call on mousemove while a measurement tool is active.
      */
-    update(nx: number, ny: number, cx: number, cy: number): void;
+    update(cx: number, cy: number): void;
     /** Hide the inset (cursor left the canvas / tool deactivated). */
     clearCursor(): void;
     /** Render the inset. Register as a SceneManager post-render callback. */

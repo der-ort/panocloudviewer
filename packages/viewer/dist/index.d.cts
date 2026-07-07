@@ -453,6 +453,8 @@ declare class MeasurementManager {
     private _snapCross;
     private _snapLine;
     private _crossTexture?;
+    /** Reused Color for the per-frame snap update. */
+    private _snapColor;
     private _dotTexture?;
     constructor(scene: THREE.Scene);
     getAll(): Measurement[];
@@ -639,6 +641,8 @@ declare class MinimapRenderer {
     private _drawNorthArrow;
     private _worldToCanvasX;
     private _worldToCanvasY;
+    /** Reused scratch for the camera direction — drawn ~30×/sec. */
+    private _camDir;
     private _drawCamera;
     /** Convert canvas pixel to world XY position */
     canvasToWorld(cx: number, cy: number): THREE.Vector2;
@@ -936,6 +940,9 @@ declare class AxisWidget {
      * Render the widget into a scissor region in the bottom-left corner.
      * Must be called from a post-render callback after the main scene renders.
      */
+    private _savedVp;
+    private _savedSc;
+    private _offset;
     render(): void;
     dispose(): void;
 }
@@ -963,8 +970,11 @@ declare class AxisWidget {
 declare class MagnifierRenderer {
     private sm;
     private enabled;
-    /** Latest cursor position, or null when the cursor left the canvas. */
+    /** Latest cursor position (canvas-relative CSS px), or null when off-canvas. */
     private cursor;
+    /** Reused per-frame crop camera — copied from the main camera each render
+     *  (cloning per frame allocated a camera + matrices → GC churn). */
+    private zoomCamera;
     private frameScene;
     private frameCamera;
     private frameDisposables;
@@ -985,10 +995,10 @@ declare class MagnifierRenderer {
     setEnabled(enabled: boolean): void;
     isEnabled(): boolean;
     /**
-     * Feed the latest cursor position (canvas-relative CSS px + NDC).
+     * Feed the latest cursor position (canvas-relative CSS px).
      * Call on mousemove while a measurement tool is active.
      */
-    update(nx: number, ny: number, cx: number, cy: number): void;
+    update(cx: number, cy: number): void;
     /** Hide the inset (cursor left the canvas / tool deactivated). */
     clearCursor(): void;
     /** Render the inset. Register as a SceneManager post-render callback. */
@@ -1562,10 +1572,15 @@ interface ViewerContextValue {
     setPointBudget: (v: number) => void;
     pointSize: number;
     setPointSize: (v: number) => void;
-    fps: number;
+    /**
+     * Publish the current FPS. FPS is NOT a context value (it changes every
+     * second, which would re-render every `useViewer()` consumer — i.e. the whole
+     * shell — once per second); it's published to a subscription store instead.
+     * Read it with `useFps()`, which re-renders only the calling component.
+     */
     setFps: (v: number) => void;
-    pointCount: number;
-    setPointCount: (v: number) => void;
+    subscribeFps: (cb: () => void) => () => void;
+    getFps: () => number;
     measurementList: Measurement[];
     setMeasurementList: React.Dispatch<React.SetStateAction<Measurement[]>>;
     showMarkers: boolean;
@@ -1599,6 +1614,13 @@ interface ViewerContextValue {
     config: ViewerConfig;
 }
 declare function useViewer(): ViewerContextValue;
+/**
+ * Subscribe to the live FPS. Re-renders ONLY the calling component when FPS
+ * changes (once per second) — use this in a small leaf (e.g. a status pill)
+ * rather than reading fps from `useViewer()`, which would re-render the whole
+ * subtree every second.
+ */
+declare function useFps(): number;
 interface ViewerProviderProps {
     config: ViewerConfig;
     children: ReactNode;
@@ -1853,4 +1875,4 @@ declare const en: ViewerLocale;
 
 declare const de: ViewerLocale;
 
-export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type GeoInfo, type LocalSource, LocaleProvider, MagnifierRenderer, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, type RecordOptions, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, type ActiveTool, AxisWidget, Button, type ButtonProps, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, ClassificationPanel, type ClipBoxEntry, ClipManager, type ClipMode, ClipToolbar, CollapsibleSidebar, type ColorMode, ComponentsProvider, type ComponentsProviderProps, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, type DisplayPreset, type DisplaySettings, DisplaySettingsDialog, type DraggableState, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, ExportTools, type ExportView, type FileSourceAdapter, FloatingPalette, type GeoInfo, type LocalSource, LocaleProvider, MagnifierRenderer, MainToolbar, MarkerManager, MeasureTools, type Measurement, MeasurementManager, type MeasurementType, MeasurementsPanel, MinimalLayout, MinimapRenderer, type NavigationMode, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, type PanoCloudViewerProps, type PanoEngine, PanoPanel, PanoViewer, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, type RecordOptions, RenderingSettings, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider, type SliderProps, Tabs, TabsContent, TabsList, TabsTrigger, type Theme, ThemeProvider, Toggle, type ToggleProps, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, type UiMode, type UseDraggableOptions, ViewControls, type ViewerComponents, type ViewerConfig, type ViewerLocale, ViewerProvider, type ViewerScene, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useFps, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };

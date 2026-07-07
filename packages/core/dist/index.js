@@ -93,14 +93,14 @@ var SceneManager = class {
           this.renderer
         );
       }
-      this.frameCallbacks.forEach((cb) => cb());
+      for (const cb of this.frameCallbacks) cb();
       if (this._projection === "orthographic") {
         this.renderer.render(this.scene, this._syncOrthoCamera());
       } else {
         this.renderer.render(this.scene, this.camera);
       }
       this.renderer.setScissorTest(false);
-      this.postRenderCallbacks.forEach((cb) => cb());
+      for (const cb of this.postRenderCallbacks) cb();
       this.frameCount++;
       if (now - this.fpsInterval >= 1e3) {
         this.onFpsUpdate?.(this.frameCount);
@@ -942,6 +942,8 @@ var MeasurementManager = class {
   _snapCross = null;
   _snapLine = null;
   _crossTexture;
+  /** Reused Color for the per-frame snap update. */
+  _snapColor = new THREE5.Color("#DCD546");
   // Shared vertex-dot texture (white disc + dark ring, tinted per measurement).
   _dotTexture;
   constructor(scene) {
@@ -1042,7 +1044,7 @@ var MeasurementManager = class {
    *  - A rubber-band line from the last placed point to the snap position
    */
   updateSnap(worldPos, color) {
-    const c = new THREE5.Color(color ?? this.activeMeasurement?.color ?? "#DCD546");
+    const c = this._snapColor.set(color ?? this.activeMeasurement?.color ?? "#DCD546");
     if (!this._snapCross) {
       const mat = new THREE5.SpriteMaterial({
         map: this._getCrossTexture(),
@@ -1994,9 +1996,11 @@ var MinimapRenderer = class _MinimapRenderer {
     const H = this.overlayCanvas?.height ?? 176;
     return (1 - (wy - this.worldBottom) / (this.worldTop - this.worldBottom)) * H;
   }
+  /** Reused scratch for the camera direction — drawn ~30×/sec. */
+  _camDir = new THREE5.Vector3();
   _drawCamera(ctx, W, H) {
     const cam = this.sceneManager.camera;
-    const dir = new THREE5.Vector3();
+    const dir = this._camDir;
     cam.getWorldDirection(dir);
     const cx = Math.min(Math.max(this._worldToCanvasX(cam.position.x), 5), W - 5);
     const cy = Math.min(Math.max(this._worldToCanvasY(cam.position.y), 5), H - 5);
@@ -3140,6 +3144,10 @@ var AxisWidget = class {
    * Render the widget into a scissor region in the bottom-left corner.
    * Must be called from a post-render callback after the main scene renders.
    */
+  // Reused scratch — render() runs every frame; don't allocate per frame.
+  _savedVp = new THREE5.Vector4();
+  _savedSc = new THREE5.Vector4();
+  _offset = new THREE5.Vector3();
   render() {
     const renderer = this.sm.renderer;
     const el = renderer.domElement;
@@ -3148,14 +3156,14 @@ var AxisWidget = class {
     if (W === 0 || H === 0) return;
     const size = 100;
     const margin = 10;
-    const savedVp = new THREE5.Vector4();
-    const savedSc = new THREE5.Vector4();
+    const savedVp = this._savedVp;
+    const savedSc = this._savedSc;
     renderer.getViewport(savedVp);
     renderer.getScissor(savedSc);
     const savedScTest = renderer.getScissorTest();
     const savedAutoClear = renderer.autoClear;
     const dist = 3;
-    const offset = new THREE5.Vector3(0, 0, dist).applyQuaternion(
+    const offset = this._offset.set(0, 0, dist).applyQuaternion(
       this.sm.camera.quaternion
     );
     this._camera.position.copy(offset);
@@ -3187,8 +3195,11 @@ var AxisWidget = class {
 var MagnifierRenderer = class _MagnifierRenderer {
   sm;
   enabled = false;
-  /** Latest cursor position, or null when the cursor left the canvas. */
+  /** Latest cursor position (canvas-relative CSS px), or null when off-canvas. */
   cursor = null;
+  /** Reused per-frame crop camera — copied from the main camera each render
+   *  (cloning per frame allocated a camera + matrices → GC churn). */
+  zoomCamera = new THREE5.PerspectiveCamera();
   // Frame + crosshair drawn over the inset in a second tiny pass.
   frameScene = new THREE5.Scene();
   frameCamera = new THREE5.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -3251,11 +3262,11 @@ var MagnifierRenderer = class _MagnifierRenderer {
     return this.enabled;
   }
   /**
-   * Feed the latest cursor position (canvas-relative CSS px + NDC).
+   * Feed the latest cursor position (canvas-relative CSS px).
    * Call on mousemove while a measurement tool is active.
    */
-  update(nx, ny, cx, cy) {
-    this.cursor = { nx, ny, cx, cy };
+  update(cx, cy) {
+    this.cursor = { cx, cy };
   }
   /** Hide the inset (cursor left the canvas / tool deactivated). */
   clearCursor() {
@@ -3270,7 +3281,7 @@ var MagnifierRenderer = class _MagnifierRenderer {
     const H = el.clientHeight;
     if (W === 0 || H === 0) return;
     const size = _MagnifierRenderer.SIZE;
-    const { nx, ny, cx, cy } = this.cursor;
+    const { cx, cy } = this.cursor;
     const pad = 24;
     let left = cx + pad;
     if (left + size > W) left = cx - pad - size;
@@ -3279,7 +3290,8 @@ var MagnifierRenderer = class _MagnifierRenderer {
     left = Math.max(0, Math.min(left, W - size));
     bottom = Math.max(0, Math.min(bottom, H - size));
     const sub = size / _MagnifierRenderer.ZOOM;
-    const zoomCamera = this.sm.camera.clone();
+    const zoomCamera = this.zoomCamera;
+    zoomCamera.copy(this.sm.camera);
     zoomCamera.setViewOffset(W, H, cx - sub / 2, cy - sub / 2, sub, sub);
     zoomCamera.updateProjectionMatrix();
     const savedVp = new THREE5.Vector4();

@@ -4,6 +4,7 @@ import React from "react";
 import { pcvChromeScaleStyle as chromeScale } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useData } from "../../providers/data-provider";
+import { StatusFps } from "../../components/status-fps";
 import { CollapsibleSidebar } from "./collapsible-sidebar";
 import { ToolsPalette } from "./tools-palette";
 import { DisplayPalette } from "./display-palette";
@@ -17,7 +18,7 @@ interface WorkstationLayoutProps {
 }
 
 export function WorkstationLayout({ viewport, sidebarSide = "left" }: WorkstationLayoutProps) {
-  const { fps, pointBudget, activeTool } = useViewer();
+  const { pointBudget, activeTool } = useViewer();
   const { metadata } = useData();
 
   return (
@@ -42,7 +43,7 @@ export function WorkstationLayout({ viewport, sidebarSide = "left" }: Workstatio
       >
         {metadata && <span>{(metadata.points / 1e6).toFixed(1)}M pts</span>}
         <span>Budget: {(pointBudget / 1e6).toFixed(1)}M</span>
-        <span>{fps} fps</span>
+        <StatusFps />
         {activeTool !== "none" && <span className="text-[hsl(var(--brand))]">{activeTool}</span>}
       </div>
     </div>

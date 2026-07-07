@@ -13,6 +13,7 @@ import { ClipToolbar } from "./toolbar/clip-toolbar";
 import { Sidebar } from "./sidebar/sidebar";
 import { PanoViewer } from "./overlays/pano-viewer";
 import { RenderingSettings } from "./overlays/rendering-settings";
+import { StatusFps } from "./status-fps";
 
 const Viewport = lazy(() => import("./viewport").then(m => ({ default: m.Viewport })));
 
@@ -59,7 +60,7 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
   );
   const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
 
-  const { fps, pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
+  const { pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
   const { metadata } = useData();
   const t = useLocale().viewport;
 
@@ -182,7 +183,8 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
           <div className="px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none">
             {metadata && <span>{t.statusPts(metadata.points / 1e6)}</span>}
             <span>{t.statusBudget(pointBudget / 1e6)}</span>
-            <span>{t.statusFps(fps)}</span>
+            <StatusFps />
+
             {activeTool !== "none" && (
               <span className="text-[hsl(var(--brand))]">{activeTool}</span>
             )}
