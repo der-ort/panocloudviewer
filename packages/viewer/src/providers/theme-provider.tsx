@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useReducer, type ReactNode } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState, useReducer, type ReactNode } from "react";
 import type { Theme } from "@der-ort/pano-cloud-viewer-core";
 
 interface ThemeContextValue {
@@ -38,6 +38,15 @@ export function ThemeProvider({
   // theme === "system". Using a counter avoids the React bail-out that occurs
   // when setState is called with the same primitive value ("system" → "system").
   const [, forceUpdate] = useReducer((n: number) => n + 1, 0);
+
+  // Follow the `defaultTheme` prop when an embedding site CHANGES it after mount
+  // (controlled theme), so hosts can drive dark/light from their own toggle.
+  // Skip the first run so the initial localStorage-persisted choice is respected.
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) { firstRun.current = false; return; }
+    setThemeState(defaultTheme);
+  }, [defaultTheme]);
 
   const resolvedTheme: "dark" | "light" = theme === "system"
     ? (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")

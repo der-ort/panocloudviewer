@@ -1457,15 +1457,15 @@ var init_dist = __esm({
         if (pts.length >= 2) {
           const lineType = m.type === "height" ? "vertical" : "direct";
           if (lineType === "vertical" && m.type === "height") {
-            const geo = new THREE5__namespace.BufferGeometry().setFromPoints([
-              pts[0],
-              new THREE5__namespace.Vector3(pts[0].x, pts[0].y, pts[1].z)
-            ]);
-            const mat = new THREE5__namespace.LineBasicMaterial({ color, depthTest: false });
-            const line = new THREE5__namespace.Line(geo, mat);
-            line.renderOrder = 1;
-            this.group.add(line);
-            objects.push(line);
+            const corner = new THREE5__namespace.Vector3(pts[0].x, pts[0].y, pts[1].z);
+            for (const seg of [[pts[0], corner], [corner, pts[1]]]) {
+              const geo = new THREE5__namespace.BufferGeometry().setFromPoints([seg[0], seg[1]]);
+              const mat = new THREE5__namespace.LineBasicMaterial({ color, depthTest: false });
+              const line = new THREE5__namespace.Line(geo, mat);
+              line.renderOrder = 1;
+              this.group.add(line);
+              objects.push(line);
+            }
           } else {
             for (let i = 0; i < pts.length - 1; i++) {
               const geo = new THREE5__namespace.BufferGeometry().setFromPoints([pts[i], pts[i + 1]]);
@@ -1921,6 +1921,10 @@ var init_dist = __esm({
           this.miniRenderer.setSize(w, h, false);
           this.miniRenderer.setClearColor(658970, 1);
           this.glFailed = false;
+          this.glCanvas.addEventListener("webglcontextlost", (e) => {
+            e.preventDefault();
+            this.glFailed = true;
+          }, { once: true });
         } catch {
           this.miniRenderer = null;
           this.glFailed = true;
@@ -4707,6 +4711,14 @@ function ThemeProvider({
     return localStorage.getItem(storageKey) ?? defaultTheme;
   });
   const [, forceUpdate] = React27.useReducer((n) => n + 1, 0);
+  const firstRun = React27.useRef(true);
+  React27.useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    setThemeState(defaultTheme);
+  }, [defaultTheme]);
   const resolvedTheme = theme === "system" ? typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light" : theme;
   React27.useEffect(() => {
     if (theme !== "system") return;
@@ -5203,11 +5215,11 @@ function MainToolbar({ onToggleRenderSettings, renderSettingsOpen }) {
   const { uiMode } = useViewer();
   const isPro = uiMode === "professional";
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex items-center h-10 px-2 gap-0 select-none overflow-x-auto", children: [
-    /* @__PURE__ */ jsxRuntime.jsxs(ToolbarSection, { label: "Views", children: [
+    /* @__PURE__ */ jsxRuntime.jsxs(ToolbarSection, { children: [
       /* @__PURE__ */ jsxRuntime.jsx(ViewControls, {}),
       /* @__PURE__ */ jsxRuntime.jsx(ViewModeControls, {})
     ] }),
-    /* @__PURE__ */ jsxRuntime.jsxs(ToolbarSection, { label: "Display", children: [
+    /* @__PURE__ */ jsxRuntime.jsxs(ToolbarSection, { children: [
       /* @__PURE__ */ jsxRuntime.jsx(DisplayControls, {}),
       isPro && /* @__PURE__ */ jsxRuntime.jsx(
         ToolbarIconBtn,
@@ -5265,9 +5277,6 @@ function RailBtn({ icon, title, active, onClick, disabled, compact }) {
 function Divider() {
   return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "h-px w-6 mx-auto bg-[hsl(var(--border))] my-0.5" });
 }
-function GroupLabel({ children }) {
-  return /* @__PURE__ */ jsxRuntime.jsx("span", { className: "text-[8px] font-mono uppercase tracking-widest text-muted-foreground/50 text-center leading-none mt-1", children });
-}
 var BASIC_MEASURES = [
   { type: "point", tool: "measure-point", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.MapPin, { size: 15 }), titleKey: "measurePoint" },
   { type: "distance", tool: "measure-distance", icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Ruler, { size: 15 }), titleKey: "measureDistance" },
@@ -5308,7 +5317,6 @@ function ToolRail() {
     setMeasurementList([]);
   };
   return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex flex-col items-center gap-0.5 py-2 px-1 w-10 shrink-0", children: [
-    /* @__PURE__ */ jsxRuntime.jsx(GroupLabel, { children: t.measureGroup }),
     BASIC_MEASURES.map((def) => /* @__PURE__ */ jsxRuntime.jsx(
       RailBtn,
       {
@@ -5353,7 +5361,6 @@ function ToolRail() {
     ),
     isPro && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       /* @__PURE__ */ jsxRuntime.jsx(Divider, {}),
-      /* @__PURE__ */ jsxRuntime.jsx(GroupLabel, { children: t.sectionGroup }),
       /* @__PURE__ */ jsxRuntime.jsx(
         RailBtn,
         {
@@ -5912,8 +5919,9 @@ function PanoPanel() {
 init_viewer_provider();
 init_locale_context();
 function ScenePanel() {
-  const { measurementList, measurementManager, setMeasurementList, loader, clipManager, clipBoxEntries, selectedClipBoxId } = useViewer();
+  const { measurementList, measurementManager, setMeasurementList, loader, clipManager, clipBoxEntries, selectedClipBoxId, uiMode } = useViewer();
   const t = useLocale().scenePanel;
+  const isPro = uiMode === "professional";
   const deleteMeasurement = (id) => {
     measurementManager?.remove(id);
     setMeasurementList((prev) => prev.filter((m) => m.id !== id));
@@ -5949,7 +5957,7 @@ function ScenePanel() {
         )
       ] }, m.id))
     ] }),
-    /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "p-2", children: [
+    isPro && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "p-2", children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "flex items-center justify-between mb-1.5", children: [
         /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-[10px] font-semibold text-muted-foreground uppercase tracking-wide", children: t.sections }),
         clipBoxEntries.length > 0 && /* @__PURE__ */ jsxRuntime.jsx("button", { onClick: () => clipManager?.clear(), title: t.clearAll, className: "text-muted-foreground hover:text-destructive transition-colors", children: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.Trash2, { size: 11 }) })
@@ -8046,7 +8054,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "59934a4 \xB7 2026-07-07 10:50Z" ;
+var PCV_BUILD = "7334946 \xB7 2026-07-09 11:33Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

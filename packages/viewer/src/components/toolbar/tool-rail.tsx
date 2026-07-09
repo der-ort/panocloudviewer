@@ -43,14 +43,6 @@ function Divider() {
   return <div className="h-px w-6 mx-auto bg-[hsl(var(--border))] my-0.5" />;
 }
 
-function GroupLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/50 text-center leading-none mt-1">
-      {children}
-    </span>
-  );
-}
-
 // ── Measurement tool definitions grouped by category ─────────────────────────
 
 const BASIC_MEASURES: { type: MeasurementType; tool: ActiveTool; icon: React.ReactNode; titleKey: string }[] = [
@@ -107,7 +99,6 @@ export function ToolRail() {
   return (
     <div className="flex flex-col items-center gap-0.5 py-2 px-1 w-10 shrink-0">
       {/* ── Measure: Basic ──────────────────────── */}
-      <GroupLabel>{t.measureGroup}</GroupLabel>
       {BASIC_MEASURES.map(def => (
         <RailBtn
           key={def.tool}
@@ -154,7 +145,6 @@ export function ToolRail() {
         <>
           <Divider />
 
-          <GroupLabel>{t.sectionGroup}</GroupLabel>
           <RailBtn
             icon={<BoxSelect size={15} />}
             title={!hasClipBox ? t.drawClipBox : clipSelected ? "Deselect section (crop stays active)" : "Edit section"}

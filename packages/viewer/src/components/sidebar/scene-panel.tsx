@@ -6,8 +6,12 @@ import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
 
 export function ScenePanel() {
-  const { measurementList, measurementManager, setMeasurementList, loader, clipManager, clipBoxEntries, selectedClipBoxId } = useViewer();
+  const { measurementList, measurementManager, setMeasurementList, loader, clipManager, clipBoxEntries, selectedClipBoxId, uiMode } = useViewer();
   const t = useLocale().scenePanel;
+
+  // The section (clipping) tool is Professional-only — it's gated the same way
+  // in the tool rail — so don't advertise "Sections" in the sidebar in Lite mode.
+  const isPro = uiMode === "professional";
 
   const deleteMeasurement = (id: string) => {
     measurementManager?.remove(id);
@@ -65,7 +69,8 @@ export function ScenePanel() {
         )}
       </div>
 
-      {/* Clip Boxes */}
+      {/* Clip Boxes — Professional only (the section tool is disabled in Lite) */}
+      {isPro && (
       <div className="p-2">
         <div className="flex items-center justify-between mb-1.5">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{t.sections}</p>
@@ -120,6 +125,7 @@ export function ScenePanel() {
           <p className="text-[9px] text-muted-foreground mt-1 italic">{t.clipModeNote}</p>
         )}
       </div>
+      )}
     </div>
   );
 }

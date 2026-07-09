@@ -42,13 +42,13 @@ export function MainToolbar({ onToggleRenderSettings, renderSettingsOpen }: Main
   return (
     <div className="flex items-center h-10 px-2 gap-0 select-none overflow-x-auto">
       {/* View controls: presets + navigation mode + projection */}
-      <ToolbarSection label="Views">
+      <ToolbarSection>
         <ViewControls />
         <ViewModeControls />
       </ToolbarSection>
 
       {/* Display quick controls + the single Settings panel toggle */}
-      <ToolbarSection label="Display">
+      <ToolbarSection>
         <DisplayControls />
         {isPro && (
           <ToolbarIconBtn

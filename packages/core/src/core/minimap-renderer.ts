@@ -92,6 +92,16 @@ export class MinimapRenderer {
       this.miniRenderer.setSize(w, h, false);
       this.miniRenderer.setClearColor(0x0a0e1a, 1);
       this.glFailed = false;
+
+      // The browser drops the least-recently-used WebGL context when a page
+      // exceeds its limit (many viewers / panorama overlays). The minimap's is a
+      // prime target. Without this, a lost context leaves glFailed=false and the
+      // minimap goes silently black; here we flag it so the overlay explains why,
+      // and preventDefault keeps the context restorable (toggle minimap off/on).
+      this.glCanvas.addEventListener("webglcontextlost", (e) => {
+        e.preventDefault();
+        this.glFailed = true;
+      }, { once: true });
     } catch {
       this.miniRenderer = null;
       this.glFailed = true;

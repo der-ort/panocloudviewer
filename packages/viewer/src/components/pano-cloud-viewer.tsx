@@ -64,7 +64,12 @@ export { pcvChromeScaleStyle } from "../lib/utils";
 export interface PanoCloudViewerProps {
   /** Data source: S3 bucket, local path, or Electron IPC */
   source: PointCloudSource;
-  /** Initial theme. Defaults to "dark". */
+  /**
+   * Theme. Defaults to "dark". Controllable: an embedding site can change this
+   * prop at runtime (e.g. from its own dark/light toggle) and the viewer follows.
+   * The user's in-viewer toggle still works between prop changes; the initial
+   * value respects any previously persisted choice.
+   */
   theme?: "light" | "dark";
   /** CSS class applied to the root element */
   className?: string;

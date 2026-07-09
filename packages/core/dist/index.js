@@ -1365,15 +1365,15 @@ var MeasurementManager = class {
     if (pts.length >= 2) {
       const lineType = m.type === "height" ? "vertical" : "direct";
       if (lineType === "vertical" && m.type === "height") {
-        const geo = new THREE5.BufferGeometry().setFromPoints([
-          pts[0],
-          new THREE5.Vector3(pts[0].x, pts[0].y, pts[1].z)
-        ]);
-        const mat = new THREE5.LineBasicMaterial({ color, depthTest: false });
-        const line = new THREE5.Line(geo, mat);
-        line.renderOrder = 1;
-        this.group.add(line);
-        objects.push(line);
+        const corner = new THREE5.Vector3(pts[0].x, pts[0].y, pts[1].z);
+        for (const seg of [[pts[0], corner], [corner, pts[1]]]) {
+          const geo = new THREE5.BufferGeometry().setFromPoints([seg[0], seg[1]]);
+          const mat = new THREE5.LineBasicMaterial({ color, depthTest: false });
+          const line = new THREE5.Line(geo, mat);
+          line.renderOrder = 1;
+          this.group.add(line);
+          objects.push(line);
+        }
       } else {
         for (let i = 0; i < pts.length - 1; i++) {
           const geo = new THREE5.BufferGeometry().setFromPoints([pts[i], pts[i + 1]]);
@@ -1836,6 +1836,10 @@ var MinimapRenderer = class _MinimapRenderer {
       this.miniRenderer.setSize(w, h, false);
       this.miniRenderer.setClearColor(658970, 1);
       this.glFailed = false;
+      this.glCanvas.addEventListener("webglcontextlost", (e) => {
+        e.preventDefault();
+        this.glFailed = true;
+      }, { once: true });
     } catch {
       this.miniRenderer = null;
       this.glFailed = true;

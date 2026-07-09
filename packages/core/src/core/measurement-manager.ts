@@ -502,14 +502,18 @@ export class MeasurementManager {
     if (pts.length >= 2) {
       const lineType = m.type === "height" ? "vertical" : "direct";
       if (lineType === "vertical" && m.type === "height") {
-        const geo = new THREE.BufferGeometry().setFromPoints([
-          pts[0], new THREE.Vector3(pts[0].x, pts[0].y, pts[1].z),
-        ]);
-        const mat = new THREE.LineBasicMaterial({ color, depthTest: false });
-        const line = new THREE.Line(geo, mat);
-        line.renderOrder = 1;
-        this.group.add(line);
-        objects.push(line);
+        // Vertical drop from pt0 up/down to the endpoint's height, then a
+        // horizontal connector across to the actual endpoint so it's clear
+        // which point the height refers to (an "L" from pt0 to pt1).
+        const corner = new THREE.Vector3(pts[0].x, pts[0].y, pts[1].z);
+        for (const seg of [[pts[0], corner], [corner, pts[1]]] as const) {
+          const geo = new THREE.BufferGeometry().setFromPoints([seg[0], seg[1]]);
+          const mat = new THREE.LineBasicMaterial({ color, depthTest: false });
+          const line = new THREE.Line(geo, mat);
+          line.renderOrder = 1;
+          this.group.add(line);
+          objects.push(line);
+        }
       } else {
         for (let i = 0; i < pts.length - 1; i++) {
           const geo = new THREE.BufferGeometry().setFromPoints([pts[i], pts[i+1]]);
