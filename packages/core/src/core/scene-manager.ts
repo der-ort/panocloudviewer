@@ -17,8 +17,13 @@ export class SceneManager {
   private _navMode: NavigationMode = "orbit";
   private _projection: CameraProjection = "perspective";
   private _orthoCamera: THREE.OrthographicCamera | null = null;
-  /** Kept for API compatibility — no longer drives navigation */
-  flySpeed = 10;
+  /** WASD/QE fly speed as a fraction of the camera→target distance per second
+   *  (scales with zoom so it feels consistent at room and site scale). */
+  flySpeed = 0.9;
+  private heldKeys = new Set<string>();
+  private _flyFwd = new THREE.Vector3();
+  private _flyRight = new THREE.Vector3();
+  private _flyMove = new THREE.Vector3();
   private animationId: number | null = null;
   private lastTime = 0;
   private frameCount = 0;
@@ -73,6 +78,12 @@ export class SceneManager {
     this.renderer.domElement.style.userSelect = "none";
     this.renderer.domElement.addEventListener("dragstart", this.preventDragStart);
 
+    // WASD fly + Q/E vertical. Global listeners (work without clicking the
+    // canvas first); the keydown guard ignores typing in form fields.
+    window.addEventListener("keydown", this.onKeyDown);
+    window.addEventListener("keyup", this.onKeyUp);
+    window.addEventListener("blur", this.onWindowBlur);
+
     // Controls — orbit mode is the default (CAD/Blender-style turntable)
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -111,6 +122,46 @@ export class SceneManager {
   /** Bound so it can be removed in dispose(); blocks native drag/ghost-image. */
   private preventDragStart = (e: Event) => e.preventDefault();
 
+  /** Keys we fly with (layout-independent physical codes). */
+  private static readonly FLY_CODES = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE"]);
+
+  private onKeyDown = (e: KeyboardEvent) => {
+    if (!SceneManager.FLY_CODES.has(e.code)) return;
+    // Don't hijack keys while typing in a form field / contenteditable.
+    const el = document.activeElement as HTMLElement | null;
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+    this.heldKeys.add(e.code);
+  };
+  private onKeyUp = (e: KeyboardEvent) => { this.heldKeys.delete(e.code); };
+  /** Held keys would otherwise stick if the window loses focus mid-press. */
+  private onWindowBlur = () => this.heldKeys.clear();
+
+  /**
+   * Apply WASD (fly along the view) + Q/E (world up/down) for this frame.
+   * Moves the camera AND the orbit target by the same vector so OrbitControls
+   * stays consistent (the pivot travels with the camera, like a fly cam).
+   */
+  private _applyFlyKeys(deltaMs: number): void {
+    const keys = this.heldKeys;
+    if (keys.size === 0) return;
+
+    this.camera.getWorldDirection(this._flyFwd);                        // look direction
+    this._flyRight.setFromMatrixColumn(this.camera.matrixWorld, 0);     // camera's world +X (right)
+    const move = this._flyMove.set(0, 0, 0);
+    if (keys.has("KeyW")) move.add(this._flyFwd);
+    if (keys.has("KeyS")) move.sub(this._flyFwd);
+    if (keys.has("KeyD")) move.add(this._flyRight);
+    if (keys.has("KeyA")) move.sub(this._flyRight);
+    if (keys.has("KeyQ")) move.z += 1; // up (Z-up world)
+    if (keys.has("KeyE")) move.z -= 1; // down
+    if (move.lengthSq() === 0) return;
+
+    const dist = Math.max(this.camera.position.distanceTo(this.controls.target), 1);
+    move.normalize().multiplyScalar(this.flySpeed * dist * (deltaMs / 1000));
+    this.camera.position.add(move);
+    this.controls.target.add(move);
+  }
+
   private onResize(canvas: HTMLElement) {
     // Floor to 1px — a hidden container reports 0 and would break the aspect ratio.
     const w = Math.max(canvas.clientWidth, 1);
@@ -132,9 +183,12 @@ export class SceneManager {
       this.renderer.setScissorTest(false);
       this.renderer.clear();
 
+      // WASD/QE fly — move camera + orbit target before the controls update.
+      this._applyFlyKeys(delta);
+
       // Single OrbitControls instance drives all three navigation modes (each
       // mode just reconfigures it), so its target stays the one source of truth
-      // for clipping, minimap, camera-animator and the ortho-camera sync.
+      // for clipping, camera-animator and the ortho-camera sync.
       this.controls.update();
 
       // potree-core update — always use PerspectiveCamera for correct LOD
@@ -310,6 +364,9 @@ export class SceneManager {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
     this.resizeObserver.disconnect();
     this.renderer.domElement.removeEventListener("dragstart", this.preventDragStart);
+    window.removeEventListener("keydown", this.onKeyDown);
+    window.removeEventListener("keyup", this.onKeyUp);
+    window.removeEventListener("blur", this.onWindowBlur);
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

@@ -172,8 +172,13 @@ declare class SceneManager {
     private _navMode;
     private _projection;
     private _orthoCamera;
-    /** Kept for API compatibility — no longer drives navigation */
+    /** WASD/QE fly speed as a fraction of the camera→target distance per second
+     *  (scales with zoom so it feels consistent at room and site scale). */
     flySpeed: number;
+    private heldKeys;
+    private _flyFwd;
+    private _flyRight;
+    private _flyMove;
     private animationId;
     private lastTime;
     private frameCount;
@@ -188,6 +193,18 @@ declare class SceneManager {
     constructor({ canvas, onFpsUpdate, onPointsUpdate }: SceneManagerOptions);
     /** Bound so it can be removed in dispose(); blocks native drag/ghost-image. */
     private preventDragStart;
+    /** Keys we fly with (layout-independent physical codes). */
+    private static readonly FLY_CODES;
+    private onKeyDown;
+    private onKeyUp;
+    /** Held keys would otherwise stick if the window loses focus mid-press. */
+    private onWindowBlur;
+    /**
+     * Apply WASD (fly along the view) + Q/E (world up/down) for this frame.
+     * Moves the camera AND the orbit target by the same vector so OrbitControls
+     * stays consistent (the pivot travels with the camera, like a fly cam).
+     */
+    private _applyFlyKeys;
     private onResize;
     /** Start the render loop */
     start(): void;

@@ -25,7 +25,7 @@ function _interopNamespace(e) {
 var THREE5__namespace = /*#__PURE__*/_interopNamespace(THREE5);
 
 // src/core/scene-manager.ts
-var SceneManager = class {
+var SceneManager = class _SceneManager {
   scene;
   camera;
   renderer;
@@ -33,8 +33,13 @@ var SceneManager = class {
   _navMode = "orbit";
   _projection = "perspective";
   _orthoCamera = null;
-  /** Kept for API compatibility — no longer drives navigation */
-  flySpeed = 10;
+  /** WASD/QE fly speed as a fraction of the camera→target distance per second
+   *  (scales with zoom so it feels consistent at room and site scale). */
+  flySpeed = 0.9;
+  heldKeys = /* @__PURE__ */ new Set();
+  _flyFwd = new THREE5__namespace.Vector3();
+  _flyRight = new THREE5__namespace.Vector3();
+  _flyMove = new THREE5__namespace.Vector3();
   animationId = null;
   lastTime = 0;
   frameCount = 0;
@@ -69,6 +74,9 @@ var SceneManager = class {
     this.renderer.domElement.style.touchAction = "none";
     this.renderer.domElement.style.userSelect = "none";
     this.renderer.domElement.addEventListener("dragstart", this.preventDragStart);
+    window.addEventListener("keydown", this.onKeyDown);
+    window.addEventListener("keyup", this.onKeyUp);
+    window.addEventListener("blur", this.onWindowBlur);
     this.controls = new OrbitControls_js.OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
@@ -93,6 +101,42 @@ var SceneManager = class {
   }
   /** Bound so it can be removed in dispose(); blocks native drag/ghost-image. */
   preventDragStart = (e) => e.preventDefault();
+  /** Keys we fly with (layout-independent physical codes). */
+  static FLY_CODES = /* @__PURE__ */ new Set(["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE"]);
+  onKeyDown = (e) => {
+    if (!_SceneManager.FLY_CODES.has(e.code)) return;
+    const el = document.activeElement;
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+    this.heldKeys.add(e.code);
+  };
+  onKeyUp = (e) => {
+    this.heldKeys.delete(e.code);
+  };
+  /** Held keys would otherwise stick if the window loses focus mid-press. */
+  onWindowBlur = () => this.heldKeys.clear();
+  /**
+   * Apply WASD (fly along the view) + Q/E (world up/down) for this frame.
+   * Moves the camera AND the orbit target by the same vector so OrbitControls
+   * stays consistent (the pivot travels with the camera, like a fly cam).
+   */
+  _applyFlyKeys(deltaMs) {
+    const keys = this.heldKeys;
+    if (keys.size === 0) return;
+    this.camera.getWorldDirection(this._flyFwd);
+    this._flyRight.setFromMatrixColumn(this.camera.matrixWorld, 0);
+    const move = this._flyMove.set(0, 0, 0);
+    if (keys.has("KeyW")) move.add(this._flyFwd);
+    if (keys.has("KeyS")) move.sub(this._flyFwd);
+    if (keys.has("KeyD")) move.add(this._flyRight);
+    if (keys.has("KeyA")) move.sub(this._flyRight);
+    if (keys.has("KeyQ")) move.z += 1;
+    if (keys.has("KeyE")) move.z -= 1;
+    if (move.lengthSq() === 0) return;
+    const dist = Math.max(this.camera.position.distanceTo(this.controls.target), 1);
+    move.normalize().multiplyScalar(this.flySpeed * dist * (deltaMs / 1e3));
+    this.camera.position.add(move);
+    this.controls.target.add(move);
+  }
   onResize(canvas) {
     const w = Math.max(canvas.clientWidth, 1);
     const h = Math.max(canvas.clientHeight, 1);
@@ -104,10 +148,11 @@ var SceneManager = class {
   start() {
     const loop = (now) => {
       this.animationId = requestAnimationFrame(loop);
-      this.lastTime === 0 ? 16 : now - this.lastTime;
+      const delta = this.lastTime === 0 ? 16 : now - this.lastTime;
       this.lastTime = now;
       this.renderer.setScissorTest(false);
       this.renderer.clear();
+      this._applyFlyKeys(delta);
       this.controls.update();
       if (this.potree && this.pointClouds.length > 0) {
         this.potree.updatePointClouds(
@@ -246,6 +291,9 @@ var SceneManager = class {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
     this.resizeObserver.disconnect();
     this.renderer.domElement.removeEventListener("dragstart", this.preventDragStart);
+    window.removeEventListener("keydown", this.onKeyDown);
+    window.removeEventListener("keyup", this.onKeyUp);
+    window.removeEventListener("blur", this.onWindowBlur);
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

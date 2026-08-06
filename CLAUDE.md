@@ -411,6 +411,8 @@ All three modes use the same `OrbitControls` instance (`zoomToCursor=true`, damp
 
 Switch via `setNavigationMode(mode)` in `ViewerProvider` — Viewport syncs to `SceneManager` via `useEffect`.
 
+**Keyboard fly (all modes)**: `W`/`A`/`S`/`D` fly forward/left/back/right along the view, `Q`/`E` move up/down (world Z). Held-key state is tracked in `SceneManager` (global `keydown`/`keyup`, ignored while a form field is focused) and applied each frame in the loop before `controls.update()` — it moves the camera AND `controls.target` by the same vector so the orbit pivot travels with the camera. Speed = `flySpeed` (0.9) × camera→target distance per second, so it scales with zoom.
+
 **View presets keep Z-up**: `useNavigationActions.flyToView` is the ONLY preset implementation (the toolbar's `ViewControls` consumes it — a duplicate was removed). `camera.up` stays `(0,0,1)` at all times; `top`/`bottom` aim slightly **off the ±Z pole** (`(0, -0.035, ±1)`, matching the polar clamps) instead of flipping up to `(0,1,0)` — the old flip made OrbitControls orbit around Y afterwards (the "axis shift"). Presets fly via `CameraAnimator.flyTo` with an explicit `up: (0,0,1)`, which also heals any stale up-vector. Presets no longer force orthographic projection.
 
 ### Picking magnifier (`core/magnifier.ts`)
