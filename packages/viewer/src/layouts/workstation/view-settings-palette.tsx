@@ -31,12 +31,11 @@ function ModeBtn({ icon, label, active, onClick }: { icon: React.ReactNode; labe
 }
 
 export function ViewSettingsPalette() {
-  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
+  const { showMarkers, setShowMarkers, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
 
   return (
     <FloatingPalette title="View" icon={<Eye size={12} />} defaultCollapsed>
       <ToggleRow icon={<Camera size={13} />} label="Panoramas" active={showMarkers} onClick={() => setShowMarkers(!showMarkers)} />
-      <ToggleRow icon={<Map size={13} />} label="Minimap" active={showMinimap} onClick={() => setShowMinimap(!showMinimap)} />
 
       <p className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1">Navigation</p>
       <div className="flex gap-1">

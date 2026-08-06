@@ -40,7 +40,7 @@ function RailBtn({ icon, title, active, onClick, disabled, compact }: RailBtnPro
 }
 
 function Divider() {
-  return <div className="h-px w-6 mx-auto bg-[hsl(var(--border))] my-0.5" />;
+  return <div className="w-px h-6 my-auto bg-[hsl(var(--border))] mx-0.5" />;
 }
 
 // ── Measurement tool definitions grouped by category ─────────────────────────
@@ -97,7 +97,7 @@ export function ToolRail() {
   };
 
   return (
-    <div className="flex flex-col items-center gap-0.5 py-2 px-1 w-10 shrink-0">
+    <div className="flex flex-row items-center gap-0.5 px-2 py-1 h-11 shrink-0">
       {/* ── Measure: Basic ──────────────────────── */}
       {BASIC_MEASURES.map(def => (
         <RailBtn

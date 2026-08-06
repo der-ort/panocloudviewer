@@ -87,8 +87,6 @@ interface ViewerConfig {
     theme?: Theme;
     /** Initial point budget (default: 2_000_000) */
     pointBudget?: number;
-    /** Show minimap (default: true) */
-    showMinimap?: boolean;
     /** Enable panorama sidebar (default: true) */
     enablePanoramas?: boolean;
     /** Custom class name for the root element */
@@ -222,6 +220,16 @@ declare class SceneManager {
     dispose(): void;
     /** Fit camera to bounding box */
     fitToBox(box: THREE.Box3): void;
+    /**
+     * The camera the scene is actually rendered with — the synced ortho camera in
+     * orthographic mode, otherwise the perspective camera. Picking/raycasting MUST
+     * use this so screen rays match what's displayed (perspective rays diverge,
+     * ortho rays are parallel).
+     */
+    getActiveCamera(): THREE.PerspectiveCamera | THREE.OrthographicCamera;
+    /** Scale registered screen-space sprites by `factor` (for the ortho pass); returns those scaled so the caller can restore them. */
+    private _screenGroups;
+    private _scaleScreenSprites;
     /** Raycast against objects in scene */
     raycast(normalizedX: number, normalizedY: number, objects: THREE.Object3D[]): THREE.Intersection[];
     /**
@@ -564,84 +572,6 @@ declare class ExportManager {
 }
 
 /**
- * Renders a top-down orthographic minimap of the point cloud scene.
- * Uses a secondary WebGLRenderer for the 3D view and a 2D canvas overlay
- * for camera indicator, markers, and labels.
- */
-declare class MinimapRenderer {
-    private sceneManager;
-    private bounds;
-    private container;
-    private glCanvas;
-    private overlayCanvas;
-    private miniRenderer;
-    private orthoCamera;
-    /** True when WebGL context creation failed — overlay shows a message instead of silent black. */
-    private glFailed;
-    private pois;
-    private selectedPoi;
-    private worldLeft;
-    private worldRight;
-    private worldTop;
-    private worldBottom;
-    private frameCount;
-    /** Wall-clock time (ms) of the last expensive top-down 3D render. */
-    private _last3DTime;
-    /**
-     * Minimum gap between top-down 3D renders. The overview is a SECOND full
-     * render of the point cloud, so it is the minimap's whole cost — but the
-     * top-down image is invariant to main-camera motion (it only changes as
-     * points stream in or the scene content changes), so a slow fixed timer is
-     * imperceptible yet bounds the extra work to ~4 renders/sec regardless of
-     * how fast the main loop runs (no feedback loop where a heavy minimap render
-     * drags the main FPS down and then re-fires proportionally).
-     */
-    private static readonly RENDER_3D_INTERVAL_MS;
-    constructor(sceneManager: SceneManager);
-    /**
-     * Attach to a container element. Creates internal canvases.
-     * Container should have position:relative and defined size.
-     */
-    attach(container: HTMLElement): void;
-    /** Panorama camera positions (world XY) to draw as dots on the overlay. */
-    setPois(pois: {
-        x: number;
-        y: number;
-    }[]): void;
-    /** Highlight one POI (the opened panorama), or null for none. */
-    setSelectedPoi(poi: {
-        x: number;
-        y: number;
-    } | null): void;
-    /** Set world-space bounds of the scene (empty boxes are ignored). */
-    setBounds(bounds: THREE.Box3): void;
-    /** Called every frame. Renders 3D scene top-down + overlay. */
-    update(): void;
-    /** Fallback bounds from the loaded potree octrees (tight box + offset). */
-    private _deriveBoundsFromClouds;
-    /** Sync canvas backing stores to the container's CSS size (no-op when equal). */
-    private _syncSize;
-    private _render3D;
-    private _drawOverlay;
-    /** Panorama positions as small dots; the opened one highlighted. */
-    private _drawPois;
-    /** Scale bar (bottom-left): a round-number world length (1/2/5×10ⁿ m). */
-    private _drawScaleBar;
-    /** North arrow (top-center): the minimap is axis-aligned, +Y = up = north. */
-    private _drawNorthArrow;
-    private _worldToCanvasX;
-    private _worldToCanvasY;
-    /** Reused scratch for the camera direction — drawn ~30×/sec. */
-    private _camDir;
-    private _drawCamera;
-    /** Convert canvas pixel to world XY position */
-    canvasToWorld(cx: number, cy: number): THREE.Vector2;
-    /** Handle resize (called by parent when container size changes) */
-    resize(): void;
-    dispose(): void;
-}
-
-/**
  * Manages 6 face-center handles for interactive Box3 resizing, rendered as
  * outward-pointing AXIS ARROWS (shaft + cone) mounted on each face — drag an
  * arrow to push/pull that face. Each arrow carries an invisible grab sphere as
@@ -979,9 +909,6 @@ declare class MagnifierRenderer {
     private enabled;
     /** Latest cursor position (canvas-relative CSS px), or null when off-canvas. */
     private cursor;
-    /** Reused per-frame crop camera — copied from the main camera each render
-     *  (cloning per frame allocated a camera + matrices → GC churn). */
-    private zoomCamera;
     private frameScene;
     private frameCamera;
     private frameDisposables;
@@ -1084,4 +1011,4 @@ declare function formatCoord(x: number, y: number, z: number, decimals?: number)
 /** Export measurements as a CSV string */
 declare function exportMeasurementsCSV(measurements: Measurement[]): string;
 
-export { type ActiveTool, AxisGizmo, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type GeoInfo, type LocalSource, MagnifierRenderer, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, MinimapRenderer, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type RecordOptions, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };
+export { type ActiveTool, AxisGizmo, CameraAnimator, type CameraData, type CameraPosition, type CameraProjection, type CameraRotation, type ClipBoxEntry, ClipManager, type ClipMode, type ColorMode, DISPLAY_PRESETS, type DisplayPreset, type DisplaySettings, type Easing, type ElectronSource, ElectronSourceAdapter, type ExportFormat, ExportManager, type ExportOptions, type ExportView, type FileSourceAdapter, type GeoInfo, type LocalSource, MagnifierRenderer, MarkerManager, type Measurement, MeasurementManager, type MeasurementType, type NavigationMode, type PanoEngine, PointCloudLoader, type PointCloudMetadata, type PointCloudSource, PresentationManager, type RecordOptions, type S3Source, S3SourceAdapter, SceneManager, type SceneManagerOptions, type Theme, type UiMode, type ViewerConfig, type ViewerScene, captureScene, createAdapter, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume };

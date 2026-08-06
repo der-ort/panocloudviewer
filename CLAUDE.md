@@ -81,7 +81,7 @@ pnpm lint                                             # TypeScript check across 
 │  LAYER 2 — Manager Classes  (packages/core)         │
 │  SceneManager · PointCloudLoader · CameraAnimator   │
 │  MarkerManager · MeasurementManager · ClipManager   │
-│  ExportManager · MinimapRenderer · PresentationMgr  │
+│  ExportManager · PresentationManager                │
 │  AxisGizmo · MagnifierRenderer                      │
 │  Instantiated inside Viewport; passed up via setters│
 ├─────────────────────────────────────────────────────┤
@@ -111,7 +111,8 @@ Central Three.js scene, camera, renderer, and animation loop.
 - **`setNavigationMode(mode)`**: Switches between `"orbit"`, `"free"`, `"pan"` by reconfiguring the single `OrbitControls` (mouse-button map + `maxPolarAngle`). Orbit = CAD turntable; Free = Blender-ish (rotate on left+middle); Pan = map/top-down (left-drag pans, `maxPolarAngle=π/2.05`). `zoomToCursor=true` and damping throughout.
 - **`setProjection(mode)`**: Switches between `"perspective"` and `"orthographic"`. Orthographic uses a synced ortho camera derived from the perspective camera's FOV each frame.
 - **`addPostRenderCallback(cb)` / `removePostRenderCallback(cb)`**: Register callbacks that run after the main render (used by `AxisGizmo` and `MagnifierRenderer` for their corner overlay passes).
-- **`addFrameCallback(cb)` / `removeFrameCallback(cb)`**: Register arbitrary callbacks run every frame before render. Used by MinimapRenderer.
+- **`addFrameCallback(cb)` / `removeFrameCallback(cb)`**: Register arbitrary callbacks run every frame before render.
+- **`getActiveCamera()`**: The camera the scene is actually rendered with — the synced ortho camera in orthographic mode, else the perspective camera. **Picking/raycasting/magnifier MUST use this** (not `camera`) so screen rays and the GPU pick match the displayed projection (perspective rays diverge, ortho rays are parallel). In the ortho render pass, `sizeAttenuation:false` sprites (measurement labels/dots, markers) are temporarily scaled by the camera distance and restored — three skips its perspective `-mvPosition.z` screen-size multiply under an ortho camera, so without this they collapse to ~invisible.
 - **`fitToBox(box)`**: Positions camera to frame a bounding box.
 - **`raycast(nx, ny, objects)`**: Screen-space raycast returning `THREE.Intersection[]`.
 - **`dispose()`**: Cancels animation, disconnects ResizeObserver, disposes renderer.
@@ -187,15 +188,7 @@ Interactive 3D measurement tool with visual scene objects.
 - **`updateSnap(worldPos, color?)` / `clearSnap()`**: Live cursor preview while measuring. The indicator is a **constant on-screen crosshair sprite** (`sizeAttenuation:false`, `depthTest:false`) — not a ball — for precise targeting, plus a dashed rubber-band line from the last placed point.
 - **`onChange?: (measurements: Measurement[]) => void`**: Wired to `setMeasurementList` in Viewport.
 
-### `MinimapRenderer` (`core/minimap-renderer.ts`)
-Top-down orthographic minimap with overlay, rendered in the **bottom-left** corner of the viewport (the axis gizmo is bottom-right). The Viewport positions it via `--pcv-minimap-left` (WorkspaceLayout sets it to clear the left tool rail); being on the left, it never overlaps the right-hand sidebar.
-
-- **`attach(container)`**: Creates two `<canvas>` elements inside container — one WebGL (3D scene rendering), one 2D overlay. Overlay draws: **panorama-camera dots** (white; the opened one highlighted orange — fed by the Viewport via `setPois`/`setSelectedPoi`), the camera dot + frustum cone (clamped to the map edge when out of range; correct horizontal half-FOV `atan(tan(vFov/2)·aspect)`, cone scales with map size), a **scale bar** (round 1/2/5×10ⁿ meters spanning ~30% of the width), and a **north arrow**. WebGL context creation is retried on every attach; while failed — **or after a `webglcontextlost`** (the minimap's context is the browser's prime eviction target at the per-page context limit) — the overlay shows an explicit **"overview unavailable"** message instead of silent black. Recovery = toggle the minimap off/on (re-attach).
-- **`setBounds(bounds)`**: Calculates padded square world range, positions `OrthographicCamera` above center. **Empty bounds are ignored entirely** (assigning them used to suppress the fallback while rendering a useless ±50 range).
-- **`update()`**: Called every frame via `SceneManager.addFrameCallback`. If bounds never arrived (e.g. the load promise rejected), `_deriveBoundsFromClouds()` self-heals them from the loaded octrees (tight box + offset). **The top-down 3D pass is the minimap's whole cost (a SECOND full render of the point cloud), so it is time-gated to ~3 fps** (`RENDER_3D_INTERVAL_MS`, `performance.now()`) — decoupled from the main frame rate so it costs the same at 15 or 120 fps and can't feed back into the main FPS. The top-down image is invariant to main-camera motion (only changes as points stream / scene content changes), so a slow cadence is imperceptible. The cheap 2D overlay still redraws every 2nd frame so the camera indicator stays responsive. `_syncSize()` self-heals canvas dimensions each 3D render.
-- **`canvasToWorld(cx, cy)`**: Converts canvas pixel coordinates to world XY. The Viewport uses this for **click AND drag navigation** — dragging pans the main view continuously (pointer capture; the resize handle stops pointerdown propagation so resizing never navigates). **Double-click** fits the whole cloud (`fitToBox(worldBox)`).
-- **`resize()`**: Syncs canvas dimensions to container.
-- **`dispose()`**: Removes canvases, disposes renderer (bounds/POIs survive for re-attach). The Viewport **disposes the minimap while hidden** (`showMinimap` false) so its WebGL context is freed — contexts are scarce and holding one for an invisible minimap is what pushed browsers over the context limit.
+*(The `MinimapRenderer` was removed — the top-down minimap feature and all its controls are gone. Removing it also freed a scarce WebGL context.)*
 
 
 ### `PresentationManager` (`core/presentation-manager.ts`)
@@ -232,20 +225,16 @@ When the `children` render prop is **not** provided, `PanoCloudViewer` renders `
 ```
 WorkspaceLayout
   MainToolbar               ← top bar (logo, view controls, toggles, quick-settings gear)
-  ToolRail                  ← left icon rail (measure/section tools)
-  Viewport [lazy]           ← Three.js init, event handlers, minimap overlay
+  ToolRail                  ← BOTTOM horizontal icon bar (measure/section tools)
+  Viewport [lazy]           ← Three.js init, event handlers
   PanoViewer                ← 360° panorama overlay (conditionally rendered; engine-pluggable)
-  QuickSettingsPopover      ← simple quick-settings popover (gear button) — panos/minimap toggles, color mode, point size
   RenderingSettings         ← advanced rendering settings panel overlay
   Sidebar                   ← right collapsible sidebar (starts below the toolbar; chevron toggle on its side)
-    PanoPanel
-    ScenePanel
-    MeasurementsPanel
-    ClassificationPanel
-    ScenesPanel
+    LayersPanel · PanoPanel · ScenePanel (incl. clipping controls) · MeasurementsPanel · ScenesPanel
+  bottom-left status        ← point count · budget · FPS
 ```
 
-The default (professional) `WorkspaceLayout` sidebar **no longer overlaps the top toolbar** — it starts below it — and is collapsed/expanded with a **chevron toggle on its inner edge**. The toolbar's gear button opens a **simple quick-settings popover** (panoramas/minimap toggles, color mode, point size — mirroring the minimal layout's settings) **in addition to** the advanced "Rendering Settings" modal, so quick tweaks no longer require opening the full panel.
+The default (professional) `WorkspaceLayout` sidebar **no longer overlaps the top toolbar** — it starts below it — and is collapsed/expanded with a **chevron toggle on its inner edge**. **The tool rail is a horizontal bar at the bottom-center**; the bottom-left shows point count / budget / FPS; the axis gizmo is bottom-right. **Clipping controls live in the sidebar's Scene tab** (`ScenePanel` renders `<ClipToolbar />` under a "Sections" heading — the floating clip toolbar was removed).
 
 Alternative packaged layouts (use via the render prop):
 - `MinimalLayout` — viewport + minimal floating toolbar (with the same simple quick-settings)
@@ -261,12 +250,11 @@ This prevents potree-core and Three.js from loading on the server.
 
 ### Viewport responsibilities
 1. Creates all manager instances (SceneManager, PointCloudLoader, etc.) in a one-time `useEffect`.
-2. Registers a minimap frame callback with `SceneManager`.
-3. Wires manager callbacks to provider state setters (`onChange → setMeasurementList`, etc.).
-4. Passes manager instances up to `ViewerProvider` via `setSceneManager`, `setLoader`, etc.
-5. Handles pointer events: marker raycasting, measurement clicks, section-box drag, right-click to finish.
-6. Syncs provider state changes back to managers via secondary `useEffect`s (navigation mode, marker visibility, etc.).
-7. Renders minimap DOM overlay and tool hint bar.
+2. Wires manager callbacks to provider state setters (`onChange → setMeasurementList`, etc.).
+3. Passes manager instances up to `ViewerProvider` via `setSceneManager`, `setLoader`, etc.
+4. Handles pointer events: axis-gizmo clicks, marker raycasting, measurement clicks, section-box drag, right-click to finish.
+5. Syncs provider state changes back to managers via secondary `useEffect`s (navigation mode, marker visibility, etc.).
+6. Renders the tool hint bar.
 
 ---
 
@@ -274,9 +262,9 @@ This prevents potree-core and Three.js from loading on the server.
 
 ### `ViewerProvider` + `useViewer()`
 Core state store. Exposes:
-- Manager refs: `sceneManager`, `loader`, `measurementManager`, `markerManager`, `cameraAnimator`, `exporter`, `minimap`, `clipManager` (all `null` until Viewport initialises)
+- Manager refs: `sceneManager`, `loader`, `measurementManager`, `markerManager`, `cameraAnimator`, `exporter`, `clipManager` (all `null` until Viewport initialises)
 - Setter methods for each manager (called by Viewport)
-- UI state: `activeTool`, `pointBudget`, `pointSize`, `measurementList`, `showMarkers`, `showMinimap`, `showMeasurements`, `showMagnifier`, `selectedCamera`, `clipBoxEntries`, `selectedClipBoxId`, `colorMode`, `navigationMode`, `projection`, `displaySettings`
+- UI state: `activeTool`, `pointBudget`, `pointSize`, `measurementList`, `showMarkers`, `showMeasurements`, `showMagnifier`, `selectedCamera`, `clipBoxEntries`, `selectedClipBoxId`, `colorMode`, `navigationMode`, `projection`, `displaySettings`
 - `config: ViewerConfig`
 
 **FPS is NOT context state — read it with `useFps()`.** FPS updates once per second; if it were a `useViewer()` value it would re-render every consumer (the whole shell) every second. Instead the provider keeps it in a ref + listener set (`setFps` publishes; `subscribeFps`/`getFps` back a `useSyncExternalStore`), and `useFps()` re-renders only the calling component. The status pills use a tiny `<StatusFps>` leaf so the per-second tick repaints just that pill. (Same reasoning motivates coalescing `clipManager.onChange → setClipBoxEntries` to one rAF per frame in the Viewport, so a high-frequency-mouse clip-handle drag doesn't re-render every consumer multiple times per frame.)
@@ -307,7 +295,7 @@ High-level hooks for custom UIs. Each encapsulates a logical group of actions, a
 | `useClipActions()` | `addBox`, `clearAll`, `setModeAll`, `selectBox(id)`, `setEnabled`, `setOutlinesVisible`, `resetRotation`, `boxes`, `clipMode`, `hasClipBox` (`setTransformMode` is a deprecated no-op) |
 | `useDisplayActions()` | `colorMode`, `setColorMode`, `pointBudget`, `setPointBudget`, `pointSize`, `setPointSize`, `setQualityPreset` |
 | `useExportActions()` | `capture(options)`, `download(dataUrl, filename)` |
-| `useVisibilityActions()` | `showMarkers`, `toggleMarkers`, `showMinimap`, `toggleMinimap` |
+| `useVisibilityActions()` | `showMarkers`, `toggleMarkers` |
 | `useDisplaySettings()` | `settings`, `presets`, `applyPreset(preset)`, `updateSetting(key, value)` |
 
 ---
@@ -362,7 +350,7 @@ Activating any `measure-*` tool switches the sidebar to the **Measurements** tab
 potree-core's `getDefines()` reads the material **property** (`mat.rgbGamma`/`rgbBrightness`/`rgbContrast`, and the intensity equivalents) to decide whether to compile the adjustment into the shader (`use_rgb_gamma_contrast_brightness`); the shader then reads the matching **uniform** (`mat.uniforms.rgbGamma.value`). So the Settings panel sets **both**, and flips `mat.needsUpdate` only when the group crosses default↔active (to add/remove the define without rebuilding the program every tick). Writing just the uniform (or just the property) leaves the slider inert.
 
 ### Layers panel — single place to toggle overlays
-View-layer visibility (panoramas, measurements, minimap) is consolidated into the sidebar's **"Layers"** tab (`components/sidebar/layers-panel.tsx`, the first tab). **Classification** is folded into this panel as a collapsible section (its standalone tab was removed). Provider state: `showMarkers` (panoramas), `showMeasurements` (wired to `MeasurementManager.setVisible`), `showMinimap`. The **minimal** layout (no sidebar) keeps its layer toggles in `MinimalSettingsPopover`.
+View-layer visibility (panoramas, measurements) is consolidated into the sidebar's **"Layers"** tab (`components/sidebar/layers-panel.tsx`, the first tab). **Classification** is folded into this panel as a collapsible section (its standalone tab was removed). Provider state: `showMarkers` (panoramas), `showMeasurements` (wired to `MeasurementManager.setVisible`). The **minimal** layout (no sidebar) keeps its layer toggles in `MinimalSettingsPopover`.
 
 ### Unified Settings panel (top-left)
 `overlays/rendering-settings.tsx` is the **single Settings panel** (top-left, draggable), opened by the one toolbar button (`SlidersHorizontal`). It merges what used to be three places — the quick-settings popover (deleted), the rendering modal, and the toolbar theme/clouds buttons (removed): **Display** (color mode, point size → `loader.setPointSize`, budget → `loader.setPointBudget`, quality preset), **RGB / Intensity / Elevation / opacity**, **Measurements & markers** (label size, dot size, pin size/opacity, pin-label mode — live writes to `viewer.displaySettings`, which the Viewport syncs to the managers on every change), and **Theme**. **Slider wiring gotcha**: potree-core's shader reads `material.uniforms.<name>.value` — writing `mat.rgbGamma = v` is a **no-op**. The panel writes `mat.uniforms.rgbGamma.value` (and uses the `elevationRange`/`opacity` setters); the old code wrote stray props, which is why those sliders did nothing. Point **budget** also has no post-load auto-sync, so the slider must call `loader.setPointBudget` explicitly (it does).
@@ -390,7 +378,7 @@ The 360° overlay (`PanoViewer`) is engine-pluggable via the `panoEngine` prop /
 Three.js uses `window`, `document`, `requestAnimationFrame`, `WebGLRenderingContext` — none of which exist in Node.js. All viewer components carry the `"use client"` directive to prevent Next.js from attempting server-side rendering of any part of the tree.
 
 ### Single OrbitControls for all navigation modes
-`SceneManager` keeps **one** `OrbitControls` instance for orbit/free/pan. `setNavigationMode` only swaps `controls.mouseButtons` and `maxPolarAngle`; the frame loop always calls `this.controls.update()`. This is deliberate: clipping, the minimap, `CameraAnimator.flyTo`, and the ortho-camera sync all read `controls.target`, so introducing a second controller (e.g. TrackballControls/MapControls with its own target) would desync them. Keep navigation on the single instance.
+`SceneManager` keeps **one** `OrbitControls` instance for orbit/free/pan. `setNavigationMode` only swaps `controls.mouseButtons` and `maxPolarAngle`; the frame loop always calls `this.controls.update()`. This is deliberate: clipping, `CameraAnimator.flyTo`, and the ortho-camera sync all read `controls.target`, so introducing a second controller (e.g. TrackballControls/MapControls with its own target) would desync them. Keep navigation on the single instance.
 
 ### Managers stored in React state (not refs)
 Manager instances are stored via `useState` in `ViewerProvider`. If they were stored in `useRef`, toolbar and sidebar components would not re-render when managers become available after Viewport initialises, and conditional renders like `loader && <SomePanel />` would never show. State storage triggers the necessary re-render cascade.
@@ -405,9 +393,9 @@ Panorama markers are `THREE.Sprite`s with `sizeAttenuation:false`, so they keep 
 The `uiScale` prop scales the UI chrome (toolbars, tool-rail, sidebar, floating palettes, dialogs) via a `--pcv-scale` CSS variable plus `zoom`, while the 3D viewport/canvas stays at full device resolution. This keeps point-cloud rendering crisp on high-DPI / large displays while letting the surrounding controls be enlarged or shrunk independently.
 
 ### Mobile / touch responsiveness
-`WorkspaceLayout` is responsive at the Tailwind `md` (768px) breakpoint via the `useIsMobile()` hook. On phones/small tablets the **sidebar becomes a full-bleed overlay** (`w-full max-w-sm`) that starts **closed** (so the viewport is usable) with a tap-to-close backdrop; on `md+` it sits beside the viewport as before. The minimap stays at the edge on mobile (the `--pcv-minimap-right` shift is `md:`-gated), the bottom status strip is `hidden md:block`, the top toolbar caps to `max-w-[calc(100vw-1.5rem)]` and scrolls, and the Settings panel is `w-[calc(100vw-1.5rem)] max-w-xs md:w-72`. **3D touch nav already works** — `SceneManager` sets `renderer.domElement.style.touchAction = "none"` and OrbitControls has touch enabled by default (one-finger rotate, two-finger pinch-zoom/pan); taps place measurement/clip points via synthesized mouse events.
+`WorkspaceLayout` is responsive at the Tailwind `md` (768px) breakpoint via the `useIsMobile()` hook. On phones/small tablets the **sidebar becomes a full-bleed overlay** (`w-full max-w-sm`) that starts **closed** (so the viewport is usable) with a tap-to-close backdrop; on `md+` it sits beside the viewport as before. The bottom-left status is `hidden md:block`, the top toolbar and bottom tool rail cap to `max-w-[calc(100vw-1.5rem)]` and scroll, and the Settings panel is `w-[calc(100vw-1.5rem)] max-w-xs md:w-72`. **3D touch nav already works** — `SceneManager` sets `renderer.domElement.style.touchAction = "none"` and OrbitControls has touch enabled by default (one-finger rotate, two-finger pinch-zoom/pan); taps place measurement/clip points via synthesized mouse events.
 
-**Safe areas & dynamic viewport (mobile chrome overlap):** all floating chrome anchored to a viewport edge embeds `env(safe-area-inset-*)` in its offset so it never hides behind the **notch / OS status bar / home-indicator / browser address & nav bars** — the top toolbar (`top-[calc(0.75rem+env(safe-area-inset-top))]`), tool rail, the right sidebar (mobile `top`/`bottom`/`right` insets), the clip toolbar, the minimap (`bottom: calc(2.5rem + env(safe-area-inset-bottom))`), and the Settings panel (also `max-h:[calc(100dvh-…)]`). `env()` resolves to `0` on desktop and whenever the host omits `viewport-fit=cover`, so these are safe to apply universally. **The host must opt in for them to take effect on mobile**: set `viewport-fit=cover` (Next.js: `export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" }`) **and size the viewer's container with `100dvh`, not `100vh`** (`100vh` is the *tallest* mobile viewport, so bottom UI slides under the address bar). Both demo apps (`apps/web`, `apps/example`) do this.
+**Safe areas & dynamic viewport (mobile chrome overlap):** all floating chrome anchored to a viewport edge embeds `env(safe-area-inset-*)` in its offset so it never hides behind the **notch / OS status bar / home-indicator / browser address & nav bars** — the top toolbar (`top-[calc(0.75rem+env(safe-area-inset-top))]`), the bottom tool rail, the right sidebar (mobile `top`/`bottom`/`right` insets), the bottom-left status, and the Settings panel (also `max-h:[calc(100dvh-…)]`). `env()` resolves to `0` on desktop and whenever the host omits `viewport-fit=cover`, so these are safe to apply universally. **The host must opt in for them to take effect on mobile**: set `viewport-fit=cover` (Next.js: `export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" }`) **and size the viewer's container with `100dvh`, not `100vh`** (`100vh` is the *tallest* mobile viewport, so bottom UI slides under the address bar). Both demo apps (`apps/web`, `apps/example`) do this.
 
 ---
 
@@ -429,7 +417,7 @@ Switch via `setNavigationMode(mode)` in `ViewerProvider` — Viewport syncs to `
 `MagnifierRenderer` — NavVis-style zoom inset while measuring: a **post-render scissor pass** rendering the MAIN scene through a narrow-FOV camera (main FOV / 8, aspect 1) aimed along the cursor ray, into a 180px square offset from the cursor (flipped near edges), with a GL-drawn frame + **crisp vector crosshair**. **No readbacks / no `preserveDrawingBuffer`** (a readback loupe failed before). Deliberately does NOT call `potree.updatePointClouds` with the zoom camera (would thrash LOD streaming) — it magnifies whatever LOD the main camera loaded. Toggled via `showMagnifier` in `ViewerProvider` (tool-rail ZoomIn button, default off); active only while a `measure-*` tool is selected. Viewport feeds cursor NDC+client coords on mousemove and clears on leave. **`hideDuringRender(provider)`**: objects hidden for the magnifier's scene pass only (restored right after) — the Viewport registers the MeasurementManager's snap crosshair (`snapIndicator`), whose low-res canvas texture looks pixelated when zoomed; the magnifier's own vector crosshair marks the center instead.
 
 ### Axis gizmo (`core/axis-gizmo.ts`)
-`AxisGizmo` wraps three.js's native **`ViewHelper`** (`three/examples/jsm/helpers/ViewHelper.js`) for the world-orientation gizmo — the colored X/Y/Z balls + labels, **bottom-right** (ViewHelper's native corner; the minimap moved to bottom-left to free it). `render()` draws the helper's Object3D into a bottom-right viewport shifted left by `rightOffset` px. **The gizmo slides with the sidebar**: the Viewport's post-render callback measures the `[data-pcv-sidebar]` element's live rect each frame and sets `rightOffset = max(0, canvasRight − sidebarLeft + gap)` — so the gizmo tracks the open/close `translateX` transition and moves out from under the (full-height) sidebar, snapping back to the corner when closed (off-screen sidebar → clamped to 0). This self-handles zoom/breakpoint/closed with no layout knowledge, and null in layouts without a sidebar. **One deliberate deviation** because the scene is **Z-up with one OrbitControls**: `ViewHelper.handleClick()` animates the camera with hard-coded **Y-up** targets and never touches OrbitControls — which would reintroduce the axis-shift bug — so `AxisGizmo.handleClick()` does its own hit-test against the gizmo axes (bottom-right dim×dim square, shifted by `rightOffset`, raycast against a replica ortho camera whose `matrixWorld` is updated once) and invokes `onAxisSelect(dir)`, which the Viewport flies via `CameraAnimator` with `up=(0,0,1)` (top/bottom nudged off the ±Z pole like the view presets). Registered as a post-render callback; the Viewport calls `handleClick(clientX, clientY)` first in `handleClick` and consumes the click when an axis is hit. Replaced the old custom `AxisWidget` (flat XYZ arrows).
+`AxisGizmo` wraps three.js's native **`ViewHelper`** (`three/examples/jsm/helpers/ViewHelper.js`) for the world-orientation gizmo — the colored X/Y/Z balls + labels, **bottom-right** (ViewHelper's native corner). `render()` draws the helper's Object3D into a bottom-right viewport shifted left by `rightOffset` px. **The gizmo slides with the sidebar**: the Viewport's post-render callback measures the `[data-pcv-sidebar]` element's live rect each frame and sets `rightOffset = max(0, canvasRight − sidebarLeft + gap)` — so the gizmo tracks the open/close `translateX` transition and moves out from under the (full-height) sidebar, snapping back to the corner when closed (off-screen sidebar → clamped to 0). This self-handles zoom/breakpoint/closed with no layout knowledge, and null in layouts without a sidebar. **One deliberate deviation** because the scene is **Z-up with one OrbitControls**: `ViewHelper.handleClick()` animates the camera with hard-coded **Y-up** targets and never touches OrbitControls — which would reintroduce the axis-shift bug — so `AxisGizmo.handleClick()` does its own hit-test against the gizmo axes (bottom-right dim×dim square, shifted by `rightOffset`, raycast against a replica ortho camera whose `matrixWorld` is updated once) and invokes `onAxisSelect(dir)`, which the Viewport flies via `CameraAnimator` with `up=(0,0,1)` (top/bottom nudged off the ±Z pole like the view presets). Registered as a post-render callback; the Viewport calls `handleClick(clientX, clientY)` first in `handleClick` and consumes the click when an axis is hit. Replaced the old custom `AxisWidget` (flat XYZ arrows).
 
 ### Profile measurement (polyline length)
 `profile` is a multi-point path-length tool (icon: Waypoints): click points along a path, **right-click to finish**. `MeasurementManager.compute()` returns `pathLength()` (sum of consecutive segment distances); the generic `buildObjects` path already draws the open polyline (only `area` closes the loop) + vertex dots + a `formatLength` label. The measurements panel formats it as a length.
@@ -508,7 +496,7 @@ project/
 - **`PresentationManager`** is not in `ViewerProvider` — it is instantiated directly by `ScenesPanel`. If you need it elsewhere, instantiate it yourself with the source key.
 - **`ClipManager` has one global clip mode** — potree-core exposes a single global `clipMode`, so all sections share one mode (`"outside"` / `"inside"`); the UI enforces this consistently and applies the chosen mode to every box. Per-box modes are not supported.
 - **`ClipManager.setEnabled(false)` disables clipping without deleting boxes** — the `Box3Helper`s stay visible so sections remain editable; don't call `clear()`/`removeBox()` just to temporarily turn clipping off. Re-enable with `setEnabled(true)`.
-- **Navigation uses one OrbitControls** — don't add a second controller (Trackball/Map) per mode; `controls.target` is shared by clipping, minimap, camera-animator and ortho sync, so a separate target would desync them.
+- **Navigation uses one OrbitControls** — don't add a second controller (Trackball/Map) per mode; `controls.target` is shared by clipping, camera-animator and ortho sync, so a separate target would desync them.
 - **`TransformControls` (three r170) is not an `Object3D`** — add its gizmo with `scene.add(tc.getHelper())`, never `scene.add(tc)`, and traverse `tc.getHelper()` (not `tc`) when raising the gizmo's `renderOrder`/`depthTest`. `tc` has no `traverse`.
 - **Marker sprites** use `sizeAttenuation:false` (constant on-screen pin size) and `depthTest=false` (always render on top). Don't switch `sizeAttenuation` back on (pins would scale with zoom) or remove `depthTest=false` (pins would hide behind the cloud).
 - **Marker labels** are gated by `DisplaySettings.markerLabelMode` — default `"hover"`. Don't hardcode always-on labels; respect the setting.

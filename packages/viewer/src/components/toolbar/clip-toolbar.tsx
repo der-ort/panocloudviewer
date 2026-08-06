@@ -30,15 +30,14 @@ export function ClipToolbar() {
     setOutlinesLocal(outlinesVisible);
   }, [isEnabled, outlinesVisible, boxes]);
 
-  if (boxes.length === 0) return null;
-
   // Use first *visible* box's mode to match ClipManager.applyAll() which derives
   // the effective clip mode from visible[0].mode — not the overall boxes[0].mode.
   const firstVisible = boxes.find(b => b.visible);
   const isInside = (firstVisible?.mode ?? "outside") === "inside";
+  const hasBoxes = boxes.length > 0;
 
   return (
-    <div className="flex flex-col w-52 py-2 px-1 select-none">
+    <div className="flex flex-col w-full py-2 px-1 select-none">
       {/* Header row */}
       <div className="flex items-center justify-between px-1 mb-1.5">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
@@ -66,6 +65,12 @@ export function ClipToolbar() {
 
       {/* Divider */}
       <div className="h-px bg-muted mx-1 mb-1.5" />
+
+      {!hasBoxes && (
+        <p className="px-1 text-[11px] text-muted-foreground">{t.empty}</p>
+      )}
+
+      {hasBoxes && (<>
 
       {/* Global clipping on/off toggle */}
       <div className="px-1 mb-1.5">
@@ -191,6 +196,8 @@ export function ClipToolbar() {
           </div>
         </>
       )}
+
+      </>)}
     </div>
   );
 }

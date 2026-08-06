@@ -26,9 +26,6 @@ export class MagnifierRenderer {
   private enabled = false;
   /** Latest cursor position (canvas-relative CSS px), or null when off-canvas. */
   private cursor: { cx: number; cy: number } | null = null;
-  /** Reused per-frame crop camera — copied from the main camera each render
-   *  (cloning per frame allocated a camera + matrices → GC churn). */
-  private zoomCamera = new THREE.PerspectiveCamera();
 
   // Frame + crosshair drawn over the inset in a second tiny pass.
   private frameScene = new THREE.Scene();
@@ -127,13 +124,13 @@ export class MagnifierRenderer {
     left = Math.max(0, Math.min(left, W - size));
     bottom = Math.max(0, Math.min(bottom, H - size));
 
-    // Zoom camera: the main camera's pose/projection rendering only a
-    // (size / ZOOM)² crop centered on the cursor — crop → magnification.
-    // copy() resets .view to the main camera's (null), then setViewOffset
-    // installs this frame's crop, so no stale offset carries over.
+    // Zoom camera: a clone of the ACTIVE camera (perspective or the synced ortho
+    // one) rendering only a (size / ZOOM)² crop centered on the cursor — crop →
+    // magnification. Cloning the active camera keeps the loupe correct in ortho.
+    // ponytail: cloning per frame allocates, but the magnifier is an opt-in loupe
+    // that only renders while measuring — not a hot path.
     const sub = size / MagnifierRenderer.ZOOM;
-    const zoomCamera = this.zoomCamera;
-    zoomCamera.copy(this.sm.camera);
+    const zoomCamera = this.sm.getActiveCamera().clone();
     zoomCamera.setViewOffset(W, H, cx - sub / 2, cy - sub / 2, sub, sub);
     zoomCamera.updateProjectionMatrix();
 

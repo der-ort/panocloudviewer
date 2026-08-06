@@ -115,8 +115,6 @@ export interface ViewerConfig {
   theme?: Theme;
   /** Initial point budget (default: 2_000_000) */
   pointBudget?: number;
-  /** Show minimap (default: true) */
-  showMinimap?: boolean;
   /** Enable panorama sidebar (default: true) */
   enablePanoramas?: boolean;
   /** Custom class name for the root element */

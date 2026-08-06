@@ -11,12 +11,10 @@ import { MeasurementManager } from "@der-ort/pano-cloud-viewer-core";
 import { MarkerManager } from "@der-ort/pano-cloud-viewer-core";
 import { CameraAnimator } from "@der-ort/pano-cloud-viewer-core";
 import { ExportManager } from "@der-ort/pano-cloud-viewer-core";
-import { MinimapRenderer } from "@der-ort/pano-cloud-viewer-core";
 import { ClipManager } from "@der-ort/pano-cloud-viewer-core";
 import { AxisGizmo } from "@der-ort/pano-cloud-viewer-core";
 import { MagnifierRenderer } from "@der-ort/pano-cloud-viewer-core";
 import { createAdapter } from "@der-ort/pano-cloud-viewer-core";
-import { useMinimapResize } from "../hooks/use-minimap-resize";
 import { useSnapThrottle } from "../hooks/use-snap-throttle";
 import * as THREE from "three";
 
@@ -27,16 +25,15 @@ interface ViewportProps {
 
 export function Viewport({ className }: ViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const minimapContainerRef = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
   const t = useLocale().viewport;
 
   const {
     config,
     setSceneManager, setLoader, setMeasurementManager, setMarkerManager,
-    setCameraAnimator, setExporter, setMinimap, setClipManager,
+    setCameraAnimator, setExporter, setClipManager,
     setFps, activeTool, setPointBudget,
-    showMarkers, showMinimap, showMeasurements, showMagnifier, setMeasurementList, selectedCamera, setSelectedCamera,
+    showMarkers, showMeasurements, showMagnifier, setMeasurementList, selectedCamera, setSelectedCamera,
     clipBoxEntries, setClipBoxEntries, setSelectedClipBoxId,
     navigationMode, projection, displaySettings,
   } = useViewer();
@@ -57,14 +54,10 @@ export function Viewport({ className }: ViewportProps) {
   const loaderRef = useRef<PointCloudLoader | null>(null);
   const markerRef = useRef<MarkerManager | null>(null);
   const measureRef = useRef<MeasurementManager | null>(null);
-  const minimapRef = useRef<MinimapRenderer | null>(null);
   const clipRef = useRef<ClipManager | null>(null);
   const animRef = useRef<CameraAnimator | null>(null);
   const axisRef = useRef<AxisGizmo | null>(null);
   const magRef = useRef<MagnifierRenderer | null>(null);
-
-  // Minimap pixel size + corner-drag resize (window listeners cleaned up on unmount).
-  const { minimapSize, handleMinimapResizeStart } = useMinimapResize(minimapRef);
 
   // Clip-box cursor-drop state: current draft box + pointer-down screen pos
   // (used to distinguish a placement click from an orbit drag).
@@ -127,7 +120,6 @@ export function Viewport({ className }: ViewportProps) {
     const markerMgr = new MarkerManager(sm.scene);
     const anim = new CameraAnimator(sm.camera, sm.controls);
     const exporter = new ExportManager(sm);
-    const minimapRdr = new MinimapRenderer(sm);
 
     const clipMgr = new ClipManager(sm);
     // Coalesce onChange to one React update per animation frame. During a
@@ -149,7 +141,6 @@ export function Viewport({ className }: ViewportProps) {
     loaderRef.current = loader;
     markerRef.current = markerMgr;
     measureRef.current = measureMgr;
-    minimapRef.current = minimapRdr;
     clipRef.current = clipMgr;
     animRef.current = anim;
 
@@ -159,12 +150,7 @@ export function Viewport({ className }: ViewportProps) {
     setMarkerManager(markerMgr);
     setCameraAnimator(anim);
     setExporter(exporter);
-    setMinimap(minimapRdr);
     setClipManager(clipMgr);
-
-    // Register minimap frame callback so it redraws every frame
-    const minimapFrame = () => minimapRdr.update();
-    sm.addFrameCallback(minimapFrame);
 
     // Native three.js ViewHelper gizmo (bottom-left) — post-render so it draws
     // on top. Clicking an axis flies the camera there via the Z-up-safe
@@ -209,48 +195,21 @@ export function Viewport({ className }: ViewportProps) {
 
     sm.start();
 
-    // Load point cloud and set minimap bounds. Budget: pass only an explicit
-    // config value through — otherwise the loader derives it from the cloud's
-    // total point count, and we sync the applied value back into React state
-    // so sliders/status show the real number.
+    // Load point cloud. Budget: pass only an explicit config value through —
+    // otherwise the loader derives it from the cloud's total point count, and we
+    // sync the applied value back into React state so sliders/status show it.
     loader.load("metadata.json", config.pointBudget).then(() => {
       setPointBudget(loader.appliedBudget);
-      const pc = loader.getPointCloud();
-
-      // After load, compute world bounding box for minimap
-      if (pc) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const pca = pc as any;
-        const box = pca.pcoGeometry?.boundingBox ?? pca.boundingBox;
-        const tightBox = pca.pcoGeometry?.tightBoundingBox ?? box;
-        const offset = pca.pcoGeometry?.offset;
-        const worldBox = new THREE.Box3();
-        if (tightBox && offset) {
-          worldBox.copy(tightBox);
-          worldBox.min.add(offset);
-          worldBox.max.add(offset);
-        } else if (box) {
-          worldBox.copy(box);
-        } else {
-          worldBox.setFromObject(pc);
-        }
-        if (!worldBox.isEmpty()) {
-          minimapRdr.setBounds(worldBox);
-        }
-      }
-
     }).catch(console.error);
 
     return () => {
       if (clipChangeRaf != null) cancelAnimationFrame(clipChangeRaf);
-      sm.removeFrameCallback(minimapFrame);
       sm.removePostRenderCallback(axisFrame);
       sm.removePostRenderCallback(magFrame);
       magnifier.dispose();
       sm.dispose();
       measureMgr.dispose();
       markerMgr.dispose();
-      minimapRdr.dispose();
       clipMgr.dispose();
       axisGizmo.dispose();
       initialized.current = false;
@@ -258,72 +217,14 @@ export function Viewport({ className }: ViewportProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Attach minimap container after init; release its WebGL context while
-  // hidden (contexts are a scarce browser resource — holding one for an
-  // invisible minimap is what pushed other tabs/instances over the limit).
-  useEffect(() => {
-    if (showMinimap && minimapRef.current && minimapContainerRef.current) {
-      minimapRef.current.attach(minimapContainerRef.current);
-      return () => minimapRef.current?.dispose();
-    }
-  }, [showMinimap]);
-
-  // Minimap navigation: move the orbit target (and camera, keeping its offset)
-  // to the world position under the given minimap pixel.
-  const navigateMinimap = useCallback((el: HTMLElement, clientX: number, clientY: number) => {
-    const sm = smRef.current;
-    const minimap = minimapRef.current;
-    if (!sm || !minimap) return;
-    const rect = el.getBoundingClientRect();
-    const world = minimap.canvasToWorld(clientX - rect.left, clientY - rect.top);
-    const cam = sm.camera;
-    const offset = new THREE.Vector3().subVectors(cam.position, sm.controls.target);
-    sm.controls.target.set(world.x, world.y, sm.controls.target.z);
-    cam.position.set(world.x + offset.x, world.y + offset.y, cam.position.z);
-    sm.controls.update();
-  }, []);
-
-  // Click OR drag on the minimap to navigate — dragging pans the main view
-  // continuously, like scrubbing a map.
-  const minimapDragRef = useRef(false);
-  const handleMinimapPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    minimapDragRef.current = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    navigateMinimap(e.currentTarget, e.clientX, e.clientY);
-  }, [navigateMinimap]);
-  const handleMinimapPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (minimapDragRef.current) navigateMinimap(e.currentTarget, e.clientX, e.clientY);
-  }, [navigateMinimap]);
-  const handleMinimapPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    minimapDragRef.current = false;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  }, []);
-  // Double-click the minimap → frame the whole cloud in the main view.
-  const handleMinimapDblClick = useCallback(() => {
-    const wb = loaderRef.current?.worldBox;
-    if (wb && !wb.isEmpty()) smRef.current?.fitToBox(wb);
-  }, []);
-
-  // Rebuild markers when cameras load; mirror the positions onto the minimap.
+  // Rebuild markers when cameras load.
   useEffect(() => {
     if (markerRef.current && cameras.length > 0) {
       const wb = loaderRef.current?.worldBox;
       markerRef.current.build(cameras, wb && !wb.isEmpty() ? wb : undefined);
       markerRef.current.setVisible(showMarkers);
     }
-    minimapRef.current?.setPois(
-      cameras.filter(c => c.position).map(c => ({ x: c.position!.x, y: c.position!.y })),
-    );
   }, [cameras, showMarkers]);
-
-  // Highlight the opened panorama on the minimap.
-  useEffect(() => {
-    minimapRef.current?.setSelectedPoi(
-      selectedCamera?.position
-        ? { x: selectedCamera.position.x, y: selectedCamera.position.y }
-        : null,
-    );
-  }, [selectedCamera]);
 
   // Sync marker visibility
   useEffect(() => {
@@ -758,47 +659,6 @@ export function Viewport({ className }: ViewportProps) {
       />
 
 
-      {/* Minimap overlay — bottom-LEFT (the axis gizmo sits bottom-right). The
-          layout publishes `--pcv-minimap-left` to clear its left tool rail; it
-          defaults to the corner for layouts without one. Being on the left, it
-          never overlaps the right-hand sidebar. */}
-      {showMinimap && (
-        <div
-          className="absolute rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer transition-[left] duration-200"
-          style={{
-            width: minimapSize,
-            height: minimapSize,
-            left: "var(--pcv-minimap-left, 0.75rem)",
-            // Lift above the OS home indicator / browser nav bar on mobile.
-            bottom: "calc(2.5rem + env(safe-area-inset-bottom))",
-          }}
-          onPointerDown={handleMinimapPointerDown}
-          onPointerMove={handleMinimapPointerMove}
-          onPointerUp={handleMinimapPointerUp}
-          onDoubleClick={handleMinimapDblClick}
-        >
-          <div
-            ref={minimapContainerRef}
-            className="relative w-full h-full"
-          />
-          <div className="absolute top-1 left-2 text-[9px] text-white/40 font-mono pointer-events-none">
-            {t.overview}
-          </div>
-          {/* Resize handle — top-right corner. stopPropagation on pointerdown so
-              starting a resize doesn't also trigger minimap navigation. */}
-          <div
-            onMouseDown={handleMinimapResizeStart}
-            onPointerDown={(e) => e.stopPropagation()}
-            className="absolute top-0 right-0 w-4 h-4 cursor-nwse-resize flex items-center justify-center"
-            title="Resize minimap"
-          >
-            <svg width="8" height="8" viewBox="0 0 8 8" className="text-white/30">
-              <path d="M0 8L8 0M3 8L8 3M6 8L8 6" stroke="currentColor" strokeWidth="1" />
-            </svg>
-          </div>
-        </div>
-      )}
-
       {/* Active tool hint */}
       {activeTool !== "none" && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/70 text-[hsl(var(--brand))] text-xs font-mono px-3 py-1 rounded-full pointer-events-none">
@@ -810,13 +670,6 @@ export function Viewport({ className }: ViewportProps) {
           {activeTool === "measure-profile" && t.hintProfile}
           {activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? t.hintVolumeHeight : t.hintVolumeFootprint)}
           {activeTool === "section-box" && t.hintSectionBox}
-        </div>
-      )}
-
-      {/* Loading metadata info */}
-      {metadata && (
-        <div className="absolute top-3 left-3 text-[10px] font-mono text-white/30 pointer-events-none">
-          {(metadata.points / 1e6).toFixed(1)}M pts
         </div>
       )}
     </div>

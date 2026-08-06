@@ -222,6 +222,7 @@ export const en: ViewerLocale = {
   },
   clipToolbar: {
     title: "Clipping",
+    empty: "No section boxes. Use the section tool to add one.",
     addBox: "Add box",
     clearAll: "Clear all",
     keepInside: "Keep inside (all)",

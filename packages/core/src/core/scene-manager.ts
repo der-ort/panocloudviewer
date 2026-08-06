@@ -150,9 +150,17 @@ export class SceneManager {
       // Pre-render frame callbacks (minimap, etc.)
       for (const cb of this.frameCallbacks) cb();
 
-      // Main render — use ortho camera when projection is orthographic
+      // Main render — use ortho camera when projection is orthographic.
       if (this._projection === "orthographic") {
+        // `sizeAttenuation:false` sprites (measurement labels/dots, markers)
+        // skip three's perspective `-mvPosition.z` screen-size multiply under an
+        // ortho camera, so they collapse to ~invisible. Compensate by scaling
+        // them by the camera distance for this pass, then restore (factor=dist
+        // makes the on-screen size match the perspective view — see derivation).
+        const factor = this.camera.position.distanceTo(this.controls.target);
+        const scaled = this._scaleScreenSprites(factor);
         this.renderer.render(this.scene, this._syncOrthoCamera());
+        for (const s of scaled) s.scale.multiplyScalar(1 / factor);
       } else {
         this.renderer.render(this.scene, this.camera);
       }
@@ -324,11 +332,43 @@ export class SceneManager {
     this.controls.update();
   }
 
+  /**
+   * The camera the scene is actually rendered with — the synced ortho camera in
+   * orthographic mode, otherwise the perspective camera. Picking/raycasting MUST
+   * use this so screen rays match what's displayed (perspective rays diverge,
+   * ortho rays are parallel).
+   */
+  getActiveCamera(): THREE.PerspectiveCamera | THREE.OrthographicCamera {
+    return this._projection === "orthographic" ? this._syncOrthoCamera() : this.camera;
+  }
+
+  /** Scale registered screen-space sprites by `factor` (for the ortho pass); returns those scaled so the caller can restore them. */
+  private _screenGroups: THREE.Object3D[] = [];
+  private _scaleScreenSprites(factor: number): THREE.Sprite[] {
+    if (this._screenGroups.length === 0) {
+      for (const name of ["measurements", "pano-markers"]) {
+        const g = this.scene.getObjectByName(name);
+        if (g) this._screenGroups.push(g);
+      }
+    }
+    const scaled: THREE.Sprite[] = [];
+    for (const g of this._screenGroups) {
+      g.traverse(o => {
+        const s = o as THREE.Sprite;
+        if (s.isSprite && (s.material as THREE.SpriteMaterial).sizeAttenuation === false) {
+          s.scale.multiplyScalar(factor);
+          scaled.push(s);
+        }
+      });
+    }
+    return scaled;
+  }
+
   /** Raycast against objects in scene */
   raycast(normalizedX: number, normalizedY: number, objects: THREE.Object3D[]): THREE.Intersection[] {
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2(normalizedX, normalizedY);
-    raycaster.setFromCamera(pointer, this.camera);
+    raycaster.setFromCamera(pointer, this.getActiveCamera());
     return raycaster.intersectObjects(objects, true);
   }
 
@@ -339,13 +379,14 @@ export class SceneManager {
    */
   pickPoint(normalizedX: number, normalizedY: number): THREE.Vector3 | null {
     if (this.pointClouds.length === 0) return null;
+    const camera = this.getActiveCamera(); // ortho-aware — the GPU pick must match the displayed projection
     const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(new THREE.Vector2(normalizedX, normalizedY), this.camera);
+    raycaster.setFromCamera(new THREE.Vector2(normalizedX, normalizedY), camera);
     for (const pc of this.pointClouds) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const octree = pc as any;
       if (typeof octree.pick !== "function") continue;
-      const result = octree.pick(this.renderer, this.camera, raycaster.ray, {
+      const result = octree.pick(this.renderer, camera, raycaster.ray, {
         // Generous window so thin structures (edges, poles, railings) are easy
         // to hit — the pick still returns the point closest to the ray. 63 px
         // gives a proper point-snap feel; below that, sparse clouds miss often

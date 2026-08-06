@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Camera, Map, Ruler } from "lucide-react";
+import { Camera, Ruler } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { ToggleRow } from "../../ui/toggle-row";
@@ -23,8 +23,6 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
   const {
     showMarkers,
     setShowMarkers,
-    showMinimap,
-    setShowMinimap,
     showMeasurements,
     setShowMeasurements,
     colorMode,
@@ -60,12 +58,6 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
             label="Measurements"
             active={showMeasurements}
             onToggle={() => setShowMeasurements(!showMeasurements)}
-          />
-          <ToggleRow
-            icon={<Map size={14} />}
-            label="Minimap"
-            active={showMinimap}
-            onToggle={() => setShowMinimap(!showMinimap)}
           />
         </div>
 

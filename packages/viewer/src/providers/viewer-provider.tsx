@@ -7,7 +7,6 @@ import type { MeasurementManager } from "@der-ort/pano-cloud-viewer-core";
 import type { MarkerManager } from "@der-ort/pano-cloud-viewer-core";
 import type { CameraAnimator } from "@der-ort/pano-cloud-viewer-core";
 import type { ExportManager } from "@der-ort/pano-cloud-viewer-core";
-import type { MinimapRenderer } from "@der-ort/pano-cloud-viewer-core";
 import type { ClipManager } from "@der-ort/pano-cloud-viewer-core";
 import type { ClipBoxEntry } from "@der-ort/pano-cloud-viewer-core";
 import type { ColorMode } from "@der-ort/pano-cloud-viewer-core";
@@ -22,7 +21,6 @@ interface ViewerContextValue {
   markerManager: MarkerManager | null;
   cameraAnimator: CameraAnimator | null;
   exporter: ExportManager | null;
-  minimap: MinimapRenderer | null;
   clipManager: ClipManager | null;
 
   // Setters (called by Viewport after init)
@@ -32,7 +30,6 @@ interface ViewerContextValue {
   setMarkerManager: (m: MarkerManager) => void;
   setCameraAnimator: (a: CameraAnimator) => void;
   setExporter: (e: ExportManager) => void;
-  setMinimap: (r: MinimapRenderer) => void;
   setClipManager: (c: ClipManager) => void;
 
   // Viewer state
@@ -55,8 +52,6 @@ interface ViewerContextValue {
   setMeasurementList: React.Dispatch<React.SetStateAction<Measurement[]>>;
   showMarkers: boolean;
   setShowMarkers: (v: boolean) => void;
-  showMinimap: boolean;
-  setShowMinimap: (v: boolean) => void;
   showMeasurements: boolean;
   setShowMeasurements: (v: boolean) => void;
   /** Picking magnifier (zoom inset while measuring). Default on; renders only while a measure tool is active. */
@@ -118,7 +113,6 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const [markerManager, _setMarkerManager] = useState<MarkerManager | null>(null);
   const [cameraAnimator, _setCameraAnimator] = useState<CameraAnimator | null>(null);
   const [exporter, _setExporter] = useState<ExportManager | null>(null);
-  const [minimap, _setMinimap] = useState<MinimapRenderer | null>(null);
   const [clipManager, _setClipManager] = useState<ClipManager | null>(null);
 
   const [activeTool, setActiveTool] = useState<ActiveTool>("none");
@@ -142,7 +136,6 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const getFps = useCallback(() => fpsRef.current, []);
   const [measurementList, setMeasurementList] = useState<Measurement[]>([]);
   const [showMarkers, setShowMarkers] = useState(true);
-  const [showMinimap, setShowMinimap] = useState(config.showMinimap ?? true);
   const [showMeasurements, setShowMeasurements] = useState(true);
   // On by default — the crosshair inset is the precision aid while measuring
   // (it only renders while a measurement tool is active).
@@ -172,22 +165,20 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const setMarkerManager = useCallback((m: MarkerManager) => _setMarkerManager(m), []);
   const setCameraAnimator = useCallback((a: CameraAnimator) => _setCameraAnimator(a), []);
   const setExporter = useCallback((e: ExportManager) => _setExporter(e), []);
-  const setMinimap = useCallback((r: MinimapRenderer) => _setMinimap(r), []);
   const setClipManager = useCallback((c: ClipManager) => _setClipManager(c), []);
 
   const uiMode: UiMode = config.uiMode ?? "professional";
   const [panoEngine, setPanoEngine] = useState<PanoEngine>(config.panoEngine ?? "photo-sphere-viewer");
 
   const value: ViewerContextValue = {
-    sceneManager, loader, measurementManager, markerManager, cameraAnimator, exporter, minimap, clipManager,
-    setSceneManager, setLoader, setMeasurementManager, setMarkerManager, setCameraAnimator, setExporter, setMinimap, setClipManager,
+    sceneManager, loader, measurementManager, markerManager, cameraAnimator, exporter, clipManager,
+    setSceneManager, setLoader, setMeasurementManager, setMarkerManager, setCameraAnimator, setExporter, setClipManager,
     activeTool, setActiveTool,
     pointBudget, setPointBudget,
     pointSize, setPointSize,
     setFps, subscribeFps, getFps,
     measurementList, setMeasurementList,
     showMarkers, setShowMarkers,
-    showMinimap, setShowMinimap,
     showMeasurements, setShowMeasurements,
     showMagnifier, setShowMagnifier,
     selectedCamera, setSelectedCamera,

@@ -223,6 +223,7 @@ export const de = createLocale(en, {
   },
   clipToolbar: {
     title: "Schnitte",
+    empty: "Keine Schnittboxen. Mit dem Schnittwerkzeug hinzufügen.",
     addBox: "Box hinzufügen",
     clearAll: "Alle entfernen",
     keepInside: "Innen behalten (alle)",

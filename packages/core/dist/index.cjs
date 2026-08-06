@@ -118,7 +118,10 @@ var SceneManager = class {
       }
       for (const cb of this.frameCallbacks) cb();
       if (this._projection === "orthographic") {
+        const factor = this.camera.position.distanceTo(this.controls.target);
+        const scaled = this._scaleScreenSprites(factor);
         this.renderer.render(this.scene, this._syncOrthoCamera());
+        for (const s of scaled) s.scale.multiplyScalar(1 / factor);
       } else {
         this.renderer.render(this.scene, this.camera);
       }
@@ -261,11 +264,41 @@ var SceneManager = class {
     this.controls.target.copy(center);
     this.controls.update();
   }
+  /**
+   * The camera the scene is actually rendered with — the synced ortho camera in
+   * orthographic mode, otherwise the perspective camera. Picking/raycasting MUST
+   * use this so screen rays match what's displayed (perspective rays diverge,
+   * ortho rays are parallel).
+   */
+  getActiveCamera() {
+    return this._projection === "orthographic" ? this._syncOrthoCamera() : this.camera;
+  }
+  /** Scale registered screen-space sprites by `factor` (for the ortho pass); returns those scaled so the caller can restore them. */
+  _screenGroups = [];
+  _scaleScreenSprites(factor) {
+    if (this._screenGroups.length === 0) {
+      for (const name of ["measurements", "pano-markers"]) {
+        const g = this.scene.getObjectByName(name);
+        if (g) this._screenGroups.push(g);
+      }
+    }
+    const scaled = [];
+    for (const g of this._screenGroups) {
+      g.traverse((o) => {
+        const s = o;
+        if (s.isSprite && s.material.sizeAttenuation === false) {
+          s.scale.multiplyScalar(factor);
+          scaled.push(s);
+        }
+      });
+    }
+    return scaled;
+  }
   /** Raycast against objects in scene */
   raycast(normalizedX, normalizedY, objects) {
     const raycaster = new THREE5__namespace.Raycaster();
     const pointer = new THREE5__namespace.Vector2(normalizedX, normalizedY);
-    raycaster.setFromCamera(pointer, this.camera);
+    raycaster.setFromCamera(pointer, this.getActiveCamera());
     return raycaster.intersectObjects(objects, true);
   }
   /**
@@ -275,12 +308,13 @@ var SceneManager = class {
    */
   pickPoint(normalizedX, normalizedY) {
     if (this.pointClouds.length === 0) return null;
+    const camera = this.getActiveCamera();
     const raycaster = new THREE5__namespace.Raycaster();
-    raycaster.setFromCamera(new THREE5__namespace.Vector2(normalizedX, normalizedY), this.camera);
+    raycaster.setFromCamera(new THREE5__namespace.Vector2(normalizedX, normalizedY), camera);
     for (const pc of this.pointClouds) {
       const octree = pc;
       if (typeof octree.pick !== "function") continue;
-      const result = octree.pick(this.renderer, this.camera, raycaster.ray, {
+      const result = octree.pick(this.renderer, camera, raycaster.ray, {
         // Generous window so thin structures (edges, poles, railings) are easy
         // to hit — the pick still returns the point closest to the ray. 63 px
         // gives a proper point-snap feel; below that, sparse clouds miss often
@@ -1790,302 +1824,6 @@ var ExportManager = class _ExportManager {
     a.click();
   }
 };
-var MinimapRenderer = class _MinimapRenderer {
-  sceneManager;
-  bounds = null;
-  // Rendering elements
-  container = null;
-  glCanvas = null;
-  overlayCanvas = null;
-  miniRenderer = null;
-  orthoCamera;
-  /** True when WebGL context creation failed — overlay shows a message instead of silent black. */
-  glFailed = false;
-  // Points of interest (panorama camera positions) drawn on the overlay
-  pois = [];
-  selectedPoi = null;
-  // World range (square, padded)
-  worldLeft = -50;
-  worldRight = 50;
-  worldTop = 50;
-  worldBottom = -50;
-  frameCount = 0;
-  /** Wall-clock time (ms) of the last expensive top-down 3D render. */
-  _last3DTime = 0;
-  /**
-   * Minimum gap between top-down 3D renders. The overview is a SECOND full
-   * render of the point cloud, so it is the minimap's whole cost — but the
-   * top-down image is invariant to main-camera motion (it only changes as
-   * points stream in or the scene content changes), so a slow fixed timer is
-   * imperceptible yet bounds the extra work to ~4 renders/sec regardless of
-   * how fast the main loop runs (no feedback loop where a heavy minimap render
-   * drags the main FPS down and then re-fires proportionally).
-   */
-  static RENDER_3D_INTERVAL_MS = 300;
-  constructor(sceneManager) {
-    this.sceneManager = sceneManager;
-    this.orthoCamera = new THREE5__namespace.OrthographicCamera(-50, 50, 50, -50, -1e4, 1e4);
-    this.orthoCamera.position.set(0, 0, 1e3);
-    this.orthoCamera.up.set(0, 1, 0);
-    this.orthoCamera.lookAt(0, 0, 0);
-  }
-  /**
-   * Attach to a container element. Creates internal canvases.
-   * Container should have position:relative and defined size.
-   */
-  attach(container) {
-    this.dispose();
-    this.container = container;
-    const w = container.clientWidth || 176;
-    const h = container.clientHeight || 176;
-    this.glCanvas = document.createElement("canvas");
-    this.glCanvas.width = w;
-    this.glCanvas.height = h;
-    this.glCanvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;";
-    container.appendChild(this.glCanvas);
-    this.overlayCanvas = document.createElement("canvas");
-    this.overlayCanvas.width = w;
-    this.overlayCanvas.height = h;
-    this.overlayCanvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;";
-    container.appendChild(this.overlayCanvas);
-    try {
-      this.miniRenderer = new THREE5__namespace.WebGLRenderer({
-        canvas: this.glCanvas,
-        antialias: false,
-        alpha: false
-      });
-      this.miniRenderer.setPixelRatio(1);
-      this.miniRenderer.setSize(w, h, false);
-      this.miniRenderer.setClearColor(658970, 1);
-      this.glFailed = false;
-      this.glCanvas.addEventListener("webglcontextlost", (e) => {
-        e.preventDefault();
-        this.glFailed = true;
-      }, { once: true });
-    } catch {
-      this.miniRenderer = null;
-      this.glFailed = true;
-    }
-  }
-  /** Panorama camera positions (world XY) to draw as dots on the overlay. */
-  setPois(pois) {
-    this.pois = pois;
-  }
-  /** Highlight one POI (the opened panorama), or null for none. */
-  setSelectedPoi(poi) {
-    this.selectedPoi = poi;
-  }
-  /** Set world-space bounds of the scene (empty boxes are ignored). */
-  setBounds(bounds) {
-    if (bounds.isEmpty()) return;
-    this.bounds = bounds.clone();
-    const size = new THREE5__namespace.Vector3();
-    const center = new THREE5__namespace.Vector3();
-    bounds.getSize(size);
-    bounds.getCenter(center);
-    const half = Math.max(size.x, size.y) * 0.55;
-    this.worldLeft = center.x - half;
-    this.worldRight = center.x + half;
-    this.worldTop = center.y + half;
-    this.worldBottom = center.y - half;
-    this.orthoCamera.left = this.worldLeft;
-    this.orthoCamera.right = this.worldRight;
-    this.orthoCamera.top = this.worldTop;
-    this.orthoCamera.bottom = this.worldBottom;
-    this.orthoCamera.near = -1e4;
-    this.orthoCamera.far = 1e4;
-    this.orthoCamera.position.set(center.x, center.y, 1e3);
-    this.orthoCamera.lookAt(center.x, center.y, 0);
-    this.orthoCamera.updateProjectionMatrix();
-  }
-  /** Called every frame. Renders 3D scene top-down + overlay. */
-  update() {
-    if (!this.bounds) this._deriveBoundsFromClouds();
-    this.frameCount++;
-    const now = performance.now();
-    if (now - this._last3DTime >= _MinimapRenderer.RENDER_3D_INTERVAL_MS) {
-      this._last3DTime = now;
-      this._render3D();
-    }
-    if (this.frameCount % 2 === 0) this._drawOverlay();
-  }
-  /** Fallback bounds from the loaded potree octrees (tight box + offset). */
-  _deriveBoundsFromClouds() {
-    const box = new THREE5__namespace.Box3();
-    for (const pc of this.sceneManager.pointClouds) {
-      const g = pc.pcoGeometry;
-      const tb = g?.tightBoundingBox ?? g?.boundingBox ?? pc.boundingBox;
-      if (!tb) continue;
-      const wb = tb.clone();
-      if (g?.offset) {
-        wb.min.add(g.offset);
-        wb.max.add(g.offset);
-      }
-      box.union(wb);
-    }
-    if (!box.isEmpty()) this.setBounds(box);
-  }
-  /** Sync canvas backing stores to the container's CSS size (no-op when equal). */
-  _syncSize() {
-    const c = this.container;
-    if (!c || !this.glCanvas) return;
-    const w = c.clientWidth;
-    const h = c.clientHeight;
-    if (this.glCanvas.width === w && this.glCanvas.height === h) return;
-    this.glCanvas.width = w;
-    this.glCanvas.height = h;
-    this.miniRenderer?.setSize(w, h, false);
-    if (this.overlayCanvas) {
-      this.overlayCanvas.width = w;
-      this.overlayCanvas.height = h;
-    }
-  }
-  _render3D() {
-    if (!this.miniRenderer || !this.bounds) return;
-    this._syncSize();
-    this.miniRenderer.render(this.sceneManager.scene, this.orthoCamera);
-  }
-  _drawOverlay() {
-    if (!this.overlayCanvas) return;
-    const ctx = this.overlayCanvas.getContext("2d");
-    if (!ctx) return;
-    const W = this.overlayCanvas.width;
-    const H = this.overlayCanvas.height;
-    ctx.clearRect(0, 0, W, H);
-    if (this.glFailed) {
-      ctx.fillStyle = "rgba(255,255,255,0.5)";
-      ctx.font = "10px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("overview unavailable", W / 2, H / 2 - 4);
-      ctx.fillText("(WebGL context limit)", W / 2, H / 2 + 8);
-      return;
-    }
-    this._drawPois(ctx, W, H);
-    this._drawCamera(ctx, W, H);
-    this._drawScaleBar(ctx, W, H);
-    this._drawNorthArrow(ctx, W);
-  }
-  /** Panorama positions as small dots; the opened one highlighted. */
-  _drawPois(ctx, W, H) {
-    if (this.pois.length === 0) return;
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    for (const p of this.pois) {
-      const x = this._worldToCanvasX(p.x);
-      const y = this._worldToCanvasY(p.y);
-      if (x < 0 || x > W || y < 0 || y > H) continue;
-      ctx.beginPath();
-      ctx.arc(x, y, 1.8, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (this.selectedPoi) {
-      const x = this._worldToCanvasX(this.selectedPoi.x);
-      const y = this._worldToCanvasY(this.selectedPoi.y);
-      ctx.beginPath();
-      ctx.arc(x, y, 3.5, 0, Math.PI * 2);
-      ctx.fillStyle = "#ff5533";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.9)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-  }
-  /** Scale bar (bottom-left): a round-number world length (1/2/5×10ⁿ m). */
-  _drawScaleBar(ctx, W, H) {
-    const worldWidth = this.worldRight - this.worldLeft;
-    if (!(worldWidth > 0)) return;
-    const target = worldWidth * 0.3;
-    const pow = Math.pow(10, Math.floor(Math.log10(target)));
-    const nice = target >= 5 * pow ? 5 * pow : target >= 2 * pow ? 2 * pow : pow;
-    const px = nice / worldWidth * W;
-    const x = 8, y = H - 9;
-    ctx.strokeStyle = "rgba(255,255,255,0.7)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, y - 3);
-    ctx.lineTo(x, y);
-    ctx.lineTo(x + px, y);
-    ctx.lineTo(x + px, y - 3);
-    ctx.stroke();
-    ctx.fillStyle = "rgba(255,255,255,0.7)";
-    ctx.font = "9px monospace";
-    ctx.textAlign = "left";
-    ctx.fillText(nice >= 1e3 ? `${nice / 1e3} km` : `${nice} m`, x + 3, y - 4);
-  }
-  /** North arrow (top-center): the minimap is axis-aligned, +Y = up = north. */
-  _drawNorthArrow(ctx, W) {
-    const cx = W / 2, top = 5;
-    ctx.beginPath();
-    ctx.moveTo(cx, top);
-    ctx.lineTo(cx - 3.5, top + 8);
-    ctx.lineTo(cx + 3.5, top + 8);
-    ctx.closePath();
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    ctx.font = "bold 8px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("N", cx, top + 17);
-  }
-  _worldToCanvasX(wx) {
-    const W = this.overlayCanvas?.width ?? 176;
-    return (wx - this.worldLeft) / (this.worldRight - this.worldLeft) * W;
-  }
-  _worldToCanvasY(wy) {
-    const H = this.overlayCanvas?.height ?? 176;
-    return (1 - (wy - this.worldBottom) / (this.worldTop - this.worldBottom)) * H;
-  }
-  /** Reused scratch for the camera direction — drawn ~30×/sec. */
-  _camDir = new THREE5__namespace.Vector3();
-  _drawCamera(ctx, W, H) {
-    const cam = this.sceneManager.camera;
-    const dir = this._camDir;
-    cam.getWorldDirection(dir);
-    const cx = Math.min(Math.max(this._worldToCanvasX(cam.position.x), 5), W - 5);
-    const cy = Math.min(Math.max(this._worldToCanvasY(cam.position.y), 5), H - 5);
-    const angle = Math.atan2(-dir.y, dir.x);
-    const fovLen = Math.max(20, H * 0.16);
-    const halfFov = Math.atan(
-      Math.tan(THREE5__namespace.MathUtils.degToRad(cam.fov) / 2) * Math.max(cam.aspect, 0.1)
-    );
-    const left = angle - halfFov;
-    const right = angle + halfFov;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + Math.cos(left) * fovLen, cy + Math.sin(left) * fovLen);
-    ctx.lineTo(cx + Math.cos(right) * fovLen, cy + Math.sin(right) * fovLen);
-    ctx.closePath();
-    ctx.fillStyle = "rgba(220,213,70,0.18)";
-    ctx.strokeStyle = "rgba(220,213,70,0.55)";
-    ctx.lineWidth = 1;
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#dcd546";
-    ctx.fill();
-  }
-  /** Convert canvas pixel to world XY position */
-  canvasToWorld(cx, cy) {
-    const W = this.overlayCanvas?.width ?? 176;
-    const H = this.overlayCanvas?.height ?? 176;
-    const wx = this.worldLeft + cx / W * (this.worldRight - this.worldLeft);
-    const wy = this.worldBottom + (1 - cy / H) * (this.worldTop - this.worldBottom);
-    return new THREE5__namespace.Vector2(wx, wy);
-  }
-  /** Handle resize (called by parent when container size changes) */
-  resize() {
-    this._syncSize();
-  }
-  dispose() {
-    this.miniRenderer?.dispose();
-    this.miniRenderer = null;
-    if (this.glCanvas?.parentElement) this.glCanvas.remove();
-    if (this.overlayCanvas?.parentElement) this.overlayCanvas.remove();
-    this.glCanvas = null;
-    this.overlayCanvas = null;
-    this.container = null;
-  }
-};
 var AXIS_COLOR = {
   x: 15680580,
   y: 2278750,
@@ -3195,9 +2933,6 @@ var MagnifierRenderer = class _MagnifierRenderer {
   enabled = false;
   /** Latest cursor position (canvas-relative CSS px), or null when off-canvas. */
   cursor = null;
-  /** Reused per-frame crop camera — copied from the main camera each render
-   *  (cloning per frame allocated a camera + matrices → GC churn). */
-  zoomCamera = new THREE5__namespace.PerspectiveCamera();
   // Frame + crosshair drawn over the inset in a second tiny pass.
   frameScene = new THREE5__namespace.Scene();
   frameCamera = new THREE5__namespace.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -3288,8 +3023,7 @@ var MagnifierRenderer = class _MagnifierRenderer {
     left = Math.max(0, Math.min(left, W - size));
     bottom = Math.max(0, Math.min(bottom, H - size));
     const sub = size / _MagnifierRenderer.ZOOM;
-    const zoomCamera = this.zoomCamera;
-    zoomCamera.copy(this.sm.camera);
+    const zoomCamera = this.sm.getActiveCamera().clone();
     zoomCamera.setViewOffset(W, H, cx - sub / 2, cy - sub / 2, sub, sub);
     zoomCamera.updateProjectionMatrix();
     const savedVp = new THREE5__namespace.Vector4();
@@ -3510,7 +3244,6 @@ exports.ExportManager = ExportManager;
 exports.MagnifierRenderer = MagnifierRenderer;
 exports.MarkerManager = MarkerManager;
 exports.MeasurementManager = MeasurementManager;
-exports.MinimapRenderer = MinimapRenderer;
 exports.PointCloudLoader = PointCloudLoader;
 exports.PresentationManager = PresentationManager;
 exports.S3SourceAdapter = S3SourceAdapter;

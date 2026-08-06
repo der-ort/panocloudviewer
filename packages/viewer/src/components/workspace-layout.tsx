@@ -9,7 +9,6 @@ import { useLocale } from "../i18n/locale-context";
 import { useIsMobile } from "../hooks/use-is-mobile";
 import { MainToolbar } from "./toolbar/main-toolbar";
 import { ToolRail } from "./toolbar/tool-rail";
-import { ClipToolbar } from "./toolbar/clip-toolbar";
 import { Sidebar } from "./sidebar/sidebar";
 import { PanoViewer } from "./overlays/pano-viewer";
 import { RenderingSettings } from "./overlays/rendering-settings";
@@ -60,7 +59,7 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
   );
   const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
 
-  const { pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
+  const { pointBudget, activeTool, selectedCamera, uiMode } = useViewer();
   const { metadata } = useData();
   const t = useLocale().viewport;
 
@@ -76,11 +75,6 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
     <div
       className={cn(
         "relative h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden",
-        // The minimap sits bottom-left (the axis gizmo is bottom-right). Publish
-        // `--pcv-minimap-left` so it clears the left tool rail (~0.75rem + its
-        // 2.5rem width + a gap) and the notch inset on mobile. Being on the left,
-        // it never overlaps the right-hand sidebar in any state.
-        "[--pcv-minimap-left:calc(3.75rem+env(safe-area-inset-left))]",
         className,
       )}
     >
@@ -110,11 +104,10 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
         </GlassCard>
       </div>
 
-      {/* ── Left floating tool rail ──────────────────────────────────────── */}
-      {/* Positioned wrapper with explicit top/bottom gives the GlassCard a height anchor.
-          Safe-area insets keep the rail off the notch / home indicator on mobile. */}
-      <div className="absolute left-[calc(0.75rem+env(safe-area-inset-left))] top-[calc(3.5rem+env(safe-area-inset-top))] bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 pointer-events-none flex items-center" style={chromeScale}>
-        <GlassCard className="pointer-events-auto overflow-y-auto max-h-full">
+      {/* ── Bottom floating tool rail (horizontal, centered) ─────────────── */}
+      {/* Safe-area inset keeps it above the home indicator / browser nav bar. */}
+      <div className="absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[calc(100vw-1.5rem)]" style={chromeScale}>
+        <GlassCard className="pointer-events-auto max-w-full overflow-x-auto">
           <ToolRail />
         </GlassCard>
       </div>
@@ -168,17 +161,8 @@ export function WorkspaceLayout({ className }: WorkspaceLayoutProps) {
         </GlassCard>
       </div>
 
-      {/* ── Clip management toolbar (Pro + has boxes) ───────────────────── */}
-      {isPro && clipBoxEntries.length > 0 && (
-        <div className="absolute bottom-[calc(3rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={chromeScale}>
-          <GlassCard className="pointer-events-auto">
-            <ClipToolbar />
-          </GlassCard>
-        </div>
-      )}
-
-      {/* ── Bottom status strip (hidden on mobile to free screen space) ──── */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden md:block" style={chromeScale}>
+      {/* ── Bottom-left status: point count, budget, FPS (hidden on mobile) ─ */}
+      <div className="absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] z-30 pointer-events-none hidden md:block" style={chromeScale}>
         <GlassCard className="pointer-events-none">
           <div className="px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none">
             {metadata && <span>{t.statusPts(metadata.points / 1e6)}</span>}

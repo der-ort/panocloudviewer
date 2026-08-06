@@ -1,11 +1,11 @@
 import * as THREE5 from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper.js';
-import React27, { createContext, lazy, useContext, useSyncExternalStore, useState, useRef, useCallback, useEffect, useReducer, useMemo, Suspense } from 'react';
+import React26, { createContext, lazy, useContext, useSyncExternalStore, useState, useRef, useCallback, useEffect, useReducer, useMemo, Suspense } from 'react';
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { X, ChevronDown, ChevronUp, Check, Download, SlidersHorizontal, ZoomIn, BoxSelect, Plus, Trash2, Scissors, ScissorsLineDashed, Power, Eye, EyeOff, RotateCcw, Search, Navigation, CloudCog, Ruler, Upload, Bookmark, Play, ChevronRight, Square, Film, Layers, Camera, Box, Sun, Moon, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Map as Map$1, Orbit, Rotate3d, Maximize, Settings, Palette, Image, Tag, Circle, Minus } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Check, Download, SlidersHorizontal, ZoomIn, BoxSelect, Search, Eye, EyeOff, Navigation, Plus, Trash2, Scissors, ScissorsLineDashed, Power, RotateCcw, CloudCog, Ruler, Upload, Bookmark, Play, ChevronRight, Square, Film, Layers, Camera, Box, Sun, Moon, ChevronLeft, Slice, MapPin, ArrowUpDown, Pentagon, Package, Triangle, Waypoints, Orbit, Rotate3d, Map as Map$1, Maximize, Settings, Palette, Image, Tag, Circle, Minus } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cva } from 'class-variance-authority';
 import * as SliderPrimitive from '@radix-ui/react-slider';
@@ -153,7 +153,7 @@ function createAdapter(source) {
       return new S3SourceAdapter(source.basePath);
   }
 }
-var SceneManager, PointCloudLoader, EASINGS, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, _muxerPromise, ExportManager, MinimapRenderer, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, RING_COLOR, RING_HOVER_COLOR, RING_DRAG_COLOR, RotationRingController, _nextId, ClipManager, AxisGizmo, AXIS_DIR, MagnifierRenderer, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
+var SceneManager, PointCloudLoader, EASINGS, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, _muxerPromise, ExportManager, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, RING_COLOR, RING_HOVER_COLOR, RING_DRAG_COLOR, RotationRingController, _nextId, ClipManager, AxisGizmo, AXIS_DIR, MagnifierRenderer, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
 var init_dist = __esm({
   "../core/dist/index.js"() {
     SceneManager = class {
@@ -249,7 +249,10 @@ var init_dist = __esm({
           }
           for (const cb of this.frameCallbacks) cb();
           if (this._projection === "orthographic") {
+            const factor = this.camera.position.distanceTo(this.controls.target);
+            const scaled = this._scaleScreenSprites(factor);
             this.renderer.render(this.scene, this._syncOrthoCamera());
+            for (const s of scaled) s.scale.multiplyScalar(1 / factor);
           } else {
             this.renderer.render(this.scene, this.camera);
           }
@@ -392,11 +395,41 @@ var init_dist = __esm({
         this.controls.target.copy(center);
         this.controls.update();
       }
+      /**
+       * The camera the scene is actually rendered with — the synced ortho camera in
+       * orthographic mode, otherwise the perspective camera. Picking/raycasting MUST
+       * use this so screen rays match what's displayed (perspective rays diverge,
+       * ortho rays are parallel).
+       */
+      getActiveCamera() {
+        return this._projection === "orthographic" ? this._syncOrthoCamera() : this.camera;
+      }
+      /** Scale registered screen-space sprites by `factor` (for the ortho pass); returns those scaled so the caller can restore them. */
+      _screenGroups = [];
+      _scaleScreenSprites(factor) {
+        if (this._screenGroups.length === 0) {
+          for (const name of ["measurements", "pano-markers"]) {
+            const g = this.scene.getObjectByName(name);
+            if (g) this._screenGroups.push(g);
+          }
+        }
+        const scaled = [];
+        for (const g of this._screenGroups) {
+          g.traverse((o) => {
+            const s = o;
+            if (s.isSprite && s.material.sizeAttenuation === false) {
+              s.scale.multiplyScalar(factor);
+              scaled.push(s);
+            }
+          });
+        }
+        return scaled;
+      }
       /** Raycast against objects in scene */
       raycast(normalizedX, normalizedY, objects) {
         const raycaster = new THREE5.Raycaster();
         const pointer = new THREE5.Vector2(normalizedX, normalizedY);
-        raycaster.setFromCamera(pointer, this.camera);
+        raycaster.setFromCamera(pointer, this.getActiveCamera());
         return raycaster.intersectObjects(objects, true);
       }
       /**
@@ -406,12 +439,13 @@ var init_dist = __esm({
        */
       pickPoint(normalizedX, normalizedY) {
         if (this.pointClouds.length === 0) return null;
+        const camera = this.getActiveCamera();
         const raycaster = new THREE5.Raycaster();
-        raycaster.setFromCamera(new THREE5.Vector2(normalizedX, normalizedY), this.camera);
+        raycaster.setFromCamera(new THREE5.Vector2(normalizedX, normalizedY), camera);
         for (const pc of this.pointClouds) {
           const octree = pc;
           if (typeof octree.pick !== "function") continue;
-          const result = octree.pick(this.renderer, this.camera, raycaster.ray, {
+          const result = octree.pick(this.renderer, camera, raycaster.ray, {
             // Generous window so thin structures (edges, poles, railings) are easy
             // to hit — the pick still returns the point closest to the ray. 63 px
             // gives a proper point-snap feel; below that, sparse clouds miss often
@@ -1821,302 +1855,6 @@ var init_dist = __esm({
         a.click();
       }
     };
-    MinimapRenderer = class _MinimapRenderer {
-      sceneManager;
-      bounds = null;
-      // Rendering elements
-      container = null;
-      glCanvas = null;
-      overlayCanvas = null;
-      miniRenderer = null;
-      orthoCamera;
-      /** True when WebGL context creation failed — overlay shows a message instead of silent black. */
-      glFailed = false;
-      // Points of interest (panorama camera positions) drawn on the overlay
-      pois = [];
-      selectedPoi = null;
-      // World range (square, padded)
-      worldLeft = -50;
-      worldRight = 50;
-      worldTop = 50;
-      worldBottom = -50;
-      frameCount = 0;
-      /** Wall-clock time (ms) of the last expensive top-down 3D render. */
-      _last3DTime = 0;
-      /**
-       * Minimum gap between top-down 3D renders. The overview is a SECOND full
-       * render of the point cloud, so it is the minimap's whole cost — but the
-       * top-down image is invariant to main-camera motion (it only changes as
-       * points stream in or the scene content changes), so a slow fixed timer is
-       * imperceptible yet bounds the extra work to ~4 renders/sec regardless of
-       * how fast the main loop runs (no feedback loop where a heavy minimap render
-       * drags the main FPS down and then re-fires proportionally).
-       */
-      static RENDER_3D_INTERVAL_MS = 300;
-      constructor(sceneManager) {
-        this.sceneManager = sceneManager;
-        this.orthoCamera = new THREE5.OrthographicCamera(-50, 50, 50, -50, -1e4, 1e4);
-        this.orthoCamera.position.set(0, 0, 1e3);
-        this.orthoCamera.up.set(0, 1, 0);
-        this.orthoCamera.lookAt(0, 0, 0);
-      }
-      /**
-       * Attach to a container element. Creates internal canvases.
-       * Container should have position:relative and defined size.
-       */
-      attach(container) {
-        this.dispose();
-        this.container = container;
-        const w = container.clientWidth || 176;
-        const h = container.clientHeight || 176;
-        this.glCanvas = document.createElement("canvas");
-        this.glCanvas.width = w;
-        this.glCanvas.height = h;
-        this.glCanvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;";
-        container.appendChild(this.glCanvas);
-        this.overlayCanvas = document.createElement("canvas");
-        this.overlayCanvas.width = w;
-        this.overlayCanvas.height = h;
-        this.overlayCanvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;";
-        container.appendChild(this.overlayCanvas);
-        try {
-          this.miniRenderer = new THREE5.WebGLRenderer({
-            canvas: this.glCanvas,
-            antialias: false,
-            alpha: false
-          });
-          this.miniRenderer.setPixelRatio(1);
-          this.miniRenderer.setSize(w, h, false);
-          this.miniRenderer.setClearColor(658970, 1);
-          this.glFailed = false;
-          this.glCanvas.addEventListener("webglcontextlost", (e) => {
-            e.preventDefault();
-            this.glFailed = true;
-          }, { once: true });
-        } catch {
-          this.miniRenderer = null;
-          this.glFailed = true;
-        }
-      }
-      /** Panorama camera positions (world XY) to draw as dots on the overlay. */
-      setPois(pois) {
-        this.pois = pois;
-      }
-      /** Highlight one POI (the opened panorama), or null for none. */
-      setSelectedPoi(poi) {
-        this.selectedPoi = poi;
-      }
-      /** Set world-space bounds of the scene (empty boxes are ignored). */
-      setBounds(bounds) {
-        if (bounds.isEmpty()) return;
-        this.bounds = bounds.clone();
-        const size = new THREE5.Vector3();
-        const center = new THREE5.Vector3();
-        bounds.getSize(size);
-        bounds.getCenter(center);
-        const half = Math.max(size.x, size.y) * 0.55;
-        this.worldLeft = center.x - half;
-        this.worldRight = center.x + half;
-        this.worldTop = center.y + half;
-        this.worldBottom = center.y - half;
-        this.orthoCamera.left = this.worldLeft;
-        this.orthoCamera.right = this.worldRight;
-        this.orthoCamera.top = this.worldTop;
-        this.orthoCamera.bottom = this.worldBottom;
-        this.orthoCamera.near = -1e4;
-        this.orthoCamera.far = 1e4;
-        this.orthoCamera.position.set(center.x, center.y, 1e3);
-        this.orthoCamera.lookAt(center.x, center.y, 0);
-        this.orthoCamera.updateProjectionMatrix();
-      }
-      /** Called every frame. Renders 3D scene top-down + overlay. */
-      update() {
-        if (!this.bounds) this._deriveBoundsFromClouds();
-        this.frameCount++;
-        const now = performance.now();
-        if (now - this._last3DTime >= _MinimapRenderer.RENDER_3D_INTERVAL_MS) {
-          this._last3DTime = now;
-          this._render3D();
-        }
-        if (this.frameCount % 2 === 0) this._drawOverlay();
-      }
-      /** Fallback bounds from the loaded potree octrees (tight box + offset). */
-      _deriveBoundsFromClouds() {
-        const box = new THREE5.Box3();
-        for (const pc of this.sceneManager.pointClouds) {
-          const g = pc.pcoGeometry;
-          const tb = g?.tightBoundingBox ?? g?.boundingBox ?? pc.boundingBox;
-          if (!tb) continue;
-          const wb = tb.clone();
-          if (g?.offset) {
-            wb.min.add(g.offset);
-            wb.max.add(g.offset);
-          }
-          box.union(wb);
-        }
-        if (!box.isEmpty()) this.setBounds(box);
-      }
-      /** Sync canvas backing stores to the container's CSS size (no-op when equal). */
-      _syncSize() {
-        const c = this.container;
-        if (!c || !this.glCanvas) return;
-        const w = c.clientWidth;
-        const h = c.clientHeight;
-        if (this.glCanvas.width === w && this.glCanvas.height === h) return;
-        this.glCanvas.width = w;
-        this.glCanvas.height = h;
-        this.miniRenderer?.setSize(w, h, false);
-        if (this.overlayCanvas) {
-          this.overlayCanvas.width = w;
-          this.overlayCanvas.height = h;
-        }
-      }
-      _render3D() {
-        if (!this.miniRenderer || !this.bounds) return;
-        this._syncSize();
-        this.miniRenderer.render(this.sceneManager.scene, this.orthoCamera);
-      }
-      _drawOverlay() {
-        if (!this.overlayCanvas) return;
-        const ctx = this.overlayCanvas.getContext("2d");
-        if (!ctx) return;
-        const W = this.overlayCanvas.width;
-        const H = this.overlayCanvas.height;
-        ctx.clearRect(0, 0, W, H);
-        if (this.glFailed) {
-          ctx.fillStyle = "rgba(255,255,255,0.5)";
-          ctx.font = "10px monospace";
-          ctx.textAlign = "center";
-          ctx.fillText("overview unavailable", W / 2, H / 2 - 4);
-          ctx.fillText("(WebGL context limit)", W / 2, H / 2 + 8);
-          return;
-        }
-        this._drawPois(ctx, W, H);
-        this._drawCamera(ctx, W, H);
-        this._drawScaleBar(ctx, W, H);
-        this._drawNorthArrow(ctx, W);
-      }
-      /** Panorama positions as small dots; the opened one highlighted. */
-      _drawPois(ctx, W, H) {
-        if (this.pois.length === 0) return;
-        ctx.fillStyle = "rgba(255,255,255,0.55)";
-        for (const p of this.pois) {
-          const x = this._worldToCanvasX(p.x);
-          const y = this._worldToCanvasY(p.y);
-          if (x < 0 || x > W || y < 0 || y > H) continue;
-          ctx.beginPath();
-          ctx.arc(x, y, 1.8, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        if (this.selectedPoi) {
-          const x = this._worldToCanvasX(this.selectedPoi.x);
-          const y = this._worldToCanvasY(this.selectedPoi.y);
-          ctx.beginPath();
-          ctx.arc(x, y, 3.5, 0, Math.PI * 2);
-          ctx.fillStyle = "#ff5533";
-          ctx.fill();
-          ctx.strokeStyle = "rgba(255,255,255,0.9)";
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        }
-      }
-      /** Scale bar (bottom-left): a round-number world length (1/2/5×10ⁿ m). */
-      _drawScaleBar(ctx, W, H) {
-        const worldWidth = this.worldRight - this.worldLeft;
-        if (!(worldWidth > 0)) return;
-        const target = worldWidth * 0.3;
-        const pow = Math.pow(10, Math.floor(Math.log10(target)));
-        const nice = target >= 5 * pow ? 5 * pow : target >= 2 * pow ? 2 * pow : pow;
-        const px = nice / worldWidth * W;
-        const x = 8, y = H - 9;
-        ctx.strokeStyle = "rgba(255,255,255,0.7)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x, y - 3);
-        ctx.lineTo(x, y);
-        ctx.lineTo(x + px, y);
-        ctx.lineTo(x + px, y - 3);
-        ctx.stroke();
-        ctx.fillStyle = "rgba(255,255,255,0.7)";
-        ctx.font = "9px monospace";
-        ctx.textAlign = "left";
-        ctx.fillText(nice >= 1e3 ? `${nice / 1e3} km` : `${nice} m`, x + 3, y - 4);
-      }
-      /** North arrow (top-center): the minimap is axis-aligned, +Y = up = north. */
-      _drawNorthArrow(ctx, W) {
-        const cx = W / 2, top = 5;
-        ctx.beginPath();
-        ctx.moveTo(cx, top);
-        ctx.lineTo(cx - 3.5, top + 8);
-        ctx.lineTo(cx + 3.5, top + 8);
-        ctx.closePath();
-        ctx.fillStyle = "rgba(255,255,255,0.55)";
-        ctx.fill();
-        ctx.fillStyle = "rgba(255,255,255,0.55)";
-        ctx.font = "bold 8px monospace";
-        ctx.textAlign = "center";
-        ctx.fillText("N", cx, top + 17);
-      }
-      _worldToCanvasX(wx) {
-        const W = this.overlayCanvas?.width ?? 176;
-        return (wx - this.worldLeft) / (this.worldRight - this.worldLeft) * W;
-      }
-      _worldToCanvasY(wy) {
-        const H = this.overlayCanvas?.height ?? 176;
-        return (1 - (wy - this.worldBottom) / (this.worldTop - this.worldBottom)) * H;
-      }
-      /** Reused scratch for the camera direction — drawn ~30×/sec. */
-      _camDir = new THREE5.Vector3();
-      _drawCamera(ctx, W, H) {
-        const cam = this.sceneManager.camera;
-        const dir = this._camDir;
-        cam.getWorldDirection(dir);
-        const cx = Math.min(Math.max(this._worldToCanvasX(cam.position.x), 5), W - 5);
-        const cy = Math.min(Math.max(this._worldToCanvasY(cam.position.y), 5), H - 5);
-        const angle = Math.atan2(-dir.y, dir.x);
-        const fovLen = Math.max(20, H * 0.16);
-        const halfFov = Math.atan(
-          Math.tan(THREE5.MathUtils.degToRad(cam.fov) / 2) * Math.max(cam.aspect, 0.1)
-        );
-        const left = angle - halfFov;
-        const right = angle + halfFov;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(cx + Math.cos(left) * fovLen, cy + Math.sin(left) * fovLen);
-        ctx.lineTo(cx + Math.cos(right) * fovLen, cy + Math.sin(right) * fovLen);
-        ctx.closePath();
-        ctx.fillStyle = "rgba(220,213,70,0.18)";
-        ctx.strokeStyle = "rgba(220,213,70,0.55)";
-        ctx.lineWidth = 1;
-        ctx.fill();
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-        ctx.fillStyle = "#dcd546";
-        ctx.fill();
-      }
-      /** Convert canvas pixel to world XY position */
-      canvasToWorld(cx, cy) {
-        const W = this.overlayCanvas?.width ?? 176;
-        const H = this.overlayCanvas?.height ?? 176;
-        const wx = this.worldLeft + cx / W * (this.worldRight - this.worldLeft);
-        const wy = this.worldBottom + (1 - cy / H) * (this.worldTop - this.worldBottom);
-        return new THREE5.Vector2(wx, wy);
-      }
-      /** Handle resize (called by parent when container size changes) */
-      resize() {
-        this._syncSize();
-      }
-      dispose() {
-        this.miniRenderer?.dispose();
-        this.miniRenderer = null;
-        if (this.glCanvas?.parentElement) this.glCanvas.remove();
-        if (this.overlayCanvas?.parentElement) this.overlayCanvas.remove();
-        this.glCanvas = null;
-        this.overlayCanvas = null;
-        this.container = null;
-      }
-    };
     AXIS_COLOR = {
       x: 15680580,
       y: 2278750,
@@ -3221,9 +2959,6 @@ var init_dist = __esm({
       enabled = false;
       /** Latest cursor position (canvas-relative CSS px), or null when off-canvas. */
       cursor = null;
-      /** Reused per-frame crop camera — copied from the main camera each render
-       *  (cloning per frame allocated a camera + matrices → GC churn). */
-      zoomCamera = new THREE5.PerspectiveCamera();
       // Frame + crosshair drawn over the inset in a second tiny pass.
       frameScene = new THREE5.Scene();
       frameCamera = new THREE5.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -3314,8 +3049,7 @@ var init_dist = __esm({
         left = Math.max(0, Math.min(left, W - size));
         bottom = Math.max(0, Math.min(bottom, H - size));
         const sub = size / _MagnifierRenderer.ZOOM;
-        const zoomCamera = this.zoomCamera;
-        zoomCamera.copy(this.sm.camera);
+        const zoomCamera = this.sm.getActiveCamera().clone();
         zoomCamera.setViewOffset(W, H, cx - sub / 2, cy - sub / 2, sub, sub);
         zoomCamera.updateProjectionMatrix();
         const savedVp = new THREE5.Vector4();
@@ -3507,7 +3241,6 @@ function ViewerProvider({ config, children }) {
   const [markerManager, _setMarkerManager] = useState(null);
   const [cameraAnimator, _setCameraAnimator] = useState(null);
   const [exporter, _setExporter] = useState(null);
-  const [minimap, _setMinimap] = useState(null);
   const [clipManager, _setClipManager] = useState(null);
   const [activeTool, setActiveTool] = useState("none");
   const [pointBudget, setPointBudget] = useState(config.pointBudget ?? 2e6);
@@ -3527,7 +3260,6 @@ function ViewerProvider({ config, children }) {
   const getFps = useCallback(() => fpsRef.current, []);
   const [measurementList, setMeasurementList] = useState([]);
   const [showMarkers, setShowMarkers] = useState(true);
-  const [showMinimap, setShowMinimap] = useState(config.showMinimap ?? true);
   const [showMeasurements, setShowMeasurements] = useState(true);
   const [showMagnifier, setShowMagnifier] = useState(true);
   const [selectedCamera, setSelectedCamera] = useState(null);
@@ -3552,7 +3284,6 @@ function ViewerProvider({ config, children }) {
   const setMarkerManager = useCallback((m) => _setMarkerManager(m), []);
   const setCameraAnimator = useCallback((a) => _setCameraAnimator(a), []);
   const setExporter = useCallback((e) => _setExporter(e), []);
-  const setMinimap = useCallback((r) => _setMinimap(r), []);
   const setClipManager = useCallback((c) => _setClipManager(c), []);
   const uiMode = config.uiMode ?? "professional";
   const [panoEngine, setPanoEngine] = useState(config.panoEngine ?? "photo-sphere-viewer");
@@ -3563,7 +3294,6 @@ function ViewerProvider({ config, children }) {
     markerManager,
     cameraAnimator,
     exporter,
-    minimap,
     clipManager,
     setSceneManager,
     setLoader,
@@ -3571,7 +3301,6 @@ function ViewerProvider({ config, children }) {
     setMarkerManager,
     setCameraAnimator,
     setExporter,
-    setMinimap,
     setClipManager,
     activeTool,
     setActiveTool,
@@ -3586,8 +3315,6 @@ function ViewerProvider({ config, children }) {
     setMeasurementList,
     showMarkers,
     setShowMarkers,
-    showMinimap,
-    setShowMinimap,
     showMeasurements,
     setShowMeasurements,
     showMagnifier,
@@ -3899,6 +3626,7 @@ var init_en = __esm({
       },
       clipToolbar: {
         title: "Clipping",
+        empty: "No section boxes. Use the section tool to add one.",
         addBox: "Add box",
         clearAll: "Clear all",
         keepInside: "Keep inside (all)",
@@ -3947,45 +3675,6 @@ var init_utils = __esm({
     pcvChromeScaleStyle = { zoom: "var(--pcv-scale, 1)" };
   }
 });
-function useMinimapResize(minimapRef, initialSize = 176) {
-  const [minimapSize, setMinimapSize] = useState(initialSize);
-  const sizeRef = useRef(initialSize);
-  sizeRef.current = minimapSize;
-  const draggingRef = useRef(false);
-  const removeListenersRef = useRef(null);
-  const handleMinimapResizeStart = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    draggingRef.current = true;
-    const startY = e.clientY;
-    const startSize = sizeRef.current;
-    const onMove = (ev) => {
-      if (!draggingRef.current) return;
-      const delta = startY - ev.clientY;
-      setMinimapSize(Math.max(120, Math.min(400, startSize + delta)));
-      minimapRef.current?.resize();
-    };
-    const onUp = () => {
-      draggingRef.current = false;
-      removeListenersRef.current?.();
-      removeListenersRef.current = null;
-      setTimeout(() => minimapRef.current?.resize(), 0);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    removeListenersRef.current = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [minimapRef]);
-  useEffect(() => () => removeListenersRef.current?.(), []);
-  return { minimapSize, handleMinimapResizeStart };
-}
-var init_use_minimap_resize = __esm({
-  "src/hooks/use-minimap-resize.ts"() {
-    "use client";
-  }
-});
 function useSnapThrottle(pick) {
   const rafRef = useRef(null);
   const ndcRef = useRef(null);
@@ -4023,7 +3712,6 @@ __export(viewport_exports, {
 });
 function Viewport({ className }) {
   const containerRef = useRef(null);
-  const minimapContainerRef = useRef(null);
   const initialized = useRef(false);
   const t = useLocale().viewport;
   const {
@@ -4034,13 +3722,11 @@ function Viewport({ className }) {
     setMarkerManager,
     setCameraAnimator,
     setExporter,
-    setMinimap,
     setClipManager,
     setFps,
     activeTool,
     setPointBudget,
     showMarkers,
-    showMinimap,
     showMeasurements,
     showMagnifier,
     setMeasurementList,
@@ -4067,12 +3753,10 @@ function Viewport({ className }) {
   const loaderRef = useRef(null);
   const markerRef = useRef(null);
   const measureRef = useRef(null);
-  const minimapRef = useRef(null);
   const clipRef = useRef(null);
   const animRef = useRef(null);
   const axisRef = useRef(null);
   const magRef = useRef(null);
-  const { minimapSize, handleMinimapResizeStart } = useMinimapResize(minimapRef);
   const clipDraftRef = useRef(null);
   const clipDownRef = useRef(null);
   const volumeDragRef = useRef(null);
@@ -4106,7 +3790,6 @@ function Viewport({ className }) {
     const markerMgr = new MarkerManager(sm.scene);
     const anim = new CameraAnimator(sm.camera, sm.controls);
     const exporter = new ExportManager(sm);
-    const minimapRdr = new MinimapRenderer(sm);
     const clipMgr = new ClipManager(sm);
     let clipChangeRaf = null;
     clipMgr.onChange = () => {
@@ -4121,7 +3804,6 @@ function Viewport({ className }) {
     loaderRef.current = loader;
     markerRef.current = markerMgr;
     measureRef.current = measureMgr;
-    minimapRef.current = minimapRdr;
     clipRef.current = clipMgr;
     animRef.current = anim;
     setSceneManager(sm);
@@ -4130,10 +3812,7 @@ function Viewport({ className }) {
     setMarkerManager(markerMgr);
     setCameraAnimator(anim);
     setExporter(exporter);
-    setMinimap(minimapRdr);
     setClipManager(clipMgr);
-    const minimapFrame = () => minimapRdr.update();
-    sm.addFrameCallback(minimapFrame);
     const axisGizmo = new AxisGizmo(sm);
     axisGizmo.onAxisSelect = (dir) => {
       const target = sm.controls.target.clone();
@@ -4169,76 +3848,19 @@ function Viewport({ className }) {
     sm.start();
     loader.load("metadata.json", config.pointBudget).then(() => {
       setPointBudget(loader.appliedBudget);
-      const pc = loader.getPointCloud();
-      if (pc) {
-        const pca = pc;
-        const box = pca.pcoGeometry?.boundingBox ?? pca.boundingBox;
-        const tightBox = pca.pcoGeometry?.tightBoundingBox ?? box;
-        const offset = pca.pcoGeometry?.offset;
-        const worldBox = new THREE5.Box3();
-        if (tightBox && offset) {
-          worldBox.copy(tightBox);
-          worldBox.min.add(offset);
-          worldBox.max.add(offset);
-        } else if (box) {
-          worldBox.copy(box);
-        } else {
-          worldBox.setFromObject(pc);
-        }
-        if (!worldBox.isEmpty()) {
-          minimapRdr.setBounds(worldBox);
-        }
-      }
     }).catch(console.error);
     return () => {
       if (clipChangeRaf != null) cancelAnimationFrame(clipChangeRaf);
-      sm.removeFrameCallback(minimapFrame);
       sm.removePostRenderCallback(axisFrame);
       sm.removePostRenderCallback(magFrame);
       magnifier.dispose();
       sm.dispose();
       measureMgr.dispose();
       markerMgr.dispose();
-      minimapRdr.dispose();
       clipMgr.dispose();
       axisGizmo.dispose();
       initialized.current = false;
     };
-  }, []);
-  useEffect(() => {
-    if (showMinimap && minimapRef.current && minimapContainerRef.current) {
-      minimapRef.current.attach(minimapContainerRef.current);
-      return () => minimapRef.current?.dispose();
-    }
-  }, [showMinimap]);
-  const navigateMinimap = useCallback((el, clientX, clientY) => {
-    const sm = smRef.current;
-    const minimap = minimapRef.current;
-    if (!sm || !minimap) return;
-    const rect = el.getBoundingClientRect();
-    const world = minimap.canvasToWorld(clientX - rect.left, clientY - rect.top);
-    const cam = sm.camera;
-    const offset = new THREE5.Vector3().subVectors(cam.position, sm.controls.target);
-    sm.controls.target.set(world.x, world.y, sm.controls.target.z);
-    cam.position.set(world.x + offset.x, world.y + offset.y, cam.position.z);
-    sm.controls.update();
-  }, []);
-  const minimapDragRef = useRef(false);
-  const handleMinimapPointerDown = useCallback((e) => {
-    minimapDragRef.current = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    navigateMinimap(e.currentTarget, e.clientX, e.clientY);
-  }, [navigateMinimap]);
-  const handleMinimapPointerMove = useCallback((e) => {
-    if (minimapDragRef.current) navigateMinimap(e.currentTarget, e.clientX, e.clientY);
-  }, [navigateMinimap]);
-  const handleMinimapPointerUp = useCallback((e) => {
-    minimapDragRef.current = false;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  }, []);
-  const handleMinimapDblClick = useCallback(() => {
-    const wb = loaderRef.current?.worldBox;
-    if (wb && !wb.isEmpty()) smRef.current?.fitToBox(wb);
   }, []);
   useEffect(() => {
     if (markerRef.current && cameras.length > 0) {
@@ -4246,15 +3868,7 @@ function Viewport({ className }) {
       markerRef.current.build(cameras, wb && !wb.isEmpty() ? wb : void 0);
       markerRef.current.setVisible(showMarkers);
     }
-    minimapRef.current?.setPois(
-      cameras.filter((c) => c.position).map((c) => ({ x: c.position.x, y: c.position.y }))
-    );
   }, [cameras, showMarkers]);
-  useEffect(() => {
-    minimapRef.current?.setSelectedPoi(
-      selectedCamera?.position ? { x: selectedCamera.position.x, y: selectedCamera.position.y } : null
-    );
-  }, [selectedCamera]);
   useEffect(() => {
     markerRef.current?.setVisible(showMarkers);
   }, [showMarkers]);
@@ -4585,43 +4199,6 @@ function Viewport({ className }) {
         }
       }
     ),
-    showMinimap && /* @__PURE__ */ jsxs(
-      "div",
-      {
-        className: "absolute rounded-lg overflow-hidden border border-white/10 shadow-lg cursor-pointer transition-[left] duration-200",
-        style: {
-          width: minimapSize,
-          height: minimapSize,
-          left: "var(--pcv-minimap-left, 0.75rem)",
-          // Lift above the OS home indicator / browser nav bar on mobile.
-          bottom: "calc(2.5rem + env(safe-area-inset-bottom))"
-        },
-        onPointerDown: handleMinimapPointerDown,
-        onPointerMove: handleMinimapPointerMove,
-        onPointerUp: handleMinimapPointerUp,
-        onDoubleClick: handleMinimapDblClick,
-        children: [
-          /* @__PURE__ */ jsx(
-            "div",
-            {
-              ref: minimapContainerRef,
-              className: "relative w-full h-full"
-            }
-          ),
-          /* @__PURE__ */ jsx("div", { className: "absolute top-1 left-2 text-[9px] text-white/40 font-mono pointer-events-none", children: t.overview }),
-          /* @__PURE__ */ jsx(
-            "div",
-            {
-              onMouseDown: handleMinimapResizeStart,
-              onPointerDown: (e) => e.stopPropagation(),
-              className: "absolute top-0 right-0 w-4 h-4 cursor-nwse-resize flex items-center justify-center",
-              title: "Resize minimap",
-              children: /* @__PURE__ */ jsx("svg", { width: "8", height: "8", viewBox: "0 0 8 8", className: "text-white/30", children: /* @__PURE__ */ jsx("path", { d: "M0 8L8 0M3 8L8 3M6 8L8 6", stroke: "currentColor", strokeWidth: "1" }) })
-            }
-          )
-        ]
-      }
-    ),
     activeTool !== "none" && /* @__PURE__ */ jsxs("div", { className: "absolute top-3 left-1/2 -translate-x-1/2 bg-black/70 text-[hsl(var(--brand))] text-xs font-mono px-3 py-1 rounded-full pointer-events-none", children: [
       activeTool === "measure-point" && t.hintPoint,
       activeTool === "measure-distance" && t.hintDistance,
@@ -4631,10 +4208,6 @@ function Viewport({ className }) {
       activeTool === "measure-profile" && t.hintProfile,
       activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? t.hintVolumeHeight : t.hintVolumeFootprint),
       activeTool === "section-box" && t.hintSectionBox
-    ] }),
-    metadata && /* @__PURE__ */ jsxs("div", { className: "absolute top-3 left-3 text-[10px] font-mono text-white/30 pointer-events-none", children: [
-      (metadata.points / 1e6).toFixed(1),
-      "M pts"
     ] })
   ] });
 }
@@ -4655,8 +4228,6 @@ var init_viewport = __esm({
     init_dist();
     init_dist();
     init_dist();
-    init_dist();
-    init_use_minimap_resize();
     init_use_snap_throttle();
   }
 });
@@ -5243,7 +4814,7 @@ function RailBtn({ icon, title, active, onClick, disabled, compact }) {
   );
 }
 function Divider() {
-  return /* @__PURE__ */ jsx("div", { className: "h-px w-6 mx-auto bg-[hsl(var(--border))] my-0.5" });
+  return /* @__PURE__ */ jsx("div", { className: "w-px h-6 my-auto bg-[hsl(var(--border))] mx-0.5" });
 }
 var BASIC_MEASURES = [
   { type: "point", tool: "measure-point", icon: /* @__PURE__ */ jsx(MapPin, { size: 15 }), titleKey: "measurePoint" },
@@ -5284,7 +4855,7 @@ function ToolRail() {
     measurementManager?.clearAll();
     setMeasurementList([]);
   };
-  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-center gap-0.5 py-2 px-1 w-10 shrink-0", children: [
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-row items-center gap-0.5 px-2 py-1 h-11 shrink-0", children: [
     BASIC_MEASURES.map((def) => /* @__PURE__ */ jsx(
       RailBtn,
       {
@@ -5347,240 +4918,6 @@ function ToolRail() {
           compact: true
         }
       )
-    ] })
-  ] });
-}
-
-// src/components/toolbar/clip-toolbar.tsx
-init_utils();
-
-// src/hooks/use-clip-actions.ts
-init_viewer_provider();
-function useClipActions() {
-  const { clipManager, loader, clipBoxEntries, selectedClipBoxId, activeTool, setActiveTool } = useViewer();
-  const boxes = clipBoxEntries;
-  const hasClipBox = boxes.length > 0;
-  const clipMode = boxes.find((b) => b.visible)?.mode ?? "outside";
-  const addBox = useCallback(() => {
-    if (!clipManager || !loader) return;
-    if (loader.worldBox.isEmpty()) return;
-    const entry = clipManager.addDefaultBox(loader.worldBox);
-    clipManager.selectBox(entry.id);
-  }, [clipManager, loader]);
-  const clearAll = useCallback(() => {
-    clipManager?.clear();
-    if (activeTool === "section-box") setActiveTool("none");
-  }, [clipManager, activeTool, setActiveTool]);
-  const toggleMode = useCallback(() => {
-    const next = clipMode === "outside" ? "inside" : "outside";
-    clipManager?.setModeAll(next);
-  }, [clipManager, clipMode]);
-  const setEnabled = useCallback((enabled) => {
-    clipManager?.setEnabled(enabled);
-  }, [clipManager]);
-  const isEnabled = clipManager?.isEnabled() ?? true;
-  const outlinesVisible = clipManager?.areOutlinesVisible() ?? true;
-  const setOutlinesVisible = useCallback((visible) => {
-    clipManager?.setOutlinesVisible(visible);
-  }, [clipManager]);
-  const selectBox = useCallback((id) => {
-    clipManager?.selectBox(id);
-  }, [clipManager]);
-  const resetRotation = useCallback((id) => {
-    clipManager?.resetRotation(id);
-  }, [clipManager]);
-  const setTransformMode = useCallback((_mode) => {
-    if (!clipManager) return;
-    if (!clipManager.getSelectedId() && boxes[0]) clipManager.selectBox(boxes[0].id);
-  }, [clipManager, boxes]);
-  const removeBox = useCallback((id) => {
-    clipManager?.removeBox(id);
-  }, [clipManager]);
-  const setBoxVisible = useCallback((id, visible) => {
-    clipManager?.setBoxVisible(id, visible);
-  }, [clipManager]);
-  const setModeAll = useCallback((mode) => {
-    clipManager?.setModeAll(mode);
-  }, [clipManager]);
-  return {
-    boxes,
-    selectedBoxId: selectedClipBoxId,
-    hasClipBox,
-    clipMode,
-    isEnabled,
-    outlinesVisible,
-    addBox,
-    clearAll,
-    toggleMode,
-    setEnabled,
-    setOutlinesVisible,
-    selectBox,
-    resetRotation,
-    setTransformMode,
-    removeBox,
-    setBoxVisible,
-    setModeAll
-  };
-}
-
-// src/components/toolbar/clip-toolbar.tsx
-init_locale_context();
-function ClipToolbar() {
-  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible, resetRotation } = useClipActions();
-  const t = useLocale().clipToolbar;
-  const [enabled, setEnabledLocal] = React27.useState(isEnabled);
-  const [outlines, setOutlinesLocal] = React27.useState(outlinesVisible);
-  React27.useEffect(() => {
-    setEnabledLocal(isEnabled);
-    setOutlinesLocal(outlinesVisible);
-  }, [isEnabled, outlinesVisible, boxes]);
-  if (boxes.length === 0) return null;
-  const firstVisible = boxes.find((b) => b.visible);
-  const isInside = (firstVisible?.mode ?? "outside") === "inside";
-  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col w-52 py-2 px-1 select-none", children: [
-    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between px-1 mb-1.5", children: [
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1.5 text-xs font-semibold text-foreground", children: [
-        /* @__PURE__ */ jsx(BoxSelect, { size: 13, className: "text-[hsl(var(--brand))]" }),
-        /* @__PURE__ */ jsx("span", { children: t.title })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-0.5", children: [
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            title: t.addBox,
-            onClick: addBox,
-            className: "flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
-            children: [
-              /* @__PURE__ */ jsx(Plus, { size: 12 }),
-              /* @__PURE__ */ jsx("span", { className: "text-[11px]", children: t.addBox })
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsx(
-          "button",
-          {
-            title: t.clearAll,
-            onClick: clearAll,
-            className: "flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-destructive/20 hover:text-destructive transition-colors",
-            children: /* @__PURE__ */ jsx(Trash2, { size: 12 })
-          }
-        )
-      ] })
-    ] }),
-    /* @__PURE__ */ jsx("div", { className: "h-px bg-muted mx-1 mb-1.5" }),
-    /* @__PURE__ */ jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxs(
-      "button",
-      {
-        onClick: () => {
-          const next = !enabled;
-          setEnabledLocal(next);
-          setEnabled(next);
-        },
-        title: enabled ? t.clippingOn : t.clippingOff,
-        className: cn(
-          "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
-          enabled ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
-        ),
-        children: [
-          enabled ? /* @__PURE__ */ jsx(Scissors, { size: 12 }) : /* @__PURE__ */ jsx(ScissorsLineDashed, { size: 12 }),
-          /* @__PURE__ */ jsx("span", { className: "flex-1 text-left", children: enabled ? t.clippingOn : t.clippingOff }),
-          /* @__PURE__ */ jsx(Power, { size: 12, className: enabled ? "text-[hsl(var(--brand))]" : "text-muted-foreground" })
-        ]
-      }
-    ) }),
-    /* @__PURE__ */ jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxs(
-      "button",
-      {
-        onClick: () => {
-          const next = !outlines;
-          setOutlinesLocal(next);
-          setOutlinesVisible(next);
-        },
-        title: outlines ? t.outlinesOn : t.outlinesOff,
-        className: cn(
-          "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
-          outlines ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
-        ),
-        children: [
-          outlines ? /* @__PURE__ */ jsx(Eye, { size: 12 }) : /* @__PURE__ */ jsx(EyeOff, { size: 12 }),
-          /* @__PURE__ */ jsx("span", { className: "flex-1 text-left", children: outlines ? t.outlinesOn : t.outlinesOff })
-        ]
-      }
-    ) }),
-    /* @__PURE__ */ jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxs(
-      "button",
-      {
-        onClick: () => setModeAll(isInside ? "outside" : "inside"),
-        className: cn(
-          "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors",
-          "border",
-          isInside ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
-        ),
-        children: [
-          /* @__PURE__ */ jsx(Scissors, { size: 12 }),
-          /* @__PURE__ */ jsx("span", { children: isInside ? t.keepInside : t.keepOutside })
-        ]
-      }
-    ) }),
-    /* @__PURE__ */ jsx("div", { className: "max-h-40 overflow-y-auto flex flex-col gap-0.5 px-1", children: boxes.map((box) => {
-      const isSelected = box.id === selectedClipBoxId;
-      return /* @__PURE__ */ jsxs(
-        "div",
-        {
-          className: cn(
-            "flex items-center gap-1 rounded px-1 py-0.5 transition-colors",
-            isSelected ? "bg-[hsl(var(--brand)/0.15)]" : "hover:bg-muted/40"
-          ),
-          children: [
-            /* @__PURE__ */ jsx(
-              "button",
-              {
-                title: box.visible ? t.hide : t.show,
-                onClick: () => setBoxVisible(box.id, !box.visible),
-                className: "flex-shrink-0 p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors",
-                children: box.visible ? /* @__PURE__ */ jsx(Eye, { size: 12 }) : /* @__PURE__ */ jsx(EyeOff, { size: 12 })
-              }
-            ),
-            /* @__PURE__ */ jsx(
-              "button",
-              {
-                title: box.name,
-                onClick: () => selectBox(isSelected ? null : box.id),
-                className: cn(
-                  "flex-1 text-left text-xs truncate rounded transition-colors",
-                  isSelected ? "text-[hsl(var(--brand))]" : "text-muted-foreground hover:text-foreground"
-                ),
-                children: box.name
-              }
-            ),
-            /* @__PURE__ */ jsx(
-              "button",
-              {
-                title: t.delete,
-                onClick: () => removeBox(box.id),
-                className: "flex-shrink-0 p-0.5 rounded text-muted-foreground hover:text-destructive transition-colors",
-                children: /* @__PURE__ */ jsx(Trash2, { size: 12 })
-              }
-            )
-          ]
-        },
-        box.id
-      );
-    }) }),
-    selectedClipBoxId && /* @__PURE__ */ jsxs(Fragment, { children: [
-      /* @__PURE__ */ jsx("div", { className: "h-px bg-muted mx-1 mt-1.5 mb-1.5" }),
-      /* @__PURE__ */ jsx("div", { className: "px-1", children: /* @__PURE__ */ jsxs(
-        "button",
-        {
-          onClick: () => resetRotation(),
-          title: t.resetRotation,
-          className: "w-full flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] border border-border text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
-          children: [
-            /* @__PURE__ */ jsx(RotateCcw, { size: 12 }),
-            /* @__PURE__ */ jsx("span", { children: t.resetRotation })
-          ]
-        }
-      ) })
     ] })
   ] });
 }
@@ -5709,9 +5046,7 @@ function LayersPanel() {
     showMarkers,
     setShowMarkers,
     showMeasurements,
-    setShowMeasurements,
-    showMinimap,
-    setShowMinimap
+    setShowMeasurements
   } = useViewer();
   const { cameras } = useData();
   const hasPanoramas = cameras.length > 0;
@@ -5735,20 +5070,11 @@ function LayersPanel() {
         onToggle: () => setShowMeasurements(!showMeasurements)
       }
     ),
-    /* @__PURE__ */ jsx(
-      ToggleRow,
-      {
-        icon: /* @__PURE__ */ jsx(Map$1, { size: 15 }),
-        label: "Minimap",
-        active: showMinimap,
-        onToggle: () => setShowMinimap(!showMinimap)
-      }
-    ),
     /* @__PURE__ */ jsx(ClassificationSection, {})
   ] });
 }
 function ClassificationSection() {
-  const [open, setOpen] = React27.useState(false);
+  const [open, setOpen] = React26.useState(false);
   return /* @__PURE__ */ jsxs("div", { className: "mt-1 border-t border-border pt-1", children: [
     /* @__PURE__ */ jsxs(
       "button",
@@ -5886,8 +5212,245 @@ function PanoPanel() {
 // src/components/sidebar/scene-panel.tsx
 init_viewer_provider();
 init_locale_context();
+
+// src/components/toolbar/clip-toolbar.tsx
+init_utils();
+
+// src/hooks/use-clip-actions.ts
+init_viewer_provider();
+function useClipActions() {
+  const { clipManager, loader, clipBoxEntries, selectedClipBoxId, activeTool, setActiveTool } = useViewer();
+  const boxes = clipBoxEntries;
+  const hasClipBox = boxes.length > 0;
+  const clipMode = boxes.find((b) => b.visible)?.mode ?? "outside";
+  const addBox = useCallback(() => {
+    if (!clipManager || !loader) return;
+    if (loader.worldBox.isEmpty()) return;
+    const entry = clipManager.addDefaultBox(loader.worldBox);
+    clipManager.selectBox(entry.id);
+  }, [clipManager, loader]);
+  const clearAll = useCallback(() => {
+    clipManager?.clear();
+    if (activeTool === "section-box") setActiveTool("none");
+  }, [clipManager, activeTool, setActiveTool]);
+  const toggleMode = useCallback(() => {
+    const next = clipMode === "outside" ? "inside" : "outside";
+    clipManager?.setModeAll(next);
+  }, [clipManager, clipMode]);
+  const setEnabled = useCallback((enabled) => {
+    clipManager?.setEnabled(enabled);
+  }, [clipManager]);
+  const isEnabled = clipManager?.isEnabled() ?? true;
+  const outlinesVisible = clipManager?.areOutlinesVisible() ?? true;
+  const setOutlinesVisible = useCallback((visible) => {
+    clipManager?.setOutlinesVisible(visible);
+  }, [clipManager]);
+  const selectBox = useCallback((id) => {
+    clipManager?.selectBox(id);
+  }, [clipManager]);
+  const resetRotation = useCallback((id) => {
+    clipManager?.resetRotation(id);
+  }, [clipManager]);
+  const setTransformMode = useCallback((_mode) => {
+    if (!clipManager) return;
+    if (!clipManager.getSelectedId() && boxes[0]) clipManager.selectBox(boxes[0].id);
+  }, [clipManager, boxes]);
+  const removeBox = useCallback((id) => {
+    clipManager?.removeBox(id);
+  }, [clipManager]);
+  const setBoxVisible = useCallback((id, visible) => {
+    clipManager?.setBoxVisible(id, visible);
+  }, [clipManager]);
+  const setModeAll = useCallback((mode) => {
+    clipManager?.setModeAll(mode);
+  }, [clipManager]);
+  return {
+    boxes,
+    selectedBoxId: selectedClipBoxId,
+    hasClipBox,
+    clipMode,
+    isEnabled,
+    outlinesVisible,
+    addBox,
+    clearAll,
+    toggleMode,
+    setEnabled,
+    setOutlinesVisible,
+    selectBox,
+    resetRotation,
+    setTransformMode,
+    removeBox,
+    setBoxVisible,
+    setModeAll
+  };
+}
+
+// src/components/toolbar/clip-toolbar.tsx
+init_locale_context();
+function ClipToolbar() {
+  const { boxes, selectedBoxId: selectedClipBoxId, addBox, clearAll, setModeAll, selectBox, removeBox, setBoxVisible, isEnabled, setEnabled, outlinesVisible, setOutlinesVisible, resetRotation } = useClipActions();
+  const t = useLocale().clipToolbar;
+  const [enabled, setEnabledLocal] = React26.useState(isEnabled);
+  const [outlines, setOutlinesLocal] = React26.useState(outlinesVisible);
+  React26.useEffect(() => {
+    setEnabledLocal(isEnabled);
+    setOutlinesLocal(outlinesVisible);
+  }, [isEnabled, outlinesVisible, boxes]);
+  const firstVisible = boxes.find((b) => b.visible);
+  const isInside = (firstVisible?.mode ?? "outside") === "inside";
+  const hasBoxes = boxes.length > 0;
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col w-full py-2 px-1 select-none", children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between px-1 mb-1.5", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1.5 text-xs font-semibold text-foreground", children: [
+        /* @__PURE__ */ jsx(BoxSelect, { size: 13, className: "text-[hsl(var(--brand))]" }),
+        /* @__PURE__ */ jsx("span", { children: t.title })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-0.5", children: [
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            title: t.addBox,
+            onClick: addBox,
+            className: "flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
+            children: [
+              /* @__PURE__ */ jsx(Plus, { size: 12 }),
+              /* @__PURE__ */ jsx("span", { className: "text-[11px]", children: t.addBox })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            title: t.clearAll,
+            onClick: clearAll,
+            className: "flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-destructive/20 hover:text-destructive transition-colors",
+            children: /* @__PURE__ */ jsx(Trash2, { size: 12 })
+          }
+        )
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "h-px bg-muted mx-1 mb-1.5" }),
+    !hasBoxes && /* @__PURE__ */ jsx("p", { className: "px-1 text-[11px] text-muted-foreground", children: t.empty }),
+    hasBoxes && /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: () => {
+            const next = !enabled;
+            setEnabledLocal(next);
+            setEnabled(next);
+          },
+          title: enabled ? t.clippingOn : t.clippingOff,
+          className: cn(
+            "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
+            enabled ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          ),
+          children: [
+            enabled ? /* @__PURE__ */ jsx(Scissors, { size: 12 }) : /* @__PURE__ */ jsx(ScissorsLineDashed, { size: 12 }),
+            /* @__PURE__ */ jsx("span", { className: "flex-1 text-left", children: enabled ? t.clippingOn : t.clippingOff }),
+            /* @__PURE__ */ jsx(Power, { size: 12, className: enabled ? "text-[hsl(var(--brand))]" : "text-muted-foreground" })
+          ]
+        }
+      ) }),
+      /* @__PURE__ */ jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: () => {
+            const next = !outlines;
+            setOutlinesLocal(next);
+            setOutlinesVisible(next);
+          },
+          title: outlines ? t.outlinesOn : t.outlinesOff,
+          className: cn(
+            "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors border",
+            outlines ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          ),
+          children: [
+            outlines ? /* @__PURE__ */ jsx(Eye, { size: 12 }) : /* @__PURE__ */ jsx(EyeOff, { size: 12 }),
+            /* @__PURE__ */ jsx("span", { className: "flex-1 text-left", children: outlines ? t.outlinesOn : t.outlinesOff })
+          ]
+        }
+      ) }),
+      /* @__PURE__ */ jsx("div", { className: "px-1 mb-1.5", children: /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: () => setModeAll(isInside ? "outside" : "inside"),
+          className: cn(
+            "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors",
+            "border",
+            isInside ? "bg-[hsl(var(--brand)/0.15)] border-[hsl(var(--brand)/0.4)] text-[hsl(var(--brand))]" : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          ),
+          children: [
+            /* @__PURE__ */ jsx(Scissors, { size: 12 }),
+            /* @__PURE__ */ jsx("span", { children: isInside ? t.keepInside : t.keepOutside })
+          ]
+        }
+      ) }),
+      /* @__PURE__ */ jsx("div", { className: "max-h-40 overflow-y-auto flex flex-col gap-0.5 px-1", children: boxes.map((box) => {
+        const isSelected = box.id === selectedClipBoxId;
+        return /* @__PURE__ */ jsxs(
+          "div",
+          {
+            className: cn(
+              "flex items-center gap-1 rounded px-1 py-0.5 transition-colors",
+              isSelected ? "bg-[hsl(var(--brand)/0.15)]" : "hover:bg-muted/40"
+            ),
+            children: [
+              /* @__PURE__ */ jsx(
+                "button",
+                {
+                  title: box.visible ? t.hide : t.show,
+                  onClick: () => setBoxVisible(box.id, !box.visible),
+                  className: "flex-shrink-0 p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors",
+                  children: box.visible ? /* @__PURE__ */ jsx(Eye, { size: 12 }) : /* @__PURE__ */ jsx(EyeOff, { size: 12 })
+                }
+              ),
+              /* @__PURE__ */ jsx(
+                "button",
+                {
+                  title: box.name,
+                  onClick: () => selectBox(isSelected ? null : box.id),
+                  className: cn(
+                    "flex-1 text-left text-xs truncate rounded transition-colors",
+                    isSelected ? "text-[hsl(var(--brand))]" : "text-muted-foreground hover:text-foreground"
+                  ),
+                  children: box.name
+                }
+              ),
+              /* @__PURE__ */ jsx(
+                "button",
+                {
+                  title: t.delete,
+                  onClick: () => removeBox(box.id),
+                  className: "flex-shrink-0 p-0.5 rounded text-muted-foreground hover:text-destructive transition-colors",
+                  children: /* @__PURE__ */ jsx(Trash2, { size: 12 })
+                }
+              )
+            ]
+          },
+          box.id
+        );
+      }) }),
+      selectedClipBoxId && /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx("div", { className: "h-px bg-muted mx-1 mt-1.5 mb-1.5" }),
+        /* @__PURE__ */ jsx("div", { className: "px-1", children: /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => resetRotation(),
+            title: t.resetRotation,
+            className: "w-full flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] border border-border text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors",
+            children: [
+              /* @__PURE__ */ jsx(RotateCcw, { size: 12 }),
+              /* @__PURE__ */ jsx("span", { children: t.resetRotation })
+            ]
+          }
+        ) })
+      ] })
+    ] })
+  ] });
+}
 function ScenePanel() {
-  const { measurementList, measurementManager, setMeasurementList, loader, clipManager, clipBoxEntries, selectedClipBoxId, uiMode } = useViewer();
+  const { measurementList, measurementManager, setMeasurementList, loader, uiMode } = useViewer();
   const t = useLocale().scenePanel;
   const isPro = uiMode === "professional";
   const deleteMeasurement = (id) => {
@@ -5925,57 +5488,9 @@ function ScenePanel() {
         )
       ] }, m.id))
     ] }),
-    isPro && /* @__PURE__ */ jsxs("div", { className: "p-2", children: [
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-1.5", children: [
-        /* @__PURE__ */ jsx("p", { className: "text-[10px] font-semibold text-muted-foreground uppercase tracking-wide", children: t.sections }),
-        clipBoxEntries.length > 0 && /* @__PURE__ */ jsx("button", { onClick: () => clipManager?.clear(), title: t.clearAll, className: "text-muted-foreground hover:text-destructive transition-colors", children: /* @__PURE__ */ jsx(Trash2, { size: 11 }) })
-      ] }),
-      clipBoxEntries.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-[10px] text-muted-foreground", children: t.sectionHint }) : clipBoxEntries.map((box) => /* @__PURE__ */ jsxs(
-        "div",
-        {
-          className: `flex items-center gap-1 py-0.5 group rounded px-0.5 ${selectedClipBoxId === box.id ? "bg-[hsl(var(--brand)/0.1)]" : ""}`,
-          children: [
-            /* @__PURE__ */ jsx(
-              "button",
-              {
-                onClick: () => clipManager?.setBoxVisible(box.id, !box.visible),
-                className: "text-muted-foreground hover:text-foreground transition-colors shrink-0",
-                title: box.visible ? "Hide" : "Show",
-                children: box.visible ? /* @__PURE__ */ jsx(Eye, { size: 11 }) : /* @__PURE__ */ jsx(EyeOff, { size: 11 })
-              }
-            ),
-            /* @__PURE__ */ jsx(BoxSelect, { size: 11, className: "text-[hsl(var(--brand))] shrink-0" }),
-            /* @__PURE__ */ jsx(
-              "button",
-              {
-                onClick: () => clipManager?.selectBox(selectedClipBoxId === box.id ? null : box.id),
-                className: "flex-1 truncate font-mono text-foreground text-left hover:text-[hsl(var(--brand))] transition-colors",
-                children: box.name
-              }
-            ),
-            /* @__PURE__ */ jsx(
-              "button",
-              {
-                onClick: () => clipManager?.setModeAll(box.mode === "outside" ? "inside" : "outside"),
-                title: box.mode === "outside" ? "Keep inside (all)" : "Keep outside (all)",
-                className: "text-muted-foreground hover:text-foreground transition-colors shrink-0",
-                children: /* @__PURE__ */ jsx(Scissors, { size: 10 })
-              }
-            ),
-            /* @__PURE__ */ jsx("span", { className: "text-[8px] text-muted-foreground font-mono w-6 text-center", children: box.mode === "outside" ? "OUT" : "IN" }),
-            /* @__PURE__ */ jsx(
-              "button",
-              {
-                onClick: () => clipManager?.removeBox(box.id),
-                className: "opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0",
-                children: /* @__PURE__ */ jsx(Trash2, { size: 10 })
-              }
-            )
-          ]
-        },
-        box.id
-      )),
-      clipBoxEntries.length > 1 && /* @__PURE__ */ jsx("p", { className: "text-[9px] text-muted-foreground mt-1 italic", children: t.clipModeNote })
+    isPro && /* @__PURE__ */ jsxs("div", { className: "border-t border-[hsl(var(--border))]", children: [
+      /* @__PURE__ */ jsx("p", { className: "text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-2 pt-2", children: t.sections }),
+      /* @__PURE__ */ jsx(ClipToolbar, {})
     ] })
   ] });
 }
@@ -7376,9 +6891,9 @@ function ValueBox({ value, min, max, step, scale, unit, decimals, onCommit }) {
     const s = (v / scale).toFixed(decimals);
     return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
   };
-  const [text, setText] = React27.useState(() => fmt(value));
-  const [editing, setEditing] = React27.useState(false);
-  React27.useEffect(() => {
+  const [text, setText] = React26.useState(() => fmt(value));
+  const [editing, setEditing] = React26.useState(false);
+  React26.useEffect(() => {
     if (!editing) setText(fmt(value));
   }, [value, editing]);
   const commit = (s) => {
@@ -7448,7 +6963,7 @@ function WorkspaceLayout({ className }) {
     () => typeof window === "undefined" || window.innerWidth >= 768
   );
   const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
-  const { pointBudget, activeTool, selectedCamera, uiMode, clipBoxEntries } = useViewer();
+  const { pointBudget, activeTool, selectedCamera, uiMode } = useViewer();
   const { metadata } = useData();
   const t = useLocale().viewport;
   const isPro = uiMode === "professional";
@@ -7460,11 +6975,6 @@ function WorkspaceLayout({ className }) {
     {
       className: cn(
         "relative h-full w-full bg-[hsl(var(--background))] text-foreground overflow-hidden",
-        // The minimap sits bottom-left (the axis gizmo is bottom-right). Publish
-        // `--pcv-minimap-left` so it clears the left tool rail (~0.75rem + its
-        // 2.5rem width + a gap) and the notch inset on mobile. Being on the left,
-        // it never overlaps the right-hand sidebar in any state.
-        "[--pcv-minimap-left:calc(3.75rem+env(safe-area-inset-left))]",
         className
       ),
       children: [
@@ -7478,7 +6988,7 @@ function WorkspaceLayout({ className }) {
             renderSettingsOpen
           }
         ) }) }),
-        /* @__PURE__ */ jsx("div", { className: "absolute left-[calc(0.75rem+env(safe-area-inset-left))] top-[calc(3.5rem+env(safe-area-inset-top))] bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 pointer-events-none flex items-center", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto overflow-y-auto max-h-full", children: /* @__PURE__ */ jsx(ToolRail, {}) }) }),
+        /* @__PURE__ */ jsx("div", { className: "absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[calc(100vw-1.5rem)]", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto max-w-full overflow-x-auto", children: /* @__PURE__ */ jsx(ToolRail, {}) }) }),
         isMobile && sidebarOpen && /* @__PURE__ */ jsx(
           "div",
           {
@@ -7523,8 +7033,7 @@ function WorkspaceLayout({ className }) {
             ]
           }
         ),
-        isPro && clipBoxEntries.length > 0 && /* @__PURE__ */ jsx("div", { className: "absolute bottom-[calc(3rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-30 pointer-events-none", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-auto", children: /* @__PURE__ */ jsx(ClipToolbar, {}) }) }),
-        /* @__PURE__ */ jsx("div", { className: "absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden md:block", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none", children: [
+        /* @__PURE__ */ jsx("div", { className: "absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] z-30 pointer-events-none hidden md:block", style: pcvChromeScaleStyle, children: /* @__PURE__ */ jsx(GlassCard, { className: "pointer-events-none", children: /* @__PURE__ */ jsxs("div", { className: "px-3 h-6 flex items-center gap-4 text-[10px] font-mono text-muted-foreground select-none", children: [
           metadata && /* @__PURE__ */ jsx("span", { children: t.statusPts(metadata.points / 1e6) }),
           /* @__PURE__ */ jsx("span", { children: t.statusBudget(pointBudget / 1e6) }),
           /* @__PURE__ */ jsx(StatusFps, {}),
@@ -7560,7 +7069,7 @@ var buttonVariants = cva(
     }
   }
 );
-var Button = React27.forwardRef(
+var Button = React26.forwardRef(
   ({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
     "button",
     {
@@ -7574,7 +7083,7 @@ Button.displayName = "Button";
 
 // src/ui/slider.tsx
 init_utils();
-var Slider2 = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxs(
+var Slider2 = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsxs(
   SliderPrimitive.Root,
   {
     ref,
@@ -7596,7 +7105,7 @@ init_utils();
 var Dialog = DialogPrimitive.Root;
 var DialogTrigger = DialogPrimitive.Trigger;
 var DialogPortal = DialogPrimitive.Portal;
-var DialogOverlay = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogOverlay = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Overlay,
   {
     ref,
@@ -7605,7 +7114,7 @@ var DialogOverlay = React27.forwardRef(({ className, ...props }, ref) => /* @__P
   }
 ));
 DialogOverlay.displayName = "DialogOverlay";
-var DialogContent = React27.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
+var DialogContent = React26.forwardRef(({ className, children, container, dragOffset, style, ...props }, ref) => {
   const dx = dragOffset?.x ?? 0;
   const dy = dragOffset?.y ?? 0;
   return /* @__PURE__ */ jsxs(DialogPortal, { container: container ?? void 0, children: [
@@ -7643,7 +7152,7 @@ var DialogHeader = ({
   }
 );
 DialogHeader.displayName = "DialogHeader";
-var DialogTitle = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogTitle = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Title,
   {
     ref,
@@ -7652,7 +7161,7 @@ var DialogTitle = React27.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 DialogTitle.displayName = "DialogTitle";
-var DialogClose = React27.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(
+var DialogClose = React26.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(
   DialogPrimitive.Close,
   {
     ref,
@@ -7669,7 +7178,7 @@ DialogClose.displayName = "DialogClose";
 // src/ui/tabs.tsx
 init_utils();
 var Tabs = TabsPrimitive.Root;
-var TabsList = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsList = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.List,
   {
     ref,
@@ -7681,7 +7190,7 @@ var TabsList = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__
   }
 ));
 TabsList.displayName = "TabsList";
-var TabsTrigger = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsTrigger = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.Trigger,
   {
     ref,
@@ -7696,7 +7205,7 @@ var TabsTrigger = React27.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 TabsTrigger.displayName = "TabsTrigger";
-var TabsContent = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var TabsContent = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   TabsPrimitive.Content,
   {
     ref,
@@ -7714,7 +7223,7 @@ init_utils();
 var Popover = PopoverPrimitive.Root;
 var PopoverTrigger = PopoverPrimitive.Trigger;
 var PopoverAnchor = PopoverPrimitive.Anchor;
-var PopoverContent = React27.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(PopoverPrimitive.Portal, { children: /* @__PURE__ */ jsx(
+var PopoverContent = React26.forwardRef(({ className, align = "center", sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(PopoverPrimitive.Portal, { children: /* @__PURE__ */ jsx(
   PopoverPrimitive.Content,
   {
     ref,
@@ -7739,7 +7248,7 @@ init_utils();
 var TooltipProvider = TooltipPrimitive.Provider;
 var Tooltip = TooltipPrimitive.Root;
 var TooltipTrigger = TooltipPrimitive.Trigger;
-var TooltipContent = React27.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(TooltipPrimitive.Portal, { children: /* @__PURE__ */ jsx(
+var TooltipContent = React26.forwardRef(({ className, sideOffset = 4, ...props }, ref) => /* @__PURE__ */ jsx(TooltipPrimitive.Portal, { children: /* @__PURE__ */ jsx(
   TooltipPrimitive.Content,
   {
     ref,
@@ -7779,7 +7288,7 @@ var toggleVariants = cva(
     }
   }
 );
-var Toggle = React27.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
+var Toggle = React26.forwardRef(({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsx(
   TogglePrimitive.Root,
   {
     ref,
@@ -7794,7 +7303,7 @@ init_utils();
 var Select = SelectPrimitive.Root;
 var SelectGroup = SelectPrimitive.Group;
 var SelectValue = SelectPrimitive.Value;
-var SelectTrigger = React27.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+var SelectTrigger = React26.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
   SelectPrimitive.Trigger,
   {
     ref,
@@ -7814,7 +7323,7 @@ var SelectTrigger = React27.forwardRef(({ className, children, ...props }, ref) 
   }
 ));
 SelectTrigger.displayName = "SelectTrigger";
-var SelectScrollUpButton = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectScrollUpButton = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.ScrollUpButton,
   {
     ref,
@@ -7827,7 +7336,7 @@ var SelectScrollUpButton = React27.forwardRef(({ className, ...props }, ref) => 
   }
 ));
 SelectScrollUpButton.displayName = "SelectScrollUpButton";
-var SelectScrollDownButton = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectScrollDownButton = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.ScrollDownButton,
   {
     ref,
@@ -7840,7 +7349,7 @@ var SelectScrollDownButton = React27.forwardRef(({ className, ...props }, ref) =
   }
 ));
 SelectScrollDownButton.displayName = "SelectScrollDownButton";
-var SelectContent = React27.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Portal, { children: /* @__PURE__ */ jsxs(
+var SelectContent = React26.forwardRef(({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Portal, { children: /* @__PURE__ */ jsxs(
   SelectPrimitive.Content,
   {
     ref,
@@ -7873,7 +7382,7 @@ var SelectContent = React27.forwardRef(({ className, children, position = "poppe
   }
 ) }));
 SelectContent.displayName = "SelectContent";
-var SelectLabel = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectLabel = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.Label,
   {
     ref,
@@ -7885,7 +7394,7 @@ var SelectLabel = React27.forwardRef(({ className, ...props }, ref) => /* @__PUR
   }
 ));
 SelectLabel.displayName = "SelectLabel";
-var SelectItem = React27.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+var SelectItem = React26.forwardRef(({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
   SelectPrimitive.Item,
   {
     ref,
@@ -7903,7 +7412,7 @@ var SelectItem = React27.forwardRef(({ className, children, ...props }, ref) => 
   }
 ));
 SelectItem.displayName = "SelectItem";
-var SelectSeparator = React27.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+var SelectSeparator = React26.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
   SelectPrimitive.Separator,
   {
     ref,
@@ -8022,7 +7531,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "7334946 \xB7 2026-07-09 11:33Z" ;
+var PCV_BUILD = "c59750b \xB7 2026-08-06 11:25Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
@@ -8049,8 +7558,6 @@ function MinimalSettingsPopover({ onClose }) {
   const {
     showMarkers,
     setShowMarkers,
-    showMinimap,
-    setShowMinimap,
     showMeasurements,
     setShowMeasurements,
     colorMode,
@@ -8087,15 +7594,6 @@ function MinimalSettingsPopover({ onClose }) {
               label: "Measurements",
               active: showMeasurements,
               onToggle: () => setShowMeasurements(!showMeasurements)
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            ToggleRow,
-            {
-              icon: /* @__PURE__ */ jsx(Map$1, { size: 14 }),
-              label: "Minimap",
-              active: showMinimap,
-              onToggle: () => setShowMinimap(!showMinimap)
             }
           )
         ] }),
@@ -8573,10 +8071,9 @@ function ModeBtn({ icon, label, active, onClick }) {
   ] });
 }
 function ViewSettingsPalette() {
-  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
+  const { showMarkers, setShowMarkers, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
   return /* @__PURE__ */ jsxs(FloatingPalette, { title: "View", icon: /* @__PURE__ */ jsx(Eye, { size: 12 }), defaultCollapsed: true, children: [
     /* @__PURE__ */ jsx(ToggleRow2, { icon: /* @__PURE__ */ jsx(Camera, { size: 13 }), label: "Panoramas", active: showMarkers, onClick: () => setShowMarkers(!showMarkers) }),
-    /* @__PURE__ */ jsx(ToggleRow2, { icon: /* @__PURE__ */ jsx(Map$1, { size: 13 }), label: "Minimap", active: showMinimap, onClick: () => setShowMinimap(!showMinimap) }),
     /* @__PURE__ */ jsx("p", { className: "text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-2 mb-1", children: "Navigation" }),
     /* @__PURE__ */ jsxs("div", { className: "flex gap-1", children: [
       /* @__PURE__ */ jsx(ModeBtn, { icon: /* @__PURE__ */ jsx(Orbit, { size: 14 }), label: "Orbit", active: navigationMode === "orbit", onClick: () => setNavigationMode("orbit") }),
@@ -9118,18 +8615,13 @@ function useExportActions() {
 // src/hooks/use-visibility-actions.ts
 init_viewer_provider();
 function useVisibilityActions() {
-  const { showMarkers, setShowMarkers, showMinimap, setShowMinimap } = useViewer();
+  const { showMarkers, setShowMarkers } = useViewer();
   const toggleMarkers = useCallback(() => {
     setShowMarkers(!showMarkers);
   }, [showMarkers, setShowMarkers]);
-  const toggleMinimap = useCallback(() => {
-    setShowMinimap(!showMinimap);
-  }, [showMinimap, setShowMinimap]);
   return {
     showMarkers,
-    toggleMarkers,
-    showMinimap,
-    toggleMinimap
+    toggleMarkers
   };
 }
 
@@ -9375,6 +8867,7 @@ var de = createLocale(en, {
   },
   clipToolbar: {
     title: "Schnitte",
+    empty: "Keine Schnittboxen. Mit dem Schnittwerkzeug hinzuf\xFCgen.",
     addBox: "Box hinzuf\xFCgen",
     clearAll: "Alle entfernen",
     keepInside: "Innen behalten (alle)",
@@ -9393,6 +8886,6 @@ var de = createLocale(en, {
   }
 });
 
-export { AboutDialog, AxisGizmo, Button, CameraAnimator, ClassificationPanel, ClipManager, ClipToolbar, CollapsibleSidebar, ComponentsProvider, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, DisplaySettingsDialog, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MagnifierRenderer, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, MinimapRenderer, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider2 as Slider, Tabs, TabsContent, TabsList, TabsTrigger, ThemeProvider, Toggle, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useFps, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
+export { AboutDialog, AxisGizmo, Button, CameraAnimator, ClassificationPanel, ClipManager, ClipToolbar, CollapsibleSidebar, ComponentsProvider, DISPLAY_PRESETS, DataProvider, Dialog, DialogClose, DialogContent, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger, DisplayControls, DisplaySettingsDialog, ElectronSourceAdapter, ExportManager, ExportTools, FloatingPalette, LocaleProvider, MagnifierRenderer, MainToolbar, MarkerManager, MeasureTools, MeasurementManager, MeasurementsPanel, MinimalLayout, PCV_BUILD, PCV_VERSION, PCV_VERSION_STRING, PanoCloudViewer, PanoPanel, PanoViewer, PointCloudLoader, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, PresentationManager, RenderingSettings, S3SourceAdapter, SceneManager, ScenePanel, ScenesPanel, SectionTools, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, SelectValue, Sidebar, Slider2 as Slider, Tabs, TabsContent, TabsList, TabsTrigger, ThemeProvider, Toggle, ToolRail, ToolbarIconBtn, ToolbarSection, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, ViewControls, ViewerProvider, Viewport, WorkspaceLayout, WorkstationLayout, buttonVariants, captureScene, cn, createAdapter, createLocale, de, defaultComponents, en, exportMeasurementsCSV, formatAngle, formatArea, formatCoord, formatLength, formatVolume, toggleVariants, useClipActions, useComponents, useData, useDisplayActions, useDisplaySettings, useDraggable, useExportActions, useFps, useLocale, useMeasurementActions, useNavigationActions, usePcvRoot, useTheme, useViewer, useVisibilityActions };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

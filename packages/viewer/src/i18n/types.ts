@@ -215,6 +215,7 @@ export interface ViewerLocale {
   /** Clip management toolbar strings */
   clipToolbar: {
     title: string;
+    empty: string;
     addBox: string;
     clearAll: string;
     keepInside: string;

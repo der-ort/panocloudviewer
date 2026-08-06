@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Camera, Ruler, Map, ChevronRight, Tag } from "lucide-react";
+import { Camera, Ruler, ChevronRight, Tag } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useData } from "../../providers/data-provider";
@@ -17,7 +17,6 @@ export function LayersPanel() {
   const {
     showMarkers, setShowMarkers,
     showMeasurements, setShowMeasurements,
-    showMinimap, setShowMinimap,
   } = useViewer();
   const { cameras } = useData();
   const hasPanoramas = cameras.length > 0;
@@ -41,12 +40,6 @@ export function LayersPanel() {
         label="Measurements"
         active={showMeasurements}
         onToggle={() => setShowMeasurements(!showMeasurements)}
-      />
-      <LayerRow
-        icon={<Map size={15} />}
-        label="Minimap"
-        active={showMinimap}
-        onToggle={() => setShowMinimap(!showMinimap)}
       />
 
       {/* Classification — collapsed sub-section (was its own sidebar tab). */}
