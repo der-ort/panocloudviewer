@@ -10,11 +10,29 @@ const MARKER_COLOR_SELECTED = 0xff6644;  // orange-red for high contrast
  *  sizeAttenuation is false. Multiplied by markerSphereScale. */
 const PIN_BASE_SCALE = 0.022;
 
+/**
+ * How much of its opacity a pin keeps while it is behind the point cloud.
+ *
+ * Low enough to read as "through a wall" at a glance, high enough that a
+ * marker in the next room is still findable against a dense scan.
+ */
+const GHOST_OPACITY_FACTOR = 0.2;
+
 type MarkerLabelMode = "hover" | "always" | "hidden";
 
 interface MarkerEntry {
-  /** Constant on-screen-size pin (sizeAttenuation:false) — also the raycast target. */
+  /**
+   * Constant on-screen-size pin (sizeAttenuation:false) — also the raycast
+   * target. Drawn only where nothing occludes it.
+   */
   pin: THREE.Sprite;
+  /**
+   * The same pin, faint, drawn only where something DOES occlude it.
+   *
+   * Never a raycast target: it sits at the identical position, so offering
+   * both would report two hits for one marker.
+   */
+  ghost: THREE.Sprite;
   label: THREE.Sprite;
 }
 
@@ -22,9 +40,35 @@ interface MarkerEntry {
  * 3D panorama camera markers.
  *
  * Each marker is a small constant on-screen-size pin sprite
- * (sizeAttenuation:false) in brand yellow, always visible through the point
- * cloud via depthTest=false. A subtle text label sits above the pin and is
- * hidden by default — it appears only on hover/selection (markerLabelMode).
+ * (sizeAttenuation:false) in brand yellow. A subtle text label sits above the
+ * pin and is hidden by default — it appears only on hover/selection
+ * (markerLabelMode).
+ *
+ * ---------------------------------------------------------------------------
+ * DEPTH: WHY EACH PIN IS DRAWN TWICE
+ *
+ * Pins used to carry `depthTest: false`, so every scan position floated on top
+ * of the cloud — markers from the far side of a building sat over the wall in
+ * front of you, and nothing about the picture said which room they were in.
+ *
+ * Plain `depthTest: true` fixes that and creates a worse problem: a marker
+ * behind anything vanishes completely, and the only way to discover the next
+ * room's panorama is to fly there. That is exactly what the original flag was
+ * avoiding.
+ *
+ * So each pin is two sprites at one position, made MUTUALLY EXCLUSIVE by the
+ * depth comparison rather than by draw order:
+ *
+ *   pin    depthFunc LessEqualDepth  → drawn only where it is in front
+ *   ghost  depthFunc GreaterDepth    → drawn only where it is behind
+ *
+ * Exactly one of the pair passes for any given pixel, so an unoccluded marker
+ * is never the two of them stacked and brightened. Both leave `depthWrite`
+ * off, so neither occludes the other or anything else.
+ *
+ * Raycasting is unaffected and deliberately so: three's raycaster does not
+ * consult material depth state, so a ghosted marker stays clickable. Being
+ * behind a wall makes a panorama harder to see, not unreachable.
  *
  * The pin sprites are returned from getMeshes() as the raycast targets; Sprite
  * is raycastable in three r170. One pin per camera, in camera index order.
@@ -85,17 +129,21 @@ export class MarkerManager {
       if (!cam.position) return;
       const { x, y, z } = cam.position;
 
-      const pin = this._makePin(MARKER_COLOR_DEFAULT, pinScale);
+      const pin = this._makePin(MARKER_COLOR_DEFAULT, pinScale, "front");
       pin.position.set(x, y, z);
       pin.userData = { cameraIndex: i, cameraData: cam };
       this.group.add(pin);
+
+      const ghost = this._makePin(MARKER_COLOR_DEFAULT, pinScale, "behind");
+      ghost.position.set(x, y, z);
+      this.group.add(ghost);
 
       const label = this._makeLabel(cam.name);
       label.position.set(x, y, z + this._labelOffset);
       label.visible = this.labelMode === "always";
       this.group.add(label);
 
-      this.entries.push({ pin, label });
+      this.entries.push({ pin, ghost, label });
     });
 
     // Re-apply any active clip filter to the freshly built markers.
@@ -125,6 +173,9 @@ export class MarkerManager {
       const entry = this.entries[i];
       const pass = this._passesClip(i);
       entry.pin.visible = pass;
+      // The ghost is clipped with its pin: a marker outside the kept region
+      // must be gone, not faintly present.
+      entry.ghost.visible = pass;
       entry.label.visible = pass && this._labelShouldShow(i);
     }
   }
@@ -164,15 +215,28 @@ export class MarkerManager {
     return tex;
   }
 
-  private _makePin(color: number, scale: number): THREE.Sprite {
+  /**
+   * One pin sprite.
+   *
+   * `pass` selects which half of the depth range it is allowed to draw in —
+   * see the class comment. The two passes together cover every pixel exactly
+   * once, so the pair never reads as one brighter marker.
+   */
+  private _makePin(color: number, scale: number, pass: "front" | "behind"): THREE.Sprite {
+    const behind = pass === "behind";
     const mat = new THREE.SpriteMaterial({
       map: this._getPinTexture(),
       color,
       sizeAttenuation: false, // constant on-screen size at any zoom
-      depthTest: false,       // always visible through the point cloud
+      depthTest: true,
+      // GreaterDepth draws ONLY the occluded part; the default LessEqualDepth
+      // draws only the unoccluded part.
+      depthFunc: behind ? THREE.GreaterDepth : THREE.LessEqualDepth,
       depthWrite: false,
       transparent: true,
-      opacity: this._displaySettings.markerSphereOpacity,
+      opacity:
+        this._displaySettings.markerSphereOpacity *
+        (behind ? GHOST_OPACITY_FACTOR : 1),
     });
     const sprite = new THREE.Sprite(mat);
     sprite.scale.set(scale, scale, 1);
@@ -217,11 +281,12 @@ export class MarkerManager {
     return sprite;
   }
 
-  /** Update pin color by index */
+  /** Update pin color by index — both passes, or hover only half-lands. */
   private _recolor(idx: number, color: number) {
     const entry = this.entries[idx];
     if (!entry) return;
     (entry.pin.material as THREE.SpriteMaterial).color.setHex(color);
+    (entry.ghost.material as THREE.SpriteMaterial).color.setHex(color);
   }
 
   /** Resolve whether a marker's label should be visible under the current mode. */
@@ -277,10 +342,16 @@ export class MarkerManager {
   }
 
   clear() {
-    for (const { pin, label } of this.entries) {
+    for (const { pin, ghost, label } of this.entries) {
       // pin texture is shared/cached — do not dispose it here
       (pin.material as THREE.SpriteMaterial).dispose();
       this.group.remove(pin);
+
+      // The ghost has its own material (different depthFunc and opacity), so
+      // it needs its own disposal — `applyDisplaySettings` rebuilds on every
+      // slider move, and leaking one material per marker per move adds up.
+      (ghost.material as THREE.SpriteMaterial).dispose();
+      this.group.remove(ghost);
 
       (label.material as THREE.SpriteMaterial).map?.dispose();
       (label.material as THREE.SpriteMaterial).dispose();

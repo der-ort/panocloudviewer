@@ -185,7 +185,7 @@ function createAdapter(source) {
       return new exports.S3SourceAdapter(source.basePath);
   }
 }
-exports.SceneManager = void 0; exports.PointCloudLoader = void 0; var EASINGS; exports.CameraAnimator = void 0; exports.DISPLAY_PRESETS = void 0; var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE; exports.MarkerManager = void 0; var _idCounter, COLORS; exports.MeasurementManager = void 0; var VIEW_DIRECTIONS, _muxerPromise; exports.ExportManager = void 0; var AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, RING_COLOR, RING_HOVER_COLOR, RING_DRAG_COLOR, RotationRingController, _nextId; exports.ClipManager = void 0; exports.AxisGizmo = void 0; var AXIS_DIR; exports.MagnifierRenderer = void 0; var MAX_SCENES, _nextId2; exports.PresentationManager = void 0; exports.S3SourceAdapter = void 0; exports.ElectronSourceAdapter = void 0;
+exports.SceneManager = void 0; exports.PointCloudLoader = void 0; var EASINGS; exports.CameraAnimator = void 0; exports.DISPLAY_PRESETS = void 0; var MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE, GHOST_OPACITY_FACTOR; exports.MarkerManager = void 0; var _idCounter, COLORS; exports.MeasurementManager = void 0; var VIEW_DIRECTIONS, _muxerPromise; exports.ExportManager = void 0; var AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, RING_COLOR, RING_HOVER_COLOR, RING_DRAG_COLOR, RotationRingController, _nextId; exports.ClipManager = void 0; exports.AxisGizmo = void 0; var AXIS_DIR; exports.MagnifierRenderer = void 0; var MAX_SCENES, _nextId2; exports.PresentationManager = void 0; exports.S3SourceAdapter = void 0; exports.ElectronSourceAdapter = void 0;
 var init_dist = __esm({
   "../core/dist/index.js"() {
     exports.SceneManager = class _SceneManager {
@@ -869,6 +869,7 @@ var init_dist = __esm({
     MARKER_COLOR_HOVER = 16777215;
     MARKER_COLOR_SELECTED = 16737860;
     PIN_BASE_SCALE = 0.022;
+    GHOST_OPACITY_FACTOR = 0.2;
     exports.MarkerManager = class {
       scene;
       entries = [];
@@ -914,15 +915,18 @@ var init_dist = __esm({
         cameras.forEach((cam, i) => {
           if (!cam.position) return;
           const { x, y, z } = cam.position;
-          const pin = this._makePin(MARKER_COLOR_DEFAULT, pinScale);
+          const pin = this._makePin(MARKER_COLOR_DEFAULT, pinScale, "front");
           pin.position.set(x, y, z);
           pin.userData = { cameraIndex: i, cameraData: cam };
           this.group.add(pin);
+          const ghost = this._makePin(MARKER_COLOR_DEFAULT, pinScale, "behind");
+          ghost.position.set(x, y, z);
+          this.group.add(ghost);
           const label = this._makeLabel(cam.name);
           label.position.set(x, y, z + this._labelOffset);
           label.visible = this.labelMode === "always";
           this.group.add(label);
-          this.entries.push({ pin, label });
+          this.entries.push({ pin, ghost, label });
         });
         this._applyAllMarkerVisibility();
       }
@@ -947,6 +951,7 @@ var init_dist = __esm({
           const entry = this.entries[i];
           const pass = this._passesClip(i);
           entry.pin.visible = pass;
+          entry.ghost.visible = pass;
           entry.label.visible = pass && this._labelShouldShow(i);
         }
       }
@@ -976,17 +981,27 @@ var init_dist = __esm({
         this._pinTexture = tex;
         return tex;
       }
-      _makePin(color, scale) {
+      /**
+       * One pin sprite.
+       *
+       * `pass` selects which half of the depth range it is allowed to draw in —
+       * see the class comment. The two passes together cover every pixel exactly
+       * once, so the pair never reads as one brighter marker.
+       */
+      _makePin(color, scale, pass) {
+        const behind = pass === "behind";
         const mat = new THREE5__namespace.SpriteMaterial({
           map: this._getPinTexture(),
           color,
           sizeAttenuation: false,
           // constant on-screen size at any zoom
-          depthTest: false,
-          // always visible through the point cloud
+          depthTest: true,
+          // GreaterDepth draws ONLY the occluded part; the default LessEqualDepth
+          // draws only the unoccluded part.
+          depthFunc: behind ? THREE5__namespace.GreaterDepth : THREE5__namespace.LessEqualDepth,
           depthWrite: false,
           transparent: true,
-          opacity: this._displaySettings.markerSphereOpacity
+          opacity: this._displaySettings.markerSphereOpacity * (behind ? GHOST_OPACITY_FACTOR : 1)
         });
         const sprite = new THREE5__namespace.Sprite(mat);
         sprite.scale.set(scale, scale, 1);
@@ -1024,11 +1039,12 @@ var init_dist = __esm({
         sprite.scale.set(h * (W / H), h, 1);
         return sprite;
       }
-      /** Update pin color by index */
+      /** Update pin color by index — both passes, or hover only half-lands. */
       _recolor(idx, color) {
         const entry = this.entries[idx];
         if (!entry) return;
         entry.pin.material.color.setHex(color);
+        entry.ghost.material.color.setHex(color);
       }
       /** Resolve whether a marker's label should be visible under the current mode. */
       _labelShouldShow(idx) {
@@ -1074,9 +1090,11 @@ var init_dist = __esm({
         }
       }
       clear() {
-        for (const { pin, label } of this.entries) {
+        for (const { pin, ghost, label } of this.entries) {
           pin.material.dispose();
           this.group.remove(pin);
+          ghost.material.dispose();
+          this.group.remove(ghost);
           label.material.map?.dispose();
           label.material.dispose();
           this.group.remove(label);
@@ -7611,7 +7629,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "17c3bcc \xB7 2026-08-06 12:13Z" ;
+var PCV_BUILD = "00d873b \xB7 2026-08-27 10:17Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

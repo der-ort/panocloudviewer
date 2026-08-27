@@ -399,9 +399,35 @@ declare class CameraAnimator {
  * 3D panorama camera markers.
  *
  * Each marker is a small constant on-screen-size pin sprite
- * (sizeAttenuation:false) in brand yellow, always visible through the point
- * cloud via depthTest=false. A subtle text label sits above the pin and is
- * hidden by default — it appears only on hover/selection (markerLabelMode).
+ * (sizeAttenuation:false) in brand yellow. A subtle text label sits above the
+ * pin and is hidden by default — it appears only on hover/selection
+ * (markerLabelMode).
+ *
+ * ---------------------------------------------------------------------------
+ * DEPTH: WHY EACH PIN IS DRAWN TWICE
+ *
+ * Pins used to carry `depthTest: false`, so every scan position floated on top
+ * of the cloud — markers from the far side of a building sat over the wall in
+ * front of you, and nothing about the picture said which room they were in.
+ *
+ * Plain `depthTest: true` fixes that and creates a worse problem: a marker
+ * behind anything vanishes completely, and the only way to discover the next
+ * room's panorama is to fly there. That is exactly what the original flag was
+ * avoiding.
+ *
+ * So each pin is two sprites at one position, made MUTUALLY EXCLUSIVE by the
+ * depth comparison rather than by draw order:
+ *
+ *   pin    depthFunc LessEqualDepth  → drawn only where it is in front
+ *   ghost  depthFunc GreaterDepth    → drawn only where it is behind
+ *
+ * Exactly one of the pair passes for any given pixel, so an unoccluded marker
+ * is never the two of them stacked and brightened. Both leave `depthWrite`
+ * off, so neither occludes the other or anything else.
+ *
+ * Raycasting is unaffected and deliberately so: three's raycaster does not
+ * consult material depth state, so a ghosted marker stays clickable. Being
+ * behind a wall makes a panorama harder to see, not unreachable.
  *
  * The pin sprites are returned from getMeshes() as the raycast targets; Sprite
  * is raycastable in three r170. One pin per camera, in camera index order.
@@ -438,9 +464,16 @@ declare class MarkerManager {
     private _applyAllMarkerVisibility;
     /** Lazily build (and cache) the shared circular pin texture. */
     private _getPinTexture;
+    /**
+     * One pin sprite.
+     *
+     * `pass` selects which half of the depth range it is allowed to draw in —
+     * see the class comment. The two passes together cover every pixel exactly
+     * once, so the pair never reads as one brighter marker.
+     */
     private _makePin;
     private _makeLabel;
-    /** Update pin color by index */
+    /** Update pin color by index — both passes, or hover only half-lands. */
     private _recolor;
     /** Resolve whether a marker's label should be visible under the current mode. */
     private _labelShouldShow;

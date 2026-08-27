@@ -710,6 +710,7 @@ var MARKER_COLOR_DEFAULT = 14472518;
 var MARKER_COLOR_HOVER = 16777215;
 var MARKER_COLOR_SELECTED = 16737860;
 var PIN_BASE_SCALE = 0.022;
+var GHOST_OPACITY_FACTOR = 0.2;
 var MarkerManager = class {
   scene;
   entries = [];
@@ -755,15 +756,18 @@ var MarkerManager = class {
     cameras.forEach((cam, i) => {
       if (!cam.position) return;
       const { x, y, z } = cam.position;
-      const pin = this._makePin(MARKER_COLOR_DEFAULT, pinScale);
+      const pin = this._makePin(MARKER_COLOR_DEFAULT, pinScale, "front");
       pin.position.set(x, y, z);
       pin.userData = { cameraIndex: i, cameraData: cam };
       this.group.add(pin);
+      const ghost = this._makePin(MARKER_COLOR_DEFAULT, pinScale, "behind");
+      ghost.position.set(x, y, z);
+      this.group.add(ghost);
       const label = this._makeLabel(cam.name);
       label.position.set(x, y, z + this._labelOffset);
       label.visible = this.labelMode === "always";
       this.group.add(label);
-      this.entries.push({ pin, label });
+      this.entries.push({ pin, ghost, label });
     });
     this._applyAllMarkerVisibility();
   }
@@ -788,6 +792,7 @@ var MarkerManager = class {
       const entry = this.entries[i];
       const pass = this._passesClip(i);
       entry.pin.visible = pass;
+      entry.ghost.visible = pass;
       entry.label.visible = pass && this._labelShouldShow(i);
     }
   }
@@ -817,17 +822,27 @@ var MarkerManager = class {
     this._pinTexture = tex;
     return tex;
   }
-  _makePin(color, scale) {
+  /**
+   * One pin sprite.
+   *
+   * `pass` selects which half of the depth range it is allowed to draw in —
+   * see the class comment. The two passes together cover every pixel exactly
+   * once, so the pair never reads as one brighter marker.
+   */
+  _makePin(color, scale, pass) {
+    const behind = pass === "behind";
     const mat = new THREE5__namespace.SpriteMaterial({
       map: this._getPinTexture(),
       color,
       sizeAttenuation: false,
       // constant on-screen size at any zoom
-      depthTest: false,
-      // always visible through the point cloud
+      depthTest: true,
+      // GreaterDepth draws ONLY the occluded part; the default LessEqualDepth
+      // draws only the unoccluded part.
+      depthFunc: behind ? THREE5__namespace.GreaterDepth : THREE5__namespace.LessEqualDepth,
       depthWrite: false,
       transparent: true,
-      opacity: this._displaySettings.markerSphereOpacity
+      opacity: this._displaySettings.markerSphereOpacity * (behind ? GHOST_OPACITY_FACTOR : 1)
     });
     const sprite = new THREE5__namespace.Sprite(mat);
     sprite.scale.set(scale, scale, 1);
@@ -865,11 +880,12 @@ var MarkerManager = class {
     sprite.scale.set(h * (W / H), h, 1);
     return sprite;
   }
-  /** Update pin color by index */
+  /** Update pin color by index — both passes, or hover only half-lands. */
   _recolor(idx, color) {
     const entry = this.entries[idx];
     if (!entry) return;
     entry.pin.material.color.setHex(color);
+    entry.ghost.material.color.setHex(color);
   }
   /** Resolve whether a marker's label should be visible under the current mode. */
   _labelShouldShow(idx) {
@@ -915,9 +931,11 @@ var MarkerManager = class {
     }
   }
   clear() {
-    for (const { pin, label } of this.entries) {
+    for (const { pin, ghost, label } of this.entries) {
       pin.material.dispose();
       this.group.remove(pin);
+      ghost.material.dispose();
+      this.group.remove(ghost);
       label.material.map?.dispose();
       label.material.dispose();
       this.group.remove(label);
