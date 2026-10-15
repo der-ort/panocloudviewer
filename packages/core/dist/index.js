@@ -408,7 +408,7 @@ var PointCloudLoader = class _PointCloudLoader {
       metadataPath,
       requestManager
     );
-    pointCloud.material.size = 1;
+    pointCloud.material.size = _PointCloudLoader.DEFAULT_POINT_SIZE;
     pointCloud.material.pointSizeType = 2;
     pointCloud.material.shape = 1;
     if (hasRgb) {
@@ -531,6 +531,8 @@ var PointCloudLoader = class _PointCloudLoader {
   setPointBudget(budget) {
     if (this.sceneManager.potree) this.sceneManager.potree.pointBudget = budget;
   }
+  /** Survey-density clouds read as a solid wall of splats at 1.0; 0.1 shows the geometry. */
+  static DEFAULT_POINT_SIZE = 0.1;
   /** Set point size on all loaded clouds */
   setPointSize(size) {
     for (const cloud of this.currentClouds) {

@@ -360,6 +360,8 @@ declare class PointCloudLoader {
     clear(): void;
     /** Set point budget on all loaded clouds */
     setPointBudget(budget: number): void;
+    /** Survey-density clouds read as a solid wall of splats at 1.0; 0.1 shows the geometry. */
+    static readonly DEFAULT_POINT_SIZE = 0.1;
     /** Set point size on all loaded clouds */
     setPointSize(size: number): void;
     /** Set point shape: 0=SQUARE, 1=CIRCLE, 2=PARABOLOID */

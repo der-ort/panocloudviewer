@@ -593,7 +593,7 @@ var init_dist = __esm({
           metadataPath,
           requestManager
         );
-        pointCloud.material.size = 1;
+        pointCloud.material.size = _PointCloudLoader.DEFAULT_POINT_SIZE;
         pointCloud.material.pointSizeType = 2;
         pointCloud.material.shape = 1;
         if (hasRgb) {
@@ -716,6 +716,8 @@ var init_dist = __esm({
       setPointBudget(budget) {
         if (this.sceneManager.potree) this.sceneManager.potree.pointBudget = budget;
       }
+      /** Survey-density clouds read as a solid wall of splats at 1.0; 0.1 shows the geometry. */
+      static DEFAULT_POINT_SIZE = 0.1;
       /** Set point size on all loaded clouds */
       setPointSize(size) {
         for (const cloud of this.currentClouds) {
@@ -3342,7 +3344,7 @@ function ViewerProvider({ config, children }) {
   const [clipManager, _setClipManager] = React26.useState(null);
   const [activeTool, setActiveTool] = React26.useState("none");
   const [pointBudget, setPointBudget] = React26.useState(config.pointBudget ?? 2e6);
-  const [pointSize, setPointSize] = React26.useState(1);
+  const [pointSize, setPointSize] = React26.useState(0.1);
   const fpsRef = React26.useRef(0);
   const fpsListeners = React26.useRef(/* @__PURE__ */ new Set());
   const setFps = React26.useCallback((v) => {
@@ -4693,7 +4695,7 @@ function DisplayControls() {
         "input",
         {
           type: "range",
-          min: 0.5,
+          min: 0.1,
           max: 5,
           step: 0.1,
           value: pointSize,
@@ -6695,7 +6697,7 @@ function RenderingSettings({ open, onClose }) {
               {
                 label: "Point size",
                 value: pointSize,
-                min: 0.2,
+                min: 0.1,
                 max: 5,
                 step: 0.1,
                 decimals: 1,
@@ -7629,7 +7631,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "00d873b \xB7 2026-08-27 10:17Z" ;
+var PCV_BUILD = "8deaac2 \xB7 2026-10-15 12:13Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
@@ -7719,7 +7721,7 @@ function MinimalSettingsPopover({ onClose }) {
             "input",
             {
               type: "range",
-              min: 0.5,
+              min: 0.1,
               max: 5,
               step: 0.1,
               value: pointSize,
@@ -8132,7 +8134,7 @@ function DisplayPalette() {
           "input",
           {
             type: "range",
-            min: 0.5,
+            min: 0.1,
             max: 5,
             step: 0.1,
             value: pointSize,
