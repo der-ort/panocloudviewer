@@ -106,7 +106,7 @@ export class PointCloudLoader {
       requestManager
     );
 
-    pointCloud.material.size = 1.0; // smaller default → crisper (raise via UI)
+    pointCloud.material.size = PointCloudLoader.DEFAULT_POINT_SIZE;
     pointCloud.material.pointSizeType = 2; // ADAPTIVE
     pointCloud.material.shape = 1; // CIRCLE
 
@@ -260,6 +260,9 @@ export class PointCloudLoader {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (this.sceneManager.potree) (this.sceneManager.potree as any).pointBudget = budget;
   }
+
+  /** Survey-density clouds read as a solid wall of splats at 1.0; 0.1 shows the geometry. */
+  static readonly DEFAULT_POINT_SIZE = 0.1;
 
   /** Set point size on all loaded clouds */
   setPointSize(size: number) {

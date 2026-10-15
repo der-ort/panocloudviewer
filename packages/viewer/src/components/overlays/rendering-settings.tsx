@@ -173,7 +173,7 @@ export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
               </button>
             ))}
           </div>
-          <Slider label="Point size" value={pointSize} min={0.2} max={5} step={0.1}
+          <Slider label="Point size" value={pointSize} min={0.1} max={5} step={0.1}
             decimals={1}
             onChange={v => { setPointSize(v); loader?.setPointSize(v); }} />
           <Slider label="Budget" value={pointBudget} min={budgetRange.min} max={budgetRange.max} step={budgetRange.step}

@@ -117,9 +117,9 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
 
   const [activeTool, setActiveTool] = useState<ActiveTool>("none");
   const [pointBudget, setPointBudget] = useState(config.pointBudget ?? 2_000_000);
-  // Smaller default → crisper rendering (points don't bloat into blobs);
-  // users can raise it via the Settings slider.
-  const [pointSize, setPointSize] = useState(1.0);
+  // Matches PointCloudLoader.DEFAULT_POINT_SIZE (a literal: the provider only
+  // imports the loader's type). Raise it with the slider.
+  const [pointSize, setPointSize] = useState(0.1);
   // FPS lives in a ref + listener set, NOT React state — updating it every
   // second would otherwise re-render every useViewer() consumer (the whole
   // shell) once per second. Consumers read it via useFps() (useSyncExternalStore).

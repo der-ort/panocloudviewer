@@ -78,7 +78,7 @@ export function DisplayPalette() {
             <span>Point Size</span>
             <span>{pointSize.toFixed(1)}</span>
           </div>
-          <input type="range" min={0.5} max={5} step={0.1} value={pointSize}
+          <input type="range" min={0.1} max={5} step={0.1} value={pointSize}
             onChange={e => { const v = parseFloat(e.target.value); setPointSize(v); loader?.setPointSize(v); }}
             className="pcv-slider w-full" />
         </div>

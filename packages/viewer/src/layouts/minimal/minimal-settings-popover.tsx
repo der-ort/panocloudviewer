@@ -93,7 +93,7 @@ export function MinimalSettingsPopover({ onClose }: MinimalSettingsPopoverProps)
           <div className="px-1">
             <input
               type="range"
-              min={0.5}
+              min={0.1}
               max={5}
               step={0.1}
               value={pointSize}
