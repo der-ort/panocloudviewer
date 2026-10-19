@@ -3,6 +3,7 @@ import { en } from "./en";
 
 export const de = createLocale(en, {
   toolbar: {
+    viewFit: "Gebäude einpassen",
     viewTop: "Draufsicht",
     viewTopLabel: "O",
     viewFront: "Vorderansicht",

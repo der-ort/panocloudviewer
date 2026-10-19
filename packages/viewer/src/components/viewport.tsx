@@ -198,11 +198,36 @@ export function Viewport({ className }: ViewportProps) {
     // Load point cloud. Budget: pass only an explicit config value through —
     // otherwise the loader derives it from the cloud's total point count, and we
     // sync the applied value back into React state so sliders/status show it.
+    // Frame the building, not the scan: once the coarse octree levels are in,
+    // their points give `loader.coreBox`, and the camera eases from the bounding
+    // box fit onto it — unless something moved the camera meanwhile (a viewpoint
+    // link, a scene, the person), which wins. The box is kept either way for the
+    // "Gebäude einpassen" button and the view presets.
+    let frameTimer: number | undefined;
     loader.load("metadata.json", config.pointBudget).then(() => {
       setPointBudget(loader.appliedBudget);
+      const opened = { position: sm.camera.position.clone(), target: sm.controls.target.clone() };
+      const started = performance.now();
+      const frame = () => {
+        if (loader.coreBox.isEmpty()) {
+          if (loader.loadedPointCount < 300_000 && performance.now() - started < 4000) {
+            frameTimer = window.setTimeout(frame, 250);
+            return;
+          }
+          const box = loader.computeCoreBox();
+          if (!box) return;
+          loader.setCoreBox(box);
+        }
+        const moved = sm.camera.position.distanceTo(opened.position) > 1e-3 || sm.controls.target.distanceTo(opened.target) > 1e-3;
+        if (moved) return;
+        const { position, target } = sm.fitParams(loader.coreBox);
+        anim.flyTo({ position, target, up: new THREE.Vector3(0, 0, 1), duration: 500 });
+      };
+      frame();
     }).catch(console.error);
 
     return () => {
+      if (frameTimer !== undefined) window.clearTimeout(frameTimer);
       if (clipChangeRaf != null) cancelAnimationFrame(clipChangeRaf);
       sm.removePostRenderCallback(axisFrame);
       sm.removePostRenderCallback(magFrame);

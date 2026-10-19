@@ -235,6 +235,15 @@ declare class SceneManager {
     setFlySpeed(speed: number): void;
     /** Stop animation loop and dispose resources */
     dispose(): void;
+    /**
+     * Where the camera goes to frame `box`: the target at its centre, the
+     * distance at which it fills the view, along `dir` (default the oblique 3/4
+     * view from the front, slightly above, so the Z-up horizon stays level).
+     */
+    fitParams(box: THREE.Box3, dir?: THREE.Vector3): {
+        target: THREE.Vector3;
+        position: THREE.Vector3;
+    };
     /** Fit camera to bounding box */
     fitToBox(box: THREE.Box3): void;
     /**
@@ -334,6 +343,25 @@ declare class PointCloudLoader {
      *                    {@link PointCloudLoader.calcOptimalBudget} — no fixed cap.
      */
     load(metadataPath?: string, pointBudget?: number): Promise<void>;
+    /**
+     * The building, not the scan: the box the camera frames. A scan's bounding box
+     * also holds the street, the neighbours and stray points metres up in the sky,
+     * so framing it aims at empty space. Empty until set or computed; `frameBox`
+     * falls back to `worldBox`.
+     */
+    coreBox: THREE.Box3;
+    get frameBox(): THREE.Box3;
+    /** A box the delivery carries (`frame.json`): wins over the computed one. */
+    setCoreBox(box: THREE.Box3): void;
+    /** Points loaded so far across all clouds — what `computeCoreBox` has to work with. */
+    get loadedPointCount(): number;
+    /**
+     * Per axis the 2nd to 98th percentile of the loaded points, in world space.
+     * The coarse octree levels load first and are an even sample of the whole
+     * scan, so a few hundred thousand points are enough; the tails cut are the
+     * outliers. Returns null with too few points to say anything.
+     */
+    computeCoreBox(sample?: number, tail?: number): THREE.Box3 | null;
     /** Set color mode on all loaded clouds */
     setColorMode(mode: ColorMode): Promise<void>;
     /** Whether the loaded cloud has RGB data */

@@ -298,18 +298,26 @@ var SceneManager = class _SceneManager {
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
-  /** Fit camera to bounding box */
-  fitToBox(box) {
-    const center = new THREE5__namespace.Vector3();
+  /**
+   * Where the camera goes to frame `box`: the target at its centre, the
+   * distance at which it fills the view, along `dir` (default the oblique 3/4
+   * view from the front, slightly above, so the Z-up horizon stays level).
+   */
+  fitParams(box, dir = new THREE5__namespace.Vector3(0, -0.82, 0.57)) {
+    const target = new THREE5__namespace.Vector3();
     const size = new THREE5__namespace.Vector3();
-    box.getCenter(center);
+    box.getCenter(target);
     box.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z);
     const fov = this.camera.fov * (Math.PI / 180);
     const dist = maxDim / (2 * Math.tan(fov / 2)) * 1.5;
-    const dir = new THREE5__namespace.Vector3(0, -0.82, 0.57).multiplyScalar(dist);
-    this.camera.position.copy(center).add(dir);
-    this.controls.target.copy(center);
+    return { target, position: target.clone().addScaledVector(dir.clone().normalize(), dist) };
+  }
+  /** Fit camera to bounding box */
+  fitToBox(box) {
+    const { target, position } = this.fitParams(box);
+    this.camera.position.copy(position);
+    this.controls.target.copy(target);
     this.controls.update();
   }
   /**
@@ -471,6 +479,68 @@ var PointCloudLoader = class _PointCloudLoader {
         mat.rgbContrast = 0;
       }
     }
+  }
+  /**
+   * The building, not the scan: the box the camera frames. A scan's bounding box
+   * also holds the street, the neighbours and stray points metres up in the sky,
+   * so framing it aims at empty space. Empty until set or computed; `frameBox`
+   * falls back to `worldBox`.
+   */
+  coreBox = new THREE5__namespace.Box3();
+  get frameBox() {
+    return this.coreBox.isEmpty() ? this.worldBox : this.coreBox;
+  }
+  /** A box the delivery carries (`frame.json`): wins over the computed one. */
+  setCoreBox(box) {
+    this.coreBox = box.clone();
+  }
+  /** Points loaded so far across all clouds — what `computeCoreBox` has to work with. */
+  get loadedPointCount() {
+    let n = 0;
+    for (const cloud of this.currentClouds) {
+      for (const node of cloud.visibleNodes ?? []) {
+        n += node.sceneNode?.geometry?.getAttribute("position")?.count ?? 0;
+      }
+    }
+    return n;
+  }
+  /**
+   * Per axis the 2nd to 98th percentile of the loaded points, in world space.
+   * The coarse octree levels load first and are an even sample of the whole
+   * scan, so a few hundred thousand points are enough; the tails cut are the
+   * outliers. Returns null with too few points to say anything.
+   */
+  computeCoreBox(sample = 6e4, tail = 0.02) {
+    const parts = [];
+    for (const cloud of this.currentClouds) {
+      for (const node of cloud.visibleNodes ?? []) {
+        const points = node.sceneNode;
+        const count = points?.geometry?.getAttribute("position")?.count ?? 0;
+        if (points && count) parts.push({ points, count });
+      }
+    }
+    const total = parts.reduce((n, p) => n + p.count, 0);
+    if (total < 1e3) return null;
+    const step = Math.max(1, Math.floor(total / sample));
+    const xs = [], ys = [], zs = [];
+    const v = new THREE5__namespace.Vector3();
+    for (const { points, count } of parts) {
+      points.updateMatrixWorld();
+      const pos = points.geometry.getAttribute("position");
+      for (let i = 0; i < count; i += step) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(points.matrixWorld);
+        xs.push(v.x);
+        ys.push(v.y);
+        zs.push(v.z);
+      }
+    }
+    const q = (a, f) => a[Math.min(a.length - 1, Math.max(0, Math.round(f * (a.length - 1))))];
+    for (const a of [xs, ys, zs]) a.sort((m, n) => m - n);
+    const box = new THREE5__namespace.Box3(
+      new THREE5__namespace.Vector3(q(xs, tail), q(ys, tail), q(zs, tail)),
+      new THREE5__namespace.Vector3(q(xs, 1 - tail), q(ys, 1 - tail), q(zs, 1 - tail))
+    );
+    return this.worldBox.isEmpty() ? box : box.intersect(this.worldBox);
   }
   /** Set color mode on all loaded clouds */
   async setColorMode(mode) {

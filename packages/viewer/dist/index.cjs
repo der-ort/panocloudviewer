@@ -461,18 +461,26 @@ var init_dist = __esm({
         this.renderer.dispose();
         this.renderer.domElement.remove();
       }
-      /** Fit camera to bounding box */
-      fitToBox(box) {
-        const center = new THREE5__namespace.Vector3();
+      /**
+       * Where the camera goes to frame `box`: the target at its centre, the
+       * distance at which it fills the view, along `dir` (default the oblique 3/4
+       * view from the front, slightly above, so the Z-up horizon stays level).
+       */
+      fitParams(box, dir = new THREE5__namespace.Vector3(0, -0.82, 0.57)) {
+        const target = new THREE5__namespace.Vector3();
         const size = new THREE5__namespace.Vector3();
-        box.getCenter(center);
+        box.getCenter(target);
         box.getSize(size);
         const maxDim = Math.max(size.x, size.y, size.z);
         const fov = this.camera.fov * (Math.PI / 180);
         const dist = maxDim / (2 * Math.tan(fov / 2)) * 1.5;
-        const dir = new THREE5__namespace.Vector3(0, -0.82, 0.57).multiplyScalar(dist);
-        this.camera.position.copy(center).add(dir);
-        this.controls.target.copy(center);
+        return { target, position: target.clone().addScaledVector(dir.clone().normalize(), dist) };
+      }
+      /** Fit camera to bounding box */
+      fitToBox(box) {
+        const { target, position } = this.fitParams(box);
+        this.camera.position.copy(position);
+        this.controls.target.copy(target);
         this.controls.update();
       }
       /**
@@ -634,6 +642,68 @@ var init_dist = __esm({
             mat.rgbContrast = 0;
           }
         }
+      }
+      /**
+       * The building, not the scan: the box the camera frames. A scan's bounding box
+       * also holds the street, the neighbours and stray points metres up in the sky,
+       * so framing it aims at empty space. Empty until set or computed; `frameBox`
+       * falls back to `worldBox`.
+       */
+      coreBox = new THREE5__namespace.Box3();
+      get frameBox() {
+        return this.coreBox.isEmpty() ? this.worldBox : this.coreBox;
+      }
+      /** A box the delivery carries (`frame.json`): wins over the computed one. */
+      setCoreBox(box) {
+        this.coreBox = box.clone();
+      }
+      /** Points loaded so far across all clouds — what `computeCoreBox` has to work with. */
+      get loadedPointCount() {
+        let n = 0;
+        for (const cloud of this.currentClouds) {
+          for (const node of cloud.visibleNodes ?? []) {
+            n += node.sceneNode?.geometry?.getAttribute("position")?.count ?? 0;
+          }
+        }
+        return n;
+      }
+      /**
+       * Per axis the 2nd to 98th percentile of the loaded points, in world space.
+       * The coarse octree levels load first and are an even sample of the whole
+       * scan, so a few hundred thousand points are enough; the tails cut are the
+       * outliers. Returns null with too few points to say anything.
+       */
+      computeCoreBox(sample = 6e4, tail = 0.02) {
+        const parts = [];
+        for (const cloud of this.currentClouds) {
+          for (const node of cloud.visibleNodes ?? []) {
+            const points = node.sceneNode;
+            const count = points?.geometry?.getAttribute("position")?.count ?? 0;
+            if (points && count) parts.push({ points, count });
+          }
+        }
+        const total = parts.reduce((n, p) => n + p.count, 0);
+        if (total < 1e3) return null;
+        const step = Math.max(1, Math.floor(total / sample));
+        const xs = [], ys = [], zs = [];
+        const v = new THREE5__namespace.Vector3();
+        for (const { points, count } of parts) {
+          points.updateMatrixWorld();
+          const pos = points.geometry.getAttribute("position");
+          for (let i = 0; i < count; i += step) {
+            v.fromBufferAttribute(pos, i).applyMatrix4(points.matrixWorld);
+            xs.push(v.x);
+            ys.push(v.y);
+            zs.push(v.z);
+          }
+        }
+        const q = (a, f) => a[Math.min(a.length - 1, Math.max(0, Math.round(f * (a.length - 1))))];
+        for (const a of [xs, ys, zs]) a.sort((m, n) => m - n);
+        const box = new THREE5__namespace.Box3(
+          new THREE5__namespace.Vector3(q(xs, tail), q(ys, tail), q(zs, tail)),
+          new THREE5__namespace.Vector3(q(xs, 1 - tail), q(ys, 1 - tail), q(zs, 1 - tail))
+        );
+        return this.worldBox.isEmpty() ? box : box.intersect(this.worldBox);
       }
       /** Set color mode on all loaded clouds */
       async setColorMode(mode) {
@@ -3507,6 +3577,7 @@ var init_en = __esm({
   "src/i18n/en.ts"() {
     exports.en = {
       toolbar: {
+        viewFit: "Fit building",
         viewTop: "Top view",
         viewTopLabel: "T",
         viewFront: "Front view",
@@ -3946,10 +4017,30 @@ function Viewport({ className }) {
     const magFrame = () => magnifier.render();
     sm.addPostRenderCallback(magFrame);
     sm.start();
+    let frameTimer;
     loader.load("metadata.json", config.pointBudget).then(() => {
       setPointBudget(loader.appliedBudget);
+      const opened = { position: sm.camera.position.clone(), target: sm.controls.target.clone() };
+      const started = performance.now();
+      const frame = () => {
+        if (loader.coreBox.isEmpty()) {
+          if (loader.loadedPointCount < 3e5 && performance.now() - started < 4e3) {
+            frameTimer = window.setTimeout(frame, 250);
+            return;
+          }
+          const box = loader.computeCoreBox();
+          if (!box) return;
+          loader.setCoreBox(box);
+        }
+        const moved = sm.camera.position.distanceTo(opened.position) > 1e-3 || sm.controls.target.distanceTo(opened.target) > 1e-3;
+        if (moved) return;
+        const { position, target } = sm.fitParams(loader.coreBox);
+        anim.flyTo({ position, target, up: new THREE5__namespace.Vector3(0, 0, 1), duration: 500 });
+      };
+      frame();
     }).catch(console.error);
     return () => {
+      if (frameTimer !== void 0) window.clearTimeout(frameTimer);
       if (clipChangeRaf != null) cancelAnimationFrame(clipChangeRaf);
       sm.removePostRenderCallback(axisFrame);
       sm.removePostRenderCallback(magFrame);
@@ -4413,29 +4504,26 @@ var PRESET_DIRS = {
 };
 function useNavigationActions() {
   const { sceneManager, cameraAnimator, loader, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
-  const fitToView = React26.useCallback(() => {
+  const flyToFrame = React26.useCallback((dir) => {
     if (!sceneManager || !loader) return;
-    const wb = loader.worldBox;
-    if (!wb.isEmpty()) sceneManager.fitToBox(wb);
-  }, [sceneManager, loader]);
-  const flyToView = React26.useCallback((preset) => {
-    if (!sceneManager) return;
-    const cam = sceneManager.camera;
-    const controls = sceneManager.controls;
-    const target = controls.target.clone();
-    const dist = cam.position.distanceTo(target) || 10;
-    const d = PRESET_DIRS[preset];
-    const dir = new THREE5__namespace.Vector3(d[0], d[1], d[2]).normalize();
-    const position = target.clone().addScaledVector(dir, dist);
+    const box = loader.frameBox;
+    if (box.isEmpty()) return;
+    const { position, target } = sceneManager.fitParams(box, dir);
     const up = new THREE5__namespace.Vector3(0, 0, 1);
     if (cameraAnimator) {
       cameraAnimator.flyTo({ position, target, up, duration: 600 });
     } else {
-      cam.position.copy(position);
-      cam.up.copy(up);
-      controls.update();
+      sceneManager.camera.position.copy(position);
+      sceneManager.camera.up.copy(up);
+      sceneManager.controls.target.copy(target);
+      sceneManager.controls.update();
     }
-  }, [sceneManager, cameraAnimator]);
+  }, [sceneManager, loader, cameraAnimator]);
+  const fitToView = React26.useCallback(() => flyToFrame(), [flyToFrame]);
+  const flyToView = React26.useCallback((preset) => {
+    const d = PRESET_DIRS[preset];
+    flyToFrame(new THREE5__namespace.Vector3(d[0], d[1], d[2]));
+  }, [flyToFrame]);
   return {
     navigationMode,
     setNavigationMode,
@@ -4498,19 +4586,28 @@ var VIEW_DEFS = [
   { titleKey: "viewLeft", preset: "left", icon: LeftIcon },
   { titleKey: "viewRight", preset: "right", icon: RightIcon }
 ];
+function FitIcon() {
+  return /* @__PURE__ */ jsxRuntime.jsxs("svg", { viewBox: "0 0 24 24", width: "14", height: "14", fill: "none", stroke: "currentColor", strokeWidth: "1.2", strokeLinejoin: "round", children: [
+    /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M2 7V2h5M17 2h5v5M22 17v5h-5M7 22H2v-5" }),
+    /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M7 12l5-4 5 4v5H7z", fill: "currentColor", fillOpacity: "0.35" })
+  ] });
+}
 function ViewControls() {
-  const { flyToView } = useNavigationActions();
+  const { flyToView, fitToView } = useNavigationActions();
   const t = useLocale().toolbar;
-  return /* @__PURE__ */ jsxRuntime.jsx(jsxRuntime.Fragment, { children: VIEW_DEFS.map((v) => /* @__PURE__ */ jsxRuntime.jsx(
-    ToolbarIconBtn,
-    {
-      icon: /* @__PURE__ */ jsxRuntime.jsx(v.icon, {}),
-      title: t[v.titleKey] ?? v.titleKey,
-      active: false,
-      onClick: () => flyToView(v.preset)
-    },
-    v.titleKey
-  )) });
+  return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+    /* @__PURE__ */ jsxRuntime.jsx(ToolbarIconBtn, { icon: /* @__PURE__ */ jsxRuntime.jsx(FitIcon, {}), title: t.viewFit, active: false, onClick: fitToView }),
+    VIEW_DEFS.map((v) => /* @__PURE__ */ jsxRuntime.jsx(
+      ToolbarIconBtn,
+      {
+        icon: /* @__PURE__ */ jsxRuntime.jsx(v.icon, {}),
+        title: t[v.titleKey] ?? v.titleKey,
+        active: false,
+        onClick: () => flyToView(v.preset)
+      },
+      v.titleKey
+    ))
+  ] });
 }
 
 // src/components/toolbar/display-controls.tsx
@@ -7631,7 +7728,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "8deaac2 \xB7 2026-10-15 12:13Z" ;
+var PCV_BUILD = "0df8014 \xB7 2026-10-19 16:21Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
@@ -7788,8 +7885,8 @@ function MinimalToolbar() {
   );
   const fitToView = React26.useCallback(() => {
     if (!sceneManager || !loader) return;
-    const wb = loader.worldBox;
-    if (!wb.isEmpty()) sceneManager.fitToBox(wb);
+    const box = loader.frameBox;
+    if (!box.isEmpty()) sceneManager.fitToBox(box);
   }, [sceneManager, loader]);
   const isMeasuring = activeTool.startsWith("measure-");
   return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
@@ -8748,6 +8845,7 @@ function deepMerge(base, overrides) {
 init_en();
 var de = createLocale(exports.en, {
   toolbar: {
+    viewFit: "Geb\xE4ude einpassen",
     viewTop: "Draufsicht",
     viewTopLabel: "O",
     viewFront: "Vorderansicht",

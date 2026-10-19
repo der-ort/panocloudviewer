@@ -372,20 +372,27 @@ export class SceneManager {
     this.renderer.domElement.remove();
   }
 
-  /** Fit camera to bounding box */
-  fitToBox(box: THREE.Box3) {
-    const center = new THREE.Vector3();
+  /**
+   * Where the camera goes to frame `box`: the target at its centre, the
+   * distance at which it fills the view, along `dir` (default the oblique 3/4
+   * view from the front, slightly above, so the Z-up horizon stays level).
+   */
+  fitParams(box: THREE.Box3, dir: THREE.Vector3 = new THREE.Vector3(0, -0.82, 0.57)) {
+    const target = new THREE.Vector3();
     const size = new THREE.Vector3();
-    box.getCenter(center);
+    box.getCenter(target);
     box.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z);
     const fov = this.camera.fov * (Math.PI / 180);
     const dist = maxDim / (2 * Math.tan(fov / 2)) * 1.5;
-    // Oblique 3/4 view for Z-up content (from the front, slightly above) so the
-    // horizon is level and "up" is not parallel to the view direction.
-    const dir = new THREE.Vector3(0, -0.82, 0.57).multiplyScalar(dist);
-    this.camera.position.copy(center).add(dir);
-    this.controls.target.copy(center);
+    return { target, position: target.clone().addScaledVector(dir.clone().normalize(), dist) };
+  }
+
+  /** Fit camera to bounding box */
+  fitToBox(box: THREE.Box3) {
+    const { target, position } = this.fitParams(box);
+    this.camera.position.copy(position);
+    this.controls.target.copy(target);
     this.controls.update();
   }
 

@@ -28,39 +28,38 @@ const PRESET_DIRS: Record<ViewPreset, readonly [number, number, number]> = {
 export function useNavigationActions() {
   const { sceneManager, cameraAnimator, loader, navigationMode, setNavigationMode, projection, setProjection } = useViewer();
 
-  const fitToView = useCallback(() => {
+  /** Fly to `dir` around the building (`loader.frameBox`), at the distance that frames it. */
+  const flyToFrame = useCallback((dir?: THREE.Vector3) => {
     if (!sceneManager || !loader) return;
-    const wb = loader.worldBox;
-    if (!wb.isEmpty()) sceneManager.fitToBox(wb);
-  }, [sceneManager, loader]);
+    const box = loader.frameBox;
+    if (box.isEmpty()) return;
+    const { position, target } = sceneManager.fitParams(box, dir);
+    const up = new THREE.Vector3(0, 0, 1);
+    if (cameraAnimator) {
+      cameraAnimator.flyTo({ position, target, up, duration: 600 });
+    } else {
+      sceneManager.camera.position.copy(position);
+      sceneManager.camera.up.copy(up);
+      sceneManager.controls.target.copy(target);
+      sceneManager.controls.update();
+    }
+  }, [sceneManager, loader, cameraAnimator]);
+
+  /** "Gebäude einpassen": back to the opening view of the building, from wherever the camera is. */
+  const fitToView = useCallback(() => flyToFrame(), [flyToFrame]);
 
   /**
-   * Fly to a standard view around the current orbit target, keeping the
-   * current distance. Always restores `camera.up = (0,0,1)` (via the
+   * Fly to a standard view of the building: centred on `loader.frameBox` and
+   * at the distance that frames it, so a top view shows the building and not
+   * the street around it. Always restores `camera.up = (0,0,1)` (via the
    * animator's up-lerp) so a preset also HEALS any stale up-vector.
    * Note: no longer forces orthographic projection — projection is an
    * independent axis (`setProjection`).
    */
   const flyToView = useCallback((preset: ViewPreset) => {
-    if (!sceneManager) return;
-    const cam = sceneManager.camera;
-    const controls = sceneManager.controls;
-    const target = controls.target.clone();
-    const dist = cam.position.distanceTo(target) || 10;
-
     const d = PRESET_DIRS[preset];
-    const dir = new THREE.Vector3(d[0], d[1], d[2]).normalize();
-    const position = target.clone().addScaledVector(dir, dist);
-    const up = new THREE.Vector3(0, 0, 1);
-
-    if (cameraAnimator) {
-      cameraAnimator.flyTo({ position, target, up, duration: 600 });
-    } else {
-      cam.position.copy(position);
-      cam.up.copy(up);
-      controls.update();
-    }
-  }, [sceneManager, cameraAnimator]);
+    flyToFrame(new THREE.Vector3(d[0], d[1], d[2]));
+  }, [flyToFrame]);
 
   return {
     navigationMode,

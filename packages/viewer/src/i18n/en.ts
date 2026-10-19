@@ -2,6 +2,7 @@ import type { ViewerLocale } from "./types";
 
 export const en: ViewerLocale = {
   toolbar: {
+    viewFit: "Fit building",
     viewTop: "Top view",
     viewTopLabel: "T",
     viewFront: "Front view",

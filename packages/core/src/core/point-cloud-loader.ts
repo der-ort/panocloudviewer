@@ -166,6 +166,74 @@ export class PointCloudLoader {
     }
   }
 
+  /**
+   * The building, not the scan: the box the camera frames. A scan's bounding box
+   * also holds the street, the neighbours and stray points metres up in the sky,
+   * so framing it aims at empty space. Empty until set or computed; `frameBox`
+   * falls back to `worldBox`.
+   */
+  coreBox: THREE.Box3 = new THREE.Box3();
+
+  get frameBox(): THREE.Box3 {
+    return this.coreBox.isEmpty() ? this.worldBox : this.coreBox;
+  }
+
+  /** A box the delivery carries (`frame.json`): wins over the computed one. */
+  setCoreBox(box: THREE.Box3) {
+    this.coreBox = box.clone();
+  }
+
+  /** Points loaded so far across all clouds — what `computeCoreBox` has to work with. */
+  get loadedPointCount(): number {
+    let n = 0;
+    for (const cloud of this.currentClouds) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const node of ((cloud as any).visibleNodes ?? []) as any[]) {
+        n += (node.sceneNode as THREE.Points | undefined)?.geometry?.getAttribute("position")?.count ?? 0;
+      }
+    }
+    return n;
+  }
+
+  /**
+   * Per axis the 2nd to 98th percentile of the loaded points, in world space.
+   * The coarse octree levels load first and are an even sample of the whole
+   * scan, so a few hundred thousand points are enough; the tails cut are the
+   * outliers. Returns null with too few points to say anything.
+   */
+  computeCoreBox(sample = 60_000, tail = 0.02): THREE.Box3 | null {
+    const parts: Array<{ points: THREE.Points; count: number }> = [];
+    for (const cloud of this.currentClouds) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const node of ((cloud as any).visibleNodes ?? []) as any[]) {
+        const points = node.sceneNode as THREE.Points | undefined;
+        const count = points?.geometry?.getAttribute("position")?.count ?? 0;
+        if (points && count) parts.push({ points, count });
+      }
+    }
+    const total = parts.reduce((n, p) => n + p.count, 0);
+    if (total < 1000) return null;
+    const step = Math.max(1, Math.floor(total / sample));
+    const xs: number[] = [], ys: number[] = [], zs: number[] = [];
+    const v = new THREE.Vector3();
+    for (const { points, count } of parts) {
+      points.updateMatrixWorld();
+      const pos = points.geometry.getAttribute("position");
+      for (let i = 0; i < count; i += step) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(points.matrixWorld);
+        xs.push(v.x); ys.push(v.y); zs.push(v.z);
+      }
+    }
+    const q = (a: number[], f: number) => a[Math.min(a.length - 1, Math.max(0, Math.round(f * (a.length - 1))))];
+    for (const a of [xs, ys, zs]) a.sort((m, n) => m - n);
+    const box = new THREE.Box3(
+      new THREE.Vector3(q(xs, tail), q(ys, tail), q(zs, tail)),
+      new THREE.Vector3(q(xs, 1 - tail), q(ys, 1 - tail), q(zs, 1 - tail)),
+    );
+    // Never larger than the scan itself.
+    return this.worldBox.isEmpty() ? box : box.intersect(this.worldBox);
+  }
+
   /** Set color mode on all loaded clouds */
   async setColorMode(mode: ColorMode): Promise<void> {
     const { PointColorType } = await import("potree-core");

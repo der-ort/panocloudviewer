@@ -5,6 +5,7 @@
 export interface ViewerLocale {
   toolbar: {
     // View presets
+    viewFit: string;
     viewTop: string;
     viewTopLabel: string;
     viewFront: string;

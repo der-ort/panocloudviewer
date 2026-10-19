@@ -75,8 +75,8 @@ export function MinimalToolbar() {
 
   const fitToView = useCallback(() => {
     if (!sceneManager || !loader) return;
-    const wb = loader.worldBox;
-    if (!wb.isEmpty()) sceneManager.fitToBox(wb);
+    const box = loader.frameBox;
+    if (!box.isEmpty()) sceneManager.fitToBox(box);
   }, [sceneManager, loader]);
 
   const isMeasuring = activeTool.startsWith("measure-");

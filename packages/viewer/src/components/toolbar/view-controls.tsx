@@ -90,12 +90,23 @@ const VIEW_DEFS: { titleKey: string; preset: ViewPreset; icon: () => React.JSX.E
   { titleKey: "viewRight",  preset: "right",  icon: RightIcon },
 ];
 
+/** Fit — a house in a frame: the building, framed. */
+function FitIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
+      <path d="M2 7V2h5M17 2h5v5M22 17v5h-5M7 22H2v-5" />
+      <path d="M7 12l5-4 5 4v5H7z" fill="currentColor" fillOpacity="0.35" />
+    </svg>
+  );
+}
+
 export function ViewControls() {
-  const { flyToView } = useNavigationActions();
+  const { flyToView, fitToView } = useNavigationActions();
   const t = useLocale().toolbar;
 
   return (
     <>
+      <ToolbarIconBtn icon={<FitIcon />} title={t.viewFit} active={false} onClick={fitToView} />
       {VIEW_DEFS.map(v => (
         <ToolbarIconBtn
           key={v.titleKey}
