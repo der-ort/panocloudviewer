@@ -150,6 +150,10 @@ interface SceneManagerOptions {
     canvas: HTMLElement;
     onFpsUpdate?: (fps: number) => void;
     onPointsUpdate?: (loaded: number) => void;
+    /** The GPU dropped the WebGL context: nothing draws until it is restored. */
+    onContextLost?: () => void;
+    /** The context is back; three re-uploads what it owns on the next frame. */
+    onContextRestored?: () => void;
 }
 /** Manages the Three.js scene, camera, renderer and animation loop */
 declare class SceneManager {
@@ -173,14 +177,31 @@ declare class SceneManager {
     private fpsInterval;
     private onFpsUpdate?;
     private onPointsUpdate?;
+    private onContextLost?;
+    private onContextRestored?;
+    private _contextLost;
+    /** Fetched while the context is alive: getExtension returns null once it is lost. */
+    private _loseContextExt;
     private resizeObserver;
     private frameCallbacks;
     private postRenderCallbacks;
     potree: unknown;
     pointClouds: unknown[];
-    constructor({ canvas, onFpsUpdate, onPointsUpdate }: SceneManagerOptions);
+    constructor({ canvas, onFpsUpdate, onPointsUpdate, onContextLost, onContextRestored }: SceneManagerOptions);
     /** Bound so it can be removed in dispose(); blocks native drag/ghost-image. */
     private preventDragStart;
+    private handleContextLost;
+    private handleContextRestored;
+    /** True between webglcontextlost and webglcontextrestored. */
+    get contextLost(): boolean;
+    /**
+     * Ask for a lost context back. Resolves true once it is restored (at once if
+     * it is not lost), false if it has not come back within `timeoutMs`.
+     *
+     * Only a context lost through WEBGL_lose_context can be asked back; after a
+     * real GPU loss the browser restores it by itself, or not at all.
+     */
+    restoreContext(timeoutMs?: number): Promise<boolean>;
     /** Keys we fly with (layout-independent physical codes). */
     private static readonly FLY_CODES;
     private onKeyDown;
@@ -928,7 +949,11 @@ declare class ClipManager {
      */
     private _highlightHelper;
     private updateHelper;
-    private applyAll;
+    /**
+     * Push the boxes to every loaded cloud's material. Every mutation does this;
+     * call it yourself after loading a cloud, which arrives without them.
+     */
+    applyAll(): void;
 }
 
 /**

@@ -690,7 +690,11 @@ export class ClipManager {
     }
   }
 
-  private applyAll(): void {
+  /**
+   * Push the boxes to every loaded cloud's material. Every mutation does this;
+   * call it yourself after loading a cloud, which arrives without them.
+   */
+  applyAll(): void {
     // Globally disabled → clear clipping on every material but keep the boxes
     // (entries/helpers/fills) intact so they still render as wireframes.
     if (!this._enabled) {

@@ -115,7 +115,8 @@ Central Three.js scene, camera, renderer, and animation loop.
 - **`getActiveCamera()`**: The camera the scene is actually rendered with — the synced ortho camera in orthographic mode, else the perspective camera. **Picking/raycasting/magnifier MUST use this** (not `camera`) so screen rays and the GPU pick match the displayed projection (perspective rays diverge, ortho rays are parallel). In the ortho render pass, `sizeAttenuation:false` sprites (measurement labels/dots, markers) are temporarily scaled by the camera distance and restored — three skips its perspective `-mvPosition.z` screen-size multiply under an ortho camera, so without this they collapse to ~invisible.
 - **`fitToBox(box)`**: Positions camera to frame a bounding box.
 - **`raycast(nx, ny, objects)`**: Screen-space raycast returning `THREE.Intersection[]`.
-- **`dispose()`**: Cancels animation, disconnects ResizeObserver, disposes renderer.
+- **`dispose()`**: Cancels animation, disconnects ResizeObserver, disposes renderer, forces the context loss (unless already lost) after removing its own context-loss listeners, so a deliberate release is never reported as a loss.
+- **WebGL context loss**: listens for `webglcontextlost` (with `preventDefault()`, which is what lets the browser fire `webglcontextrestored`) and `webglcontextrestored`; reports them through the `onContextLost` / `onContextRestored` constructor options and the `contextLost` getter. The frame loop does nothing while the context is lost. **`restoreContext(timeoutMs = 5000): Promise<boolean>`** asks for the context back (`WEBGL_lose_context.restoreContext()`, fetched while the context was alive — `getExtension` returns null once lost) and resolves `true` when restored, `false` on timeout. Only a context lost through `loseContext()` can be asked back; after a real GPU loss the browser restores it on its own or not at all.
 - **Key fields**: `scene`, `camera`, `renderer`, `controls`, `potree` (set after lazy import), `pointClouds[]`, `flySpeed`.
 - **Provider state written**: FPS via `onFpsUpdate` callback → `setFps` (published to the fps subscription store, NOT React state — see `useFps()`).
 
@@ -151,6 +152,7 @@ Manages multiple named axis-aligned clip boxes with TransformControls support.
 - **`removeBox(id)` / `setBoxMode(id, mode)` / `setBoxVisible(id, visible)` / `renameBox(id, name)`**: Mutate entries and call `applyAll()`. **Single global clip mode**: potree-core exposes only one global `clipMode`, so all sections share one mode (`"outside"` or `"inside"`) — the UI enforces this consistently, applying the chosen mode to every box rather than allowing per-box modes.
 - **`setDraft(box)`**: Shows a live preview helper during drag (no clip applied).
 - **`clear()`**: Removes all boxes and disables clipping.
+- **`applyAll()`**: Pushes the boxes to every loaded cloud's material. Every mutation calls it; call it yourself after (re)loading a cloud, which arrives without them.
 - **`dispose()`**: Disposes the translate gizmo, face-arrow and rotation-ring controllers, and scene objects.
 - **`onChange?: (boxes: ClipBoxEntry[]) => void`**: Called on every mutation; Viewport wires this to `setClipBoxEntries`.
 - **`onSelectChange?: (id: string | null) => void`**: Wired to `setSelectedClipBoxId`.
@@ -255,6 +257,7 @@ This prevents potree-core and Three.js from loading on the server.
 4. Handles pointer events: axis-gizmo clicks, marker raycasting, measurement clicks, section-box drag, right-click to finish.
 5. Syncs provider state changes back to managers via secondary `useEffect`s (navigation mode, marker visibility, etc.).
 6. Renders the tool hint bar.
+7. **Recovers from a lost WebGL context.** On `onContextLost` it drops the cloud (`loader.clear()`, `sm.potree = null` — its GPU buffers went with the context, and a context the browser restores by itself would otherwise re-upload every node at once) and shows an overlay (`[data-pcv-context-lost]`, `role="alert"`, strings `viewport.contextLostTitle/Body/Reload`). Its one button, "Lower detail and reload", halves the point budget (floor 500 K), calls `sm.restoreContext()`, reloads the scan and puts back the camera (position, target, up), the clip boxes (`clipManager.applyAll()`), colour mode and point size. Same managers throughout, so measurements, markers and whatever a host hung on them survive. The overlay stays until clicked even if the browser restored the context itself — the same budget would likely lose it again; if the context does not come back, the overlay stays and its text says to reload the page.
 
 ---
 

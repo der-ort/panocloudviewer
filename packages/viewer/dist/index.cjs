@@ -7,9 +7,9 @@ var React26 = require('react');
 var jsxRuntime = require('react/jsx-runtime');
 var clsx = require('clsx');
 var tailwindMerge = require('tailwind-merge');
+var classVarianceAuthority = require('class-variance-authority');
 var lucideReact = require('lucide-react');
 var reactDom = require('react-dom');
-var classVarianceAuthority = require('class-variance-authority');
 var SliderPrimitive = require('@radix-ui/react-slider');
 var DialogPrimitive = require('@radix-ui/react-dialog');
 var TabsPrimitive = require('@radix-ui/react-tabs');
@@ -209,15 +209,22 @@ var init_dist = __esm({
       fpsInterval = 0;
       onFpsUpdate;
       onPointsUpdate;
+      onContextLost;
+      onContextRestored;
+      _contextLost = false;
+      /** Fetched while the context is alive: getExtension returns null once it is lost. */
+      _loseContextExt = null;
       resizeObserver;
       frameCallbacks = [];
       postRenderCallbacks = [];
       // potree-core Potree instance (set after lazy import)
       potree = null;
       pointClouds = [];
-      constructor({ canvas, onFpsUpdate, onPointsUpdate }) {
+      constructor({ canvas, onFpsUpdate, onPointsUpdate, onContextLost, onContextRestored }) {
         this.onFpsUpdate = onFpsUpdate;
         this.onPointsUpdate = onPointsUpdate;
+        this.onContextLost = onContextLost;
+        this.onContextRestored = onContextRestored;
         this.scene = new THREE5__namespace.Scene();
         this.scene.background = new THREE5__namespace.Color(657930);
         const w = Math.max(canvas.clientWidth, 1);
@@ -237,6 +244,9 @@ var init_dist = __esm({
         this.renderer.domElement.style.touchAction = "none";
         this.renderer.domElement.style.userSelect = "none";
         this.renderer.domElement.addEventListener("dragstart", this.preventDragStart);
+        this._loseContextExt = this.renderer.getContext().getExtension("WEBGL_lose_context");
+        this.renderer.domElement.addEventListener("webglcontextlost", this.handleContextLost);
+        this.renderer.domElement.addEventListener("webglcontextrestored", this.handleContextRestored);
         window.addEventListener("keydown", this.onKeyDown);
         window.addEventListener("keyup", this.onKeyUp);
         window.addEventListener("blur", this.onWindowBlur);
@@ -264,6 +274,41 @@ var init_dist = __esm({
       }
       /** Bound so it can be removed in dispose(); blocks native drag/ghost-image. */
       preventDragStart = (e) => e.preventDefault();
+      handleContextLost = (e) => {
+        e.preventDefault();
+        this._contextLost = true;
+        this.onContextLost?.();
+      };
+      handleContextRestored = () => {
+        this._contextLost = false;
+        this.onContextRestored?.();
+      };
+      /** True between webglcontextlost and webglcontextrestored. */
+      get contextLost() {
+        return this._contextLost;
+      }
+      /**
+       * Ask for a lost context back. Resolves true once it is restored (at once if
+       * it is not lost), false if it has not come back within `timeoutMs`.
+       *
+       * Only a context lost through WEBGL_lose_context can be asked back; after a
+       * real GPU loss the browser restores it by itself, or not at all.
+       */
+      restoreContext(timeoutMs = 5e3) {
+        if (!this._contextLost) return Promise.resolve(true);
+        const canvas = this.renderer.domElement;
+        return new Promise((resolve) => {
+          const done = (restored) => {
+            window.clearTimeout(timer);
+            canvas.removeEventListener("webglcontextrestored", onRestored);
+            resolve(restored);
+          };
+          const onRestored = () => done(true);
+          const timer = window.setTimeout(() => done(false), timeoutMs);
+          canvas.addEventListener("webglcontextrestored", onRestored);
+          this._loseContextExt?.restoreContext();
+        });
+      }
       /** Keys we fly with (layout-independent physical codes). */
       static FLY_CODES = /* @__PURE__ */ new Set(["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE"]);
       onKeyDown = (e) => {
@@ -311,6 +356,7 @@ var init_dist = __esm({
       start() {
         const loop = (now) => {
           this.animationId = requestAnimationFrame(loop);
+          if (this._contextLost) return;
           const delta = this.lastTime === 0 ? 16 : now - this.lastTime;
           this.lastTime = now;
           this.renderer.setScissorTest(false);
@@ -454,12 +500,14 @@ var init_dist = __esm({
         if (this.animationId !== null) cancelAnimationFrame(this.animationId);
         this.resizeObserver.disconnect();
         this.renderer.domElement.removeEventListener("dragstart", this.preventDragStart);
+        this.renderer.domElement.removeEventListener("webglcontextlost", this.handleContextLost);
+        this.renderer.domElement.removeEventListener("webglcontextrestored", this.handleContextRestored);
         window.removeEventListener("keydown", this.onKeyDown);
         window.removeEventListener("keyup", this.onKeyUp);
         window.removeEventListener("blur", this.onWindowBlur);
         this.controls.dispose();
         this.renderer.dispose();
-        this.renderer.forceContextLoss();
+        if (!this._contextLost) this.renderer.forceContextLoss();
         this.renderer.domElement.remove();
       }
       /**
@@ -3019,6 +3067,10 @@ var init_dist = __esm({
           this.fills.set(entry.id, fillMesh);
         }
       }
+      /**
+       * Push the boxes to every loaded cloud's material. Every mutation does this;
+       * call it yourself after loading a cloud, which arrives without them.
+       */
       applyAll() {
         if (!this._enabled) {
           for (const pc of this.sm.pointClouds) {
@@ -3748,6 +3800,9 @@ var init_en = __esm({
         hintVolumeFootprint: "Drag to draw volume footprint",
         hintVolumeHeight: "Move mouse up/down to set height \u2022 Click to confirm",
         initialisingRenderer: "Initialising renderer\u2026",
+        contextLostTitle: "The graphics card stopped drawing the 3D view",
+        contextLostBody: "This usually means the scan needed more graphics memory than this device has. Reloading at lower detail brings it back; if it does not, reload the page.",
+        contextLostReload: "Lower detail and reload",
         statusPts: (m) => `${m.toFixed(1)}M pts`,
         statusBudget: (m) => `Budget: ${m.toFixed(1)}M`,
         statusFps: (fps) => `${fps} fps`
@@ -3863,6 +3918,47 @@ var init_utils = __esm({
     pcvChromeScaleStyle = { zoom: "var(--pcv-scale, 1)" };
   }
 });
+exports.buttonVariants = void 0; exports.Button = void 0;
+var init_button = __esm({
+  "src/ui/button.tsx"() {
+    "use client";
+    init_utils();
+    exports.buttonVariants = classVarianceAuthority.cva(
+      "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50",
+      {
+        variants: {
+          variant: {
+            default: "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:bg-[hsl(var(--primary)/.85)]",
+            secondary: "bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] hover:bg-[hsl(var(--secondary)/.8)]",
+            ghost: "hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]",
+            outline: "border border-[hsl(var(--border))] bg-transparent hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]",
+            destructive: "bg-[hsl(var(--destructive))] text-[hsl(var(--destructive-foreground))] hover:bg-[hsl(var(--destructive)/.85)]"
+          },
+          size: {
+            sm: "h-7 px-2.5 text-xs",
+            md: "h-9 px-4",
+            icon: "h-8 w-8 p-0"
+          }
+        },
+        defaultVariants: {
+          variant: "default",
+          size: "md"
+        }
+      }
+    );
+    exports.Button = React26__default.default.forwardRef(
+      ({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
+        "button",
+        {
+          ref,
+          className: cn(exports.buttonVariants({ variant, size }), className),
+          ...props
+        }
+      )
+    );
+    exports.Button.displayName = "Button";
+  }
+});
 function useSnapThrottle(pick) {
   const rafRef = React26.useRef(null);
   const ndcRef = React26.useRef(null);
@@ -3913,7 +4009,10 @@ function Viewport({ className }) {
     setClipManager,
     setFps,
     activeTool,
+    pointBudget,
     setPointBudget,
+    pointSize,
+    colorMode,
     showMarkers,
     showMeasurements,
     showMagnifier,
@@ -3945,6 +4044,8 @@ function Viewport({ className }) {
   const animRef = React26.useRef(null);
   const axisRef = React26.useRef(null);
   const magRef = React26.useRef(null);
+  const [contextLost, setContextLost] = React26.useState(false);
+  const [recovering, setRecovering] = React26.useState(false);
   const clipDraftRef = React26.useRef(null);
   const clipDownRef = React26.useRef(null);
   const volumeDragRef = React26.useRef(null);
@@ -3970,7 +4071,12 @@ function Viewport({ className }) {
     const adapter = createAdapter(config.source);
     const sm = new exports.SceneManager({
       canvas: containerRef.current,
-      onFpsUpdate: setFps
+      onFpsUpdate: setFps,
+      onContextLost: () => {
+        loaderRef.current?.clear();
+        sm.potree = null;
+        setContextLost(true);
+      }
     });
     const loader = new exports.PointCloudLoader(sm, adapter);
     const measureMgr = new exports.MeasurementManager(sm.scene);
@@ -4075,9 +4181,39 @@ function Viewport({ className }) {
       markerMgr.dispose();
       clipMgr.dispose();
       axisGizmo.dispose();
+      smRef.current = null;
       initialized.current = false;
     };
   }, []);
+  const recover = React26.useCallback(async () => {
+    const sm = smRef.current;
+    const loader = loaderRef.current;
+    if (!sm || !loader) return;
+    setRecovering(true);
+    try {
+      const view = { position: sm.camera.position.clone(), target: sm.controls.target.clone(), up: sm.camera.up.clone() };
+      const budget = Math.max(5e5, Math.round(pointBudget / 2));
+      if (!await sm.restoreContext()) return;
+      await loader.load("metadata.json", budget);
+      if (smRef.current !== sm) {
+        loader.clear();
+        return;
+      }
+      sm.camera.position.copy(view.position);
+      sm.camera.up.copy(view.up);
+      sm.controls.target.copy(view.target);
+      sm.controls.update();
+      clipRef.current?.applyAll();
+      await loader.setColorMode(colorMode);
+      loader.setPointSize(pointSize);
+      setPointBudget(budget);
+      setContextLost(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setRecovering(false);
+    }
+  }, [pointBudget, colorMode, pointSize, setPointBudget]);
   React26.useEffect(() => {
     if (markerRef.current && cameras.length > 0) {
       const wb = loaderRef.current?.worldBox;
@@ -4424,13 +4560,27 @@ function Viewport({ className }) {
       activeTool === "measure-profile" && t.hintProfile,
       activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? t.hintVolumeHeight : t.hintVolumeFootprint),
       activeTool === "section-box" && t.hintSectionBox
-    ] })
+    ] }),
+    contextLost && /* @__PURE__ */ jsxRuntime.jsx(
+      "div",
+      {
+        "data-pcv-context-lost": true,
+        role: "alert",
+        className: "absolute inset-0 z-10 flex items-center justify-center p-4 bg-[hsl(var(--background)/0.85)]",
+        children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "max-w-sm rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 text-center text-[hsl(var(--card-foreground))] shadow-lg", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("p", { className: "text-sm font-medium", children: t.contextLostTitle }),
+          /* @__PURE__ */ jsxRuntime.jsx("p", { className: "mt-1 text-xs text-[hsl(var(--muted-foreground))]", children: t.contextLostBody }),
+          /* @__PURE__ */ jsxRuntime.jsx(exports.Button, { className: "mt-3", size: "sm", disabled: recovering, "aria-busy": recovering, onClick: () => void recover(), children: t.contextLostReload })
+        ] })
+      }
+    )
   ] });
 }
 var init_viewport = __esm({
   "src/components/viewport.tsx"() {
     "use client";
     init_utils();
+    init_button();
     init_viewer_provider();
     init_data_provider();
     init_locale_context();
@@ -7278,42 +7428,8 @@ function WorkspaceLayout({ className }) {
   );
 }
 
-// src/ui/button.tsx
-init_utils();
-var buttonVariants = classVarianceAuthority.cva(
-  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50",
-  {
-    variants: {
-      variant: {
-        default: "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:bg-[hsl(var(--primary)/.85)]",
-        secondary: "bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] hover:bg-[hsl(var(--secondary)/.8)]",
-        ghost: "hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]",
-        outline: "border border-[hsl(var(--border))] bg-transparent hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]",
-        destructive: "bg-[hsl(var(--destructive))] text-[hsl(var(--destructive-foreground))] hover:bg-[hsl(var(--destructive)/.85)]"
-      },
-      size: {
-        sm: "h-7 px-2.5 text-xs",
-        md: "h-9 px-4",
-        icon: "h-8 w-8 p-0"
-      }
-    },
-    defaultVariants: {
-      variant: "default",
-      size: "md"
-    }
-  }
-);
-var Button = React26__default.default.forwardRef(
-  ({ className, variant, size, ...props }, ref) => /* @__PURE__ */ jsxRuntime.jsx(
-    "button",
-    {
-      ref,
-      className: cn(buttonVariants({ variant, size }), className),
-      ...props
-    }
-  )
-);
-Button.displayName = "Button";
+// src/ui/index.ts
+init_button();
 
 // src/ui/slider.tsx
 init_utils();
@@ -7656,7 +7772,7 @@ var SelectSeparator = React26__default.default.forwardRef(({ className, ...props
 ));
 SelectSeparator.displayName = "SelectSeparator";
 var defaultComponents = {
-  Button,
+  Button: exports.Button,
   Slider: Slider2,
   Toggle,
   Dialog,
@@ -7765,7 +7881,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "c698aa0 \xB7 2026-10-20 15:03Z" ;
+var PCV_BUILD = "212baea \xB7 2026-10-20 19:05Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
@@ -9043,6 +9159,9 @@ var de = createLocale(exports.en, {
     hintVolumeFootprint: "Ziehen um die Volumen-Grundfl\xE4che zu zeichnen",
     hintVolumeHeight: "Maus hoch/runter f\xFCr die H\xF6he \u2022 Klick zum Best\xE4tigen",
     initialisingRenderer: "Renderer wird initialisiert\u2026",
+    contextLostTitle: "Die Grafikkarte hat die 3D-Ansicht verloren",
+    contextLostBody: "Meist brauchte der Scan mehr Grafikspeicher, als dieses Ger\xE4t hat. Mit weniger Detail neu laden bringt die Ansicht zur\xFCck; wenn nicht, die Seite neu laden.",
+    contextLostReload: "Detail verringern und neu laden",
     statusPts: (m) => `${m.toFixed(1)}M Pkt.`,
     statusBudget: (m) => `Budget: ${m.toFixed(1)}M`,
     statusFps: (fps) => `${fps} fps`
@@ -9129,7 +9248,6 @@ var de = createLocale(exports.en, {
 });
 
 exports.AboutDialog = AboutDialog;
-exports.Button = Button;
 exports.ClassificationPanel = ClassificationPanel;
 exports.ClipToolbar = ClipToolbar;
 exports.CollapsibleSidebar = CollapsibleSidebar;
@@ -9196,7 +9314,6 @@ exports.ViewerProvider = ViewerProvider;
 exports.Viewport = Viewport;
 exports.WorkspaceLayout = WorkspaceLayout;
 exports.WorkstationLayout = WorkstationLayout;
-exports.buttonVariants = buttonVariants;
 exports.captureScene = captureScene;
 exports.cn = cn;
 exports.createAdapter = createAdapter;

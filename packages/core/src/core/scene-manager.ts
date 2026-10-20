@@ -6,6 +6,10 @@ export interface SceneManagerOptions {
   canvas: HTMLElement;
   onFpsUpdate?: (fps: number) => void;
   onPointsUpdate?: (loaded: number) => void;
+  /** The GPU dropped the WebGL context: nothing draws until it is restored. */
+  onContextLost?: () => void;
+  /** The context is back; three re-uploads what it owns on the next frame. */
+  onContextRestored?: () => void;
 }
 
 /** Manages the Three.js scene, camera, renderer and animation loop */
@@ -30,6 +34,11 @@ export class SceneManager {
   private fpsInterval = 0;
   private onFpsUpdate?: (fps: number) => void;
   private onPointsUpdate?: (loaded: number) => void;
+  private onContextLost?: () => void;
+  private onContextRestored?: () => void;
+  private _contextLost = false;
+  /** Fetched while the context is alive: getExtension returns null once it is lost. */
+  private _loseContextExt: WEBGL_lose_context | null = null;
   private resizeObserver: ResizeObserver;
   private frameCallbacks: Array<() => void> = [];
   private postRenderCallbacks: Array<() => void> = [];
@@ -37,9 +46,11 @@ export class SceneManager {
   potree: unknown = null;
   pointClouds: unknown[] = [];
 
-  constructor({ canvas, onFpsUpdate, onPointsUpdate }: SceneManagerOptions) {
+  constructor({ canvas, onFpsUpdate, onPointsUpdate, onContextLost, onContextRestored }: SceneManagerOptions) {
     this.onFpsUpdate = onFpsUpdate;
     this.onPointsUpdate = onPointsUpdate;
+    this.onContextLost = onContextLost;
+    this.onContextRestored = onContextRestored;
 
     // Scene
     this.scene = new THREE.Scene();
@@ -77,6 +88,14 @@ export class SceneManager {
     this.renderer.domElement.style.touchAction = "none";
     this.renderer.domElement.style.userSelect = "none";
     this.renderer.domElement.addEventListener("dragstart", this.preventDragStart);
+
+    // A context the GPU drops (out of memory on an integrated GPU, a driver
+    // reset) used to leave a white canvas and no word why. Listening lets the
+    // host say so and offer a reload; preventDefault() is what allows the
+    // browser to fire webglcontextrestored at all.
+    this._loseContextExt = this.renderer.getContext().getExtension("WEBGL_lose_context");
+    this.renderer.domElement.addEventListener("webglcontextlost", this.handleContextLost);
+    this.renderer.domElement.addEventListener("webglcontextrestored", this.handleContextRestored);
 
     // WASD fly + Q/E vertical. Global listeners (work without clicking the
     // canvas first); the keydown guard ignores typing in form fields.
@@ -121,6 +140,44 @@ export class SceneManager {
 
   /** Bound so it can be removed in dispose(); blocks native drag/ghost-image. */
   private preventDragStart = (e: Event) => e.preventDefault();
+
+  private handleContextLost = (e: Event) => {
+    e.preventDefault();
+    this._contextLost = true;
+    this.onContextLost?.();
+  };
+  private handleContextRestored = () => {
+    this._contextLost = false;
+    this.onContextRestored?.();
+  };
+
+  /** True between webglcontextlost and webglcontextrestored. */
+  get contextLost(): boolean {
+    return this._contextLost;
+  }
+
+  /**
+   * Ask for a lost context back. Resolves true once it is restored (at once if
+   * it is not lost), false if it has not come back within `timeoutMs`.
+   *
+   * Only a context lost through WEBGL_lose_context can be asked back; after a
+   * real GPU loss the browser restores it by itself, or not at all.
+   */
+  restoreContext(timeoutMs = 5000): Promise<boolean> {
+    if (!this._contextLost) return Promise.resolve(true);
+    const canvas = this.renderer.domElement;
+    return new Promise((resolve) => {
+      const done = (restored: boolean) => {
+        window.clearTimeout(timer);
+        canvas.removeEventListener("webglcontextrestored", onRestored);
+        resolve(restored);
+      };
+      const onRestored = () => done(true);
+      const timer = window.setTimeout(() => done(false), timeoutMs);
+      canvas.addEventListener("webglcontextrestored", onRestored);
+      this._loseContextExt?.restoreContext();
+    });
+  }
 
   /** Keys we fly with (layout-independent physical codes). */
   private static readonly FLY_CODES = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE"]);
@@ -175,6 +232,8 @@ export class SceneManager {
   start() {
     const loop = (now: number) => {
       this.animationId = requestAnimationFrame(loop);
+      // Nothing can draw, and potree would keep streaming nodes it cannot upload.
+      if (this._contextLost) return;
       const delta = this.lastTime === 0 ? 16 : now - this.lastTime;
       this.lastTime = now;
 
@@ -364,6 +423,9 @@ export class SceneManager {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
     this.resizeObserver.disconnect();
     this.renderer.domElement.removeEventListener("dragstart", this.preventDragStart);
+    // Before forceContextLoss(): releasing the context on purpose is not a loss to report.
+    this.renderer.domElement.removeEventListener("webglcontextlost", this.handleContextLost);
+    this.renderer.domElement.removeEventListener("webglcontextrestored", this.handleContextRestored);
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("blur", this.onWindowBlur);
@@ -371,7 +433,7 @@ export class SceneManager {
     this.renderer.dispose();
     // dispose() frees three's GL objects but not the context, which lives
     // until the canvas is collected; a browser keeps a handful at most.
-    this.renderer.forceContextLoss();
+    if (!this._contextLost) this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
   }
 

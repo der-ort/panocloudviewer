@@ -156,6 +156,11 @@ export interface ViewerLocale {
     hintVolumeFootprint: string;
     hintVolumeHeight: string;
     initialisingRenderer: string;
+    /** Shown over the canvas when the GPU drops the WebGL context. */
+    contextLostTitle: string;
+    contextLostBody: string;
+    /** Halves the point budget, gets the context back and reloads the scan in the same view. */
+    contextLostReload: string;
     statusPts: (millions: number) => string;
     statusBudget: (millions: number) => string;
     statusFps: (fps: number) => string;

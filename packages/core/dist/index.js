@@ -24,15 +24,22 @@ var SceneManager = class _SceneManager {
   fpsInterval = 0;
   onFpsUpdate;
   onPointsUpdate;
+  onContextLost;
+  onContextRestored;
+  _contextLost = false;
+  /** Fetched while the context is alive: getExtension returns null once it is lost. */
+  _loseContextExt = null;
   resizeObserver;
   frameCallbacks = [];
   postRenderCallbacks = [];
   // potree-core Potree instance (set after lazy import)
   potree = null;
   pointClouds = [];
-  constructor({ canvas, onFpsUpdate, onPointsUpdate }) {
+  constructor({ canvas, onFpsUpdate, onPointsUpdate, onContextLost, onContextRestored }) {
     this.onFpsUpdate = onFpsUpdate;
     this.onPointsUpdate = onPointsUpdate;
+    this.onContextLost = onContextLost;
+    this.onContextRestored = onContextRestored;
     this.scene = new THREE5.Scene();
     this.scene.background = new THREE5.Color(657930);
     const w = Math.max(canvas.clientWidth, 1);
@@ -52,6 +59,9 @@ var SceneManager = class _SceneManager {
     this.renderer.domElement.style.touchAction = "none";
     this.renderer.domElement.style.userSelect = "none";
     this.renderer.domElement.addEventListener("dragstart", this.preventDragStart);
+    this._loseContextExt = this.renderer.getContext().getExtension("WEBGL_lose_context");
+    this.renderer.domElement.addEventListener("webglcontextlost", this.handleContextLost);
+    this.renderer.domElement.addEventListener("webglcontextrestored", this.handleContextRestored);
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.onWindowBlur);
@@ -79,6 +89,41 @@ var SceneManager = class _SceneManager {
   }
   /** Bound so it can be removed in dispose(); blocks native drag/ghost-image. */
   preventDragStart = (e) => e.preventDefault();
+  handleContextLost = (e) => {
+    e.preventDefault();
+    this._contextLost = true;
+    this.onContextLost?.();
+  };
+  handleContextRestored = () => {
+    this._contextLost = false;
+    this.onContextRestored?.();
+  };
+  /** True between webglcontextlost and webglcontextrestored. */
+  get contextLost() {
+    return this._contextLost;
+  }
+  /**
+   * Ask for a lost context back. Resolves true once it is restored (at once if
+   * it is not lost), false if it has not come back within `timeoutMs`.
+   *
+   * Only a context lost through WEBGL_lose_context can be asked back; after a
+   * real GPU loss the browser restores it by itself, or not at all.
+   */
+  restoreContext(timeoutMs = 5e3) {
+    if (!this._contextLost) return Promise.resolve(true);
+    const canvas = this.renderer.domElement;
+    return new Promise((resolve) => {
+      const done = (restored) => {
+        window.clearTimeout(timer);
+        canvas.removeEventListener("webglcontextrestored", onRestored);
+        resolve(restored);
+      };
+      const onRestored = () => done(true);
+      const timer = window.setTimeout(() => done(false), timeoutMs);
+      canvas.addEventListener("webglcontextrestored", onRestored);
+      this._loseContextExt?.restoreContext();
+    });
+  }
   /** Keys we fly with (layout-independent physical codes). */
   static FLY_CODES = /* @__PURE__ */ new Set(["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE"]);
   onKeyDown = (e) => {
@@ -126,6 +171,7 @@ var SceneManager = class _SceneManager {
   start() {
     const loop = (now) => {
       this.animationId = requestAnimationFrame(loop);
+      if (this._contextLost) return;
       const delta = this.lastTime === 0 ? 16 : now - this.lastTime;
       this.lastTime = now;
       this.renderer.setScissorTest(false);
@@ -269,12 +315,14 @@ var SceneManager = class _SceneManager {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
     this.resizeObserver.disconnect();
     this.renderer.domElement.removeEventListener("dragstart", this.preventDragStart);
+    this.renderer.domElement.removeEventListener("webglcontextlost", this.handleContextLost);
+    this.renderer.domElement.removeEventListener("webglcontextrestored", this.handleContextRestored);
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("blur", this.onWindowBlur);
     this.controls.dispose();
     this.renderer.dispose();
-    this.renderer.forceContextLoss();
+    if (!this._contextLost) this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
   }
   /**
@@ -2939,6 +2987,10 @@ var ClipManager = class {
       this.fills.set(entry.id, fillMesh);
     }
   }
+  /**
+   * Push the boxes to every loaded cloud's material. Every mutation does this;
+   * call it yourself after loading a cloud, which arrives without them.
+   */
   applyAll() {
     if (!this._enabled) {
       for (const pc of this.sm.pointClouds) {

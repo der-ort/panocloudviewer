@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef, useCallback, useState } from "react";
 import { cn } from "../lib/utils";
+import { Button } from "../ui/button";
 import { useViewer } from "../providers/viewer-provider";
 import { useData } from "../providers/data-provider";
 import { useLocale } from "../i18n/locale-context";
@@ -32,7 +33,7 @@ export function Viewport({ className }: ViewportProps) {
     config,
     setSceneManager, setLoader, setMeasurementManager, setMarkerManager,
     setCameraAnimator, setExporter, setClipManager,
-    setFps, activeTool, setPointBudget,
+    setFps, activeTool, pointBudget, setPointBudget, pointSize, colorMode,
     showMarkers, showMeasurements, showMagnifier, setMeasurementList, selectedCamera, setSelectedCamera,
     clipBoxEntries, setClipBoxEntries, setSelectedClipBoxId,
     navigationMode, projection, displaySettings,
@@ -58,6 +59,12 @@ export function Viewport({ className }: ViewportProps) {
   const animRef = useRef<CameraAnimator | null>(null);
   const axisRef = useRef<AxisGizmo | null>(null);
   const magRef = useRef<MagnifierRenderer | null>(null);
+
+  // The GPU dropped the WebGL context. The overlay stays until the person asks
+  // for the reload, even if the browser restores the context by itself: the
+  // same budget would most likely lose it again.
+  const [contextLost, setContextLost] = useState(false);
+  const [recovering, setRecovering] = useState(false);
 
   // Clip-box cursor-drop state: current draft box + pointer-down screen pos
   // (used to distinguish a placement click from an orbit drag).
@@ -111,6 +118,14 @@ export function Viewport({ className }: ViewportProps) {
     const sm = new SceneManager({
       canvas: containerRef.current,
       onFpsUpdate: setFps,
+      onContextLost: () => {
+        // The cloud's GPU buffers went with the context. Drop its nodes and the
+        // potree cache too, or a context the browser restores by itself
+        // re-uploads every one of them at once and is lost again.
+        loaderRef.current?.clear();
+        sm.potree = null;
+        setContextLost(true);
+      },
     });
 
     const loader = new PointCloudLoader(sm, adapter);
@@ -249,10 +264,48 @@ export function Viewport({ className }: ViewportProps) {
       markerMgr.dispose();
       clipMgr.dispose();
       axisGizmo.dispose();
+      smRef.current = null;
       initialized.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * "Lower detail and reload": half the point budget, the context back, the
+   * scan loaded again, and the view, sections, colour and point size as they
+   * were. Same managers throughout, so measurements, markers and whatever a
+   * host hung on them survive. If the context does not come back, the overlay
+   * stays and says to reload the page.
+   */
+  const recover = useCallback(async () => {
+    const sm = smRef.current;
+    const loader = loaderRef.current;
+    if (!sm || !loader) return;
+    setRecovering(true);
+    try {
+      const view = { position: sm.camera.position.clone(), target: sm.controls.target.clone(), up: sm.camera.up.clone() };
+      // Floored where calcOptimalBudget floors.
+      const budget = Math.max(500_000, Math.round(pointBudget / 2));
+      if (!(await sm.restoreContext())) return;
+      await loader.load("metadata.json", budget);
+      // Unmounted meanwhile: the cloud arrived into a disposed scene.
+      if (smRef.current !== sm) { loader.clear(); return; }
+      sm.camera.position.copy(view.position);
+      sm.camera.up.copy(view.up);
+      sm.controls.target.copy(view.target);
+      sm.controls.update();
+      // load() starts the cloud from its defaults.
+      clipRef.current?.applyAll();
+      await loader.setColorMode(colorMode);
+      loader.setPointSize(pointSize);
+      setPointBudget(budget);
+      setContextLost(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setRecovering(false);
+    }
+  }, [pointBudget, colorMode, pointSize, setPointBudget]);
 
   // Rebuild markers when cameras load.
   useEffect(() => {
@@ -707,6 +760,22 @@ export function Viewport({ className }: ViewportProps) {
           {activeTool === "measure-profile" && t.hintProfile}
           {activeTool === "measure-volume" && (volumeDragRef.current?.phase === "height" ? t.hintVolumeHeight : t.hintVolumeFootprint)}
           {activeTool === "section-box" && t.hintSectionBox}
+        </div>
+      )}
+
+      {contextLost && (
+        <div
+          data-pcv-context-lost
+          role="alert"
+          className="absolute inset-0 z-10 flex items-center justify-center p-4 bg-[hsl(var(--background)/0.85)]"
+        >
+          <div className="max-w-sm rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 text-center text-[hsl(var(--card-foreground))] shadow-lg">
+            <p className="text-sm font-medium">{t.contextLostTitle}</p>
+            <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{t.contextLostBody}</p>
+            <Button className="mt-3" size="sm" disabled={recovering} aria-busy={recovering} onClick={() => void recover()}>
+              {t.contextLostReload}
+            </Button>
+          </div>
         </div>
       )}
     </div>
