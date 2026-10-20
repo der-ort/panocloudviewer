@@ -5501,6 +5501,7 @@ function ToggleRow({ icon, label, active, onToggle, disabled, hint }) {
     {
       onClick: disabled ? void 0 : onToggle,
       disabled,
+      "aria-pressed": on,
       title: hint ?? label,
       className: cn(
         "flex items-center gap-2.5 w-full px-2 py-2 rounded-lg transition-colors text-left",
@@ -7999,7 +8000,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "5c8a066 \xB7 2026-10-20 19:54Z" ;
+var PCV_BUILD = "e031fba \xB7 2026-10-20 20:06Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

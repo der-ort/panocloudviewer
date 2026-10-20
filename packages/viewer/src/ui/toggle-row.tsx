@@ -26,6 +26,8 @@ export function ToggleRow({ icon, label, active, onToggle, disabled, hint }: Tog
     <button
       onClick={disabled ? undefined : onToggle}
       disabled={disabled}
+      // A switch: its state is part of its name for a screen reader.
+      aria-pressed={on}
       title={hint ?? label}
       className={cn(
         "flex items-center gap-2.5 w-full px-2 py-2 rounded-lg transition-colors text-left",
