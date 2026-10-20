@@ -265,7 +265,7 @@ export class SceneManager {
 
       // Main render — use ortho camera when projection is orthographic.
       if (this._projection === "orthographic") {
-        // `sizeAttenuation:false` sprites (measurement labels/dots, markers)
+        // `sizeAttenuation:false` sprites (measurement labels/dots, marker labels)
         // skip three's perspective `-mvPosition.z` screen-size multiply under an
         // ortho camera, so they collapse to ~invisible. Compensate by scaling
         // them by the camera distance for this pass, then restore (factor=dist

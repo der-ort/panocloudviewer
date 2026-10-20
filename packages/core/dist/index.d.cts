@@ -456,13 +456,21 @@ declare class CameraAnimator {
 /**
  * 3D panorama camera markers.
  *
- * Each marker is a small constant on-screen-size pin sprite
- * (sizeAttenuation:false) in brand yellow. A subtle text label sits above the
- * pin and is hidden by default — it appears only on hover/selection
- * (markerLabelMode).
+ * All pins are ONE `THREE.Points` geometry, one vertex per camera in camera
+ * index order, drawn with a round sprite texture at a constant on-screen size
+ * (sizeAttenuation:false). Each marker used to be its own sprite, plus a ghost
+ * sprite, plus a label sprite with its own canvas texture: 3,402 panoramas
+ * were 6,813 draw calls a frame. Now the pins are two draw calls whatever
+ * their number, and colour (hover, selection) and visibility (clip filter)
+ * are per-vertex RGBA.
+ *
+ * Labels exist only while shown: on hover or selection, and in "always" mode
+ * for the {@link MAX_LABELS} markers nearest the camera. Every label is a
+ * canvas texture and a draw call, so labelling all of a crowded scan is what
+ * the "always" mode must not do.
  *
  * ---------------------------------------------------------------------------
- * DEPTH: WHY EACH PIN IS DRAWN TWICE
+ * DEPTH: WHY THE PINS ARE DRAWN TWICE
  *
  * Pins used to carry `depthTest: false`, so every scan position floated on top
  * of the cloud — markers from the far side of a building sat over the wall in
@@ -473,26 +481,26 @@ declare class CameraAnimator {
  * room's panorama is to fly there. That is exactly what the original flag was
  * avoiding.
  *
- * So each pin is two sprites at one position, made MUTUALLY EXCLUSIVE by the
- * depth comparison rather than by draw order:
+ * So the pins are drawn twice from the same geometry, the two passes made
+ * MUTUALLY EXCLUSIVE by the depth comparison rather than by draw order:
  *
- *   pin    depthFunc LessEqualDepth  → drawn only where it is in front
- *   ghost  depthFunc GreaterDepth    → drawn only where it is behind
+ *   pins    depthFunc LessEqualDepth  → drawn only where they are in front
+ *   ghosts  depthFunc GreaterDepth    → drawn only where they are behind
  *
  * Exactly one of the pair passes for any given pixel, so an unoccluded marker
  * is never the two of them stacked and brightened. Both leave `depthWrite`
  * off, so neither occludes the other or anything else.
  *
- * Raycasting is unaffected and deliberately so: three's raycaster does not
- * consult material depth state, so a ghosted marker stays clickable. Being
- * behind a wall makes a panorama harder to see, not unreachable.
+ * ---------------------------------------------------------------------------
+ * PICKING
  *
- * The pin sprites are returned from getMeshes() as the raycast targets; Sprite
- * is raycastable in three r170. One pin per camera, in camera index order.
+ * {@link pick} works in screen space: a pin is a constant number of pixels, so
+ * a world-space ray test is the wrong question. It ignores depth on purpose —
+ * a ghosted marker stays clickable. Being behind a wall makes a panorama
+ * harder to see, not unreachable.
  */
 declare class MarkerManager {
     private scene;
-    private entries;
     private group;
     private hoveredIdx;
     private selectedIdx;
@@ -500,12 +508,28 @@ declare class MarkerManager {
     private _displaySettings;
     private _cameras;
     private _worldBox?;
-    /** Shared circular pin texture (reused across all pins; tinted via material.color). */
+    /** Shared circular pin texture (white; tinted per vertex). */
     private _pinTexture?;
     /** World-space vertical offset for the label anchor above the pin. */
     private _labelOffset;
     /** Optional clip predicate — markers whose position fails it are hidden. */
     private _clipFilter;
+    private _geometry;
+    private _pins;
+    private _ghosts;
+    /** Per camera: has a position and passes the clip filter. */
+    private _shown;
+    private _labels;
+    /** "always" mode: the shown markers nearest the camera, which get labels. */
+    private _nearest;
+    /** Camera position the nearest set was computed for (Infinity = recompute). */
+    private _nearestFrom;
+    /** Canvas size and pin size in CSS pixels at the last render, for pick(). */
+    private _view;
+    private _pinPx;
+    private _tmp;
+    private _tmpColor;
+    private _tmpMatrix;
     constructor(scene: THREE.Scene);
     /** Apply new display settings and rebuild all markers */
     applyDisplaySettings(settings: DisplaySettings): void;
@@ -517,27 +541,46 @@ declare class MarkerManager {
      * is typically `ClipManager.isPointVisible`.
      */
     applyClipFilter(predicate: ((pos: THREE.Vector3) => boolean) | null): void;
-    /** Whether a marker survives the active clip filter. */
-    private _passesClip;
     private _applyAllMarkerVisibility;
     /** Lazily build (and cache) the shared circular pin texture. */
     private _getPinTexture;
     /**
-     * One pin sprite.
+     * One pass over all pins.
      *
      * `pass` selects which half of the depth range it is allowed to draw in —
      * see the class comment. The two passes together cover every pixel exactly
      * once, so the pair never reads as one brighter marker.
      */
-    private _makePin;
-    private _makeLabel;
-    /** Update pin color by index — both passes, or hover only half-lands. */
-    private _recolor;
+    private _makePins;
+    /**
+     * Per pass, per render: size the pins to the viewport (a PointsMaterial size
+     * is pixels, the pin is a fraction of the view), and once per frame refresh
+     * the "always" labels when the camera has moved.
+     */
+    private _beforeRender;
+    /** ponytail: a sort of every shown marker per moving frame, ~0.5 ms at 3,400; a spatial index if it ever shows up in a profile. */
+    private _updateNearest;
     /** Resolve whether a marker's label should be visible under the current mode. */
     private _labelShouldShow;
-    private _applyLabelVisibility;
+    /** Create the labels that should show, dispose the ones that should not. */
+    private _syncLabels;
+    private _disposeLabel;
+    private _makeLabel;
+    /** Set a pin's colour (both passes read the same vertex). */
+    private _recolor;
     setVisible(visible: boolean): void;
-    /** Return pin sprites for raycasting (one per camera, index order) */
+    /**
+     * The marker under a screen point: NDC in (as for `SceneManager.raycast`),
+     * camera index out, -1 for none. Pass `sceneManager.getActiveCamera()`.
+     * Nearest on screen wins; hidden and clipped markers never do.
+     */
+    pick(ndcX: number, ndcY: number, camera: THREE.Camera): number;
+    /**
+     * @deprecated Use {@link pick}: the pins are one `THREE.Points` now, so a
+     * raycast hit carries the camera index as `intersection.index` (not
+     * `object.userData.cameraIndex`), and three's Points threshold is in world
+     * units while the pins are a pixel size.
+     */
     getMeshes(): THREE.Object3D[];
     setHovered(idx: number): void;
     setSelected(idx: number): void;

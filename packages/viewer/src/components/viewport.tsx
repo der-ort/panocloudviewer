@@ -585,7 +585,13 @@ export function Viewport({ className }: ViewportProps) {
       scheduleSnap(nx, ny);
       magRef.current?.update(cx, cy); // no-op unless the magnifier is enabled
     }
-  }, [activeTool, scheduleSnap, buildClipDraftAt, footprintSlab, worldUnitsPerPixel]);
+
+    // Marker hover: the pin turns white and, in "hover" label mode, shows its label.
+    if (activeTool === "none" && showMarkers && markerRef.current && smRef.current) {
+      const { nx, ny } = getNDC(e);
+      markerRef.current.setHovered(markerRef.current.pick(nx, ny, smRef.current.getActiveCamera()));
+    }
+  }, [activeTool, showMarkers, scheduleSnap, buildClipDraftAt, footprintSlab, worldUnitsPerPixel]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const sm = smRef.current;
@@ -671,9 +677,8 @@ export function Viewport({ className }: ViewportProps) {
 
     // Marker click — only when markers are visible
     if (activeTool === "none" && showMarkers && markerRef.current) {
-      const hits = sm.raycast(nx, ny, markerRef.current.getMeshes());
-      if (hits.length > 0) {
-        const idx: number = (hits[0].object as THREE.Mesh).userData.cameraIndex;
+      const idx = markerRef.current.pick(nx, ny, sm.getActiveCamera());
+      if (idx >= 0) {
         markerRef.current.setSelected(idx);
         setSelectedCamera(cameras[idx]);
         config.onCameraSelect?.(cameras[idx]);
@@ -699,6 +704,7 @@ export function Viewport({ className }: ViewportProps) {
     lastSnapRef.current = null; // a later click must not commit a stale preview
     measureRef.current?.clearSnap();
     magRef.current?.clearCursor();
+    markerRef.current?.setHovered(-1);
   }, [cancelSnap]);
 
   // Right-click to finish measurement, cancel volume drag, or clear clip box

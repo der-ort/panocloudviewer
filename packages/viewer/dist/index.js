@@ -153,7 +153,7 @@ function createAdapter(source) {
       return new S3SourceAdapter(source.basePath);
   }
 }
-var SceneManager, PointCloudLoader, EASINGS, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_BASE_SCALE, GHOST_OPACITY_FACTOR, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, _muxerPromise, ExportManager, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, RING_COLOR, RING_HOVER_COLOR, RING_DRAG_COLOR, RotationRingController, _nextId, ClipManager, AxisGizmo, AXIS_DIR, MagnifierRenderer, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
+var SceneManager, PointCloudLoader, EASINGS, CameraAnimator, DISPLAY_PRESETS, MARKER_COLOR_DEFAULT, MARKER_COLOR_HOVER, MARKER_COLOR_SELECTED, PIN_SCREEN_FRACTION, GHOST_OPACITY_FACTOR, MAX_LABELS, MIN_PICK_RADIUS_PX, MarkerManager, _idCounter, COLORS, MeasurementManager, VIEW_DIRECTIONS, _muxerPromise, ExportManager, AXIS_COLOR, HANDLE_HOVER_COLOR, HANDLE_DRAG_COLOR, FaceHandleController, RING_COLOR, RING_HOVER_COLOR, RING_DRAG_COLOR, RotationRingController, _nextId, ClipManager, AxisGizmo, AXIS_DIR, MagnifierRenderer, MAX_SCENES, _nextId2, PresentationManager, S3SourceAdapter, ElectronSourceAdapter;
 var init_dist = __esm({
   "../core/dist/index.js"() {
     SceneManager = class _SceneManager {
@@ -964,11 +964,12 @@ var init_dist = __esm({
     MARKER_COLOR_DEFAULT = 14472518;
     MARKER_COLOR_HOVER = 16777215;
     MARKER_COLOR_SELECTED = 16737860;
-    PIN_BASE_SCALE = 0.022;
+    PIN_SCREEN_FRACTION = 0.019;
     GHOST_OPACITY_FACTOR = 0.2;
+    MAX_LABELS = 24;
+    MIN_PICK_RADIUS_PX = 8;
     MarkerManager = class {
       scene;
-      entries = [];
       group;
       hoveredIdx = -1;
       selectedIdx = -1;
@@ -976,12 +977,28 @@ var init_dist = __esm({
       _displaySettings = DISPLAY_PRESETS.standard;
       _cameras = [];
       _worldBox;
-      /** Shared circular pin texture (reused across all pins; tinted via material.color). */
+      /** Shared circular pin texture (white; tinted per vertex). */
       _pinTexture;
       /** World-space vertical offset for the label anchor above the pin. */
       _labelOffset = 0.5;
       /** Optional clip predicate — markers whose position fails it are hidden. */
       _clipFilter = null;
+      _geometry = null;
+      _pins = null;
+      _ghosts = null;
+      /** Per camera: has a position and passes the clip filter. */
+      _shown = [];
+      _labels = /* @__PURE__ */ new Map();
+      /** "always" mode: the shown markers nearest the camera, which get labels. */
+      _nearest = /* @__PURE__ */ new Set();
+      /** Camera position the nearest set was computed for (Infinity = recompute). */
+      _nearestFrom = new THREE5.Vector3(Infinity, 0, 0);
+      /** Canvas size and pin size in CSS pixels at the last render, for pick(). */
+      _view = new THREE5.Vector2(1, 1);
+      _pinPx = 16;
+      _tmp = new THREE5.Vector3();
+      _tmpColor = new THREE5.Color();
+      _tmpMatrix = new THREE5.Matrix4();
       constructor(scene) {
         this.scene = scene;
         this.group = new THREE5.Group();
@@ -1007,23 +1024,19 @@ var init_dist = __esm({
           const maxDim = Math.max(size.x, size.y, size.z);
           this._labelOffset = Math.max(0.2, Math.min(4, maxDim * 0.01));
         }
-        const pinScale = PIN_BASE_SCALE * this._displaySettings.markerSphereScale;
+        if (cameras.length === 0) return;
+        const positions = new Float32Array(cameras.length * 3);
         cameras.forEach((cam, i) => {
-          if (!cam.position) return;
-          const { x, y, z } = cam.position;
-          const pin = this._makePin(MARKER_COLOR_DEFAULT, pinScale, "front");
-          pin.position.set(x, y, z);
-          pin.userData = { cameraIndex: i, cameraData: cam };
-          this.group.add(pin);
-          const ghost = this._makePin(MARKER_COLOR_DEFAULT, pinScale, "behind");
-          ghost.position.set(x, y, z);
-          this.group.add(ghost);
-          const label = this._makeLabel(cam.name);
-          label.position.set(x, y, z + this._labelOffset);
-          label.visible = this.labelMode === "always";
-          this.group.add(label);
-          this.entries.push({ pin, ghost, label });
+          if (cam.position) positions.set([cam.position.x, cam.position.y, cam.position.z], i * 3);
         });
+        const geometry = new THREE5.BufferGeometry();
+        geometry.setAttribute("position", new THREE5.BufferAttribute(positions, 3));
+        geometry.setAttribute("color", new THREE5.BufferAttribute(new Float32Array(cameras.length * 4), 4));
+        this._geometry = geometry;
+        for (let i = 0; i < cameras.length; i++) this._recolor(i, MARKER_COLOR_DEFAULT);
+        this._pins = this._makePins(geometry, "front");
+        this._ghosts = this._makePins(geometry, "behind");
+        this.group.add(this._pins, this._ghosts);
         this._applyAllMarkerVisibility();
       }
       /**
@@ -1035,21 +1048,17 @@ var init_dist = __esm({
         this._clipFilter = predicate;
         this._applyAllMarkerVisibility();
       }
-      /** Whether a marker survives the active clip filter. */
-      _passesClip(idx) {
-        if (!this._clipFilter) return true;
-        const cam = this._cameras[idx];
-        if (!cam?.position) return true;
-        return this._clipFilter(new THREE5.Vector3(cam.position.x, cam.position.y, cam.position.z));
-      }
       _applyAllMarkerVisibility() {
-        for (let i = 0; i < this.entries.length; i++) {
-          const entry = this.entries[i];
-          const pass = this._passesClip(i);
-          entry.pin.visible = pass;
-          entry.ghost.visible = pass;
-          entry.label.visible = pass && this._labelShouldShow(i);
+        const color = this._geometry?.getAttribute("color");
+        if (!color) return;
+        for (let i = 0; i < this._cameras.length; i++) {
+          const p = this._cameras[i].position;
+          this._shown[i] = !!p && (!this._clipFilter || this._clipFilter(this._tmp.set(p.x, p.y, p.z)));
+          color.setW(i, this._shown[i] ? 1 : 0);
         }
+        color.needsUpdate = true;
+        this._nearestFrom.set(Infinity, 0, 0);
+        this._syncLabels();
       }
       /** Lazily build (and cache) the shared circular pin texture. */
       _getPinTexture() {
@@ -1078,19 +1087,20 @@ var init_dist = __esm({
         return tex;
       }
       /**
-       * One pin sprite.
+       * One pass over all pins.
        *
        * `pass` selects which half of the depth range it is allowed to draw in —
        * see the class comment. The two passes together cover every pixel exactly
        * once, so the pair never reads as one brighter marker.
        */
-      _makePin(color, scale, pass) {
+      _makePins(geometry, pass) {
         const behind = pass === "behind";
-        const mat = new THREE5.SpriteMaterial({
+        const material = new THREE5.PointsMaterial({
           map: this._getPinTexture(),
-          color,
+          vertexColors: true,
+          // RGBA: colour = state, alpha = shown
           sizeAttenuation: false,
-          // constant on-screen size at any zoom
+          // constant on-screen size at any zoom, ortho included
           depthTest: true,
           // GreaterDepth draws ONLY the occluded part; the default LessEqualDepth
           // draws only the unoccluded part.
@@ -1099,9 +1109,67 @@ var init_dist = __esm({
           transparent: true,
           opacity: this._displaySettings.markerSphereOpacity * (behind ? GHOST_OPACITY_FACTOR : 1)
         });
-        const sprite = new THREE5.Sprite(mat);
-        sprite.scale.set(scale, scale, 1);
-        return sprite;
+        const points = new THREE5.Points(geometry, material);
+        points.frustumCulled = false;
+        points.onBeforeRender = (renderer, _scene, camera) => this._beforeRender(renderer, camera, material);
+        return points;
+      }
+      /**
+       * Per pass, per render: size the pins to the viewport (a PointsMaterial size
+       * is pixels, the pin is a fraction of the view), and once per frame refresh
+       * the "always" labels when the camera has moved.
+       */
+      _beforeRender(renderer, camera, material) {
+        const ratio = renderer.getPixelRatio();
+        const target = renderer.getRenderTarget();
+        const heightPx = target ? target.height / ratio : renderer.getSize(this._view).y;
+        material.size = PIN_SCREEN_FRACTION * this._displaySettings.markerSphereScale * heightPx;
+        if (target || material !== this._pins?.material) return;
+        this._pinPx = material.size;
+        if (this.labelMode === "always" && camera.position.distanceToSquared(this._nearestFrom) > 1e-6) {
+          this._nearestFrom.copy(camera.position);
+          this._updateNearest(camera.position);
+        }
+      }
+      /** ponytail: a sort of every shown marker per moving frame, ~0.5 ms at 3,400; a spatial index if it ever shows up in a profile. */
+      _updateNearest(from) {
+        const pos = this._geometry.getAttribute("position");
+        const byDistance = [];
+        for (let i = 0; i < this._shown.length; i++) {
+          if (this._shown[i]) byDistance.push([this._tmp.fromBufferAttribute(pos, i).distanceToSquared(from), i]);
+        }
+        byDistance.sort((a, b) => a[0] - b[0]);
+        this._nearest = new Set(byDistance.slice(0, MAX_LABELS).map(([, i]) => i));
+        this._syncLabels();
+      }
+      /** Resolve whether a marker's label should be visible under the current mode. */
+      _labelShouldShow(idx) {
+        if (!this._shown[idx] || this.labelMode === "hidden") return false;
+        if (idx === this.hoveredIdx || idx === this.selectedIdx) return true;
+        return this.labelMode === "always" && this._nearest.has(idx);
+      }
+      /** Create the labels that should show, dispose the ones that should not. */
+      _syncLabels() {
+        for (const idx of [...this._nearest, this.hoveredIdx, this.selectedIdx]) {
+          if (idx >= 0 && this._labelShouldShow(idx) && !this._labels.has(idx)) {
+            const p = this._cameras[idx].position;
+            const label = this._makeLabel(this._cameras[idx].name);
+            label.position.set(p.x, p.y, p.z + this._labelOffset);
+            this.group.add(label);
+            this._labels.set(idx, label);
+          }
+        }
+        for (const idx of [...this._labels.keys()]) {
+          if (!this._labelShouldShow(idx)) this._disposeLabel(idx);
+        }
+      }
+      _disposeLabel(idx) {
+        const label = this._labels.get(idx);
+        if (!label) return;
+        label.material.map?.dispose();
+        label.material.dispose();
+        this.group.remove(label);
+        this._labels.delete(idx);
       }
       _makeLabel(text) {
         const W = 200;
@@ -1135,67 +1203,84 @@ var init_dist = __esm({
         sprite.scale.set(h * (W / H), h, 1);
         return sprite;
       }
-      /** Update pin color by index — both passes, or hover only half-lands. */
+      /** Set a pin's colour (both passes read the same vertex). */
       _recolor(idx, color) {
-        const entry = this.entries[idx];
-        if (!entry) return;
-        entry.pin.material.color.setHex(color);
-        entry.ghost.material.color.setHex(color);
-      }
-      /** Resolve whether a marker's label should be visible under the current mode. */
-      _labelShouldShow(idx) {
-        if (this.labelMode === "always") return true;
-        if (this.labelMode === "hidden") return false;
-        return idx === this.hoveredIdx || idx === this.selectedIdx;
-      }
-      _applyLabelVisibility(idx) {
-        const entry = this.entries[idx];
-        if (!entry) return;
-        entry.label.visible = this._passesClip(idx) && this._labelShouldShow(idx);
+        const attr = this._geometry?.getAttribute("color");
+        if (!attr || idx < 0 || idx >= attr.count) return;
+        const c = this._tmpColor.setHex(color);
+        attr.setXYZ(idx, c.r, c.g, c.b);
+        attr.needsUpdate = true;
       }
       setVisible(visible) {
         this.group.visible = visible;
       }
-      /** Return pin sprites for raycasting (one per camera, index order) */
+      /**
+       * The marker under a screen point: NDC in (as for `SceneManager.raycast`),
+       * camera index out, -1 for none. Pass `sceneManager.getActiveCamera()`.
+       * Nearest on screen wins; hidden and clipped markers never do.
+       */
+      pick(ndcX, ndcY, camera) {
+        const pos = this._geometry?.getAttribute("position");
+        if (!pos || !this.group.visible) return -1;
+        camera.updateMatrixWorld();
+        const m = this._tmpMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        const halfW = this._view.x / 2;
+        const halfH = this._view.y / 2;
+        const radius = Math.max(this._pinPx / 2, MIN_PICK_RADIUS_PX);
+        let best = -1;
+        let bestSq = radius * radius;
+        for (let i = 0; i < this._shown.length; i++) {
+          if (!this._shown[i]) continue;
+          const p = this._tmp.fromBufferAttribute(pos, i).applyMatrix4(m);
+          if (p.z < -1 || p.z > 1) continue;
+          const dx = (p.x - ndcX) * halfW;
+          const dy = (p.y - ndcY) * halfH;
+          const sq = dx * dx + dy * dy;
+          if (sq <= bestSq) {
+            best = i;
+            bestSq = sq;
+          }
+        }
+        return best;
+      }
+      /**
+       * @deprecated Use {@link pick}: the pins are one `THREE.Points` now, so a
+       * raycast hit carries the camera index as `intersection.index` (not
+       * `object.userData.cameraIndex`), and three's Points threshold is in world
+       * units while the pins are a pixel size.
+       */
       getMeshes() {
-        return this.entries.map((e) => e.pin);
+        return this._pins ? [this._pins] : [];
       }
       setHovered(idx) {
         if (this.hoveredIdx === idx) return;
         const prev = this.hoveredIdx;
         this.hoveredIdx = idx;
-        if (prev >= 0 && prev !== this.selectedIdx) {
-          this._recolor(prev, MARKER_COLOR_DEFAULT);
-          this._applyLabelVisibility(prev);
-        }
-        if (idx >= 0 && idx !== this.selectedIdx) {
-          this._recolor(idx, MARKER_COLOR_HOVER);
-          this._applyLabelVisibility(idx);
-        }
+        if (prev >= 0 && prev !== this.selectedIdx) this._recolor(prev, MARKER_COLOR_DEFAULT);
+        if (idx >= 0 && idx !== this.selectedIdx) this._recolor(idx, MARKER_COLOR_HOVER);
+        this._syncLabels();
       }
       setSelected(idx) {
         const prev = this.selectedIdx;
         this.selectedIdx = idx;
-        if (prev >= 0) {
-          this._recolor(prev, prev === this.hoveredIdx ? MARKER_COLOR_HOVER : MARKER_COLOR_DEFAULT);
-          this._applyLabelVisibility(prev);
-        }
-        if (idx >= 0) {
-          this._recolor(idx, MARKER_COLOR_SELECTED);
-          this._applyLabelVisibility(idx);
-        }
+        if (prev >= 0) this._recolor(prev, prev === this.hoveredIdx ? MARKER_COLOR_HOVER : MARKER_COLOR_DEFAULT);
+        if (idx >= 0) this._recolor(idx, MARKER_COLOR_SELECTED);
+        this._syncLabels();
       }
       clear() {
-        for (const { pin, ghost, label } of this.entries) {
-          pin.material.dispose();
-          this.group.remove(pin);
-          ghost.material.dispose();
-          this.group.remove(ghost);
-          label.material.map?.dispose();
-          label.material.dispose();
-          this.group.remove(label);
+        for (const idx of [...this._labels.keys()]) this._disposeLabel(idx);
+        for (const points of [this._pins, this._ghosts]) {
+          if (!points) continue;
+          points.material.dispose();
+          this.group.remove(points);
         }
-        this.entries = [];
+        this._geometry?.dispose();
+        this._geometry = null;
+        this._pins = null;
+        this._ghosts = null;
+        this._shown = [];
+        this._nearest = /* @__PURE__ */ new Set();
+        this._nearestFrom.set(Infinity, 0, 0);
         this.hoveredIdx = -1;
         this.selectedIdx = -1;
       }
@@ -4389,7 +4474,11 @@ function Viewport({ className }) {
       scheduleSnap(nx, ny);
       magRef.current?.update(cx, cy);
     }
-  }, [activeTool, scheduleSnap, buildClipDraftAt, footprintSlab, worldUnitsPerPixel]);
+    if (activeTool === "none" && showMarkers && markerRef.current && smRef.current) {
+      const { nx, ny } = getNDC(e);
+      markerRef.current.setHovered(markerRef.current.pick(nx, ny, smRef.current.getActiveCamera()));
+    }
+  }, [activeTool, showMarkers, scheduleSnap, buildClipDraftAt, footprintSlab, worldUnitsPerPixel]);
   const handleMouseUp = useCallback((e) => {
     const sm = smRef.current;
     const fh = clipRef.current?.faceHandles;
@@ -4454,9 +4543,8 @@ function Viewport({ className }) {
     if (!sm) return;
     const { nx, ny } = getNDC(e);
     if (activeTool === "none" && showMarkers && markerRef.current) {
-      const hits = sm.raycast(nx, ny, markerRef.current.getMeshes());
-      if (hits.length > 0) {
-        const idx = hits[0].object.userData.cameraIndex;
+      const idx = markerRef.current.pick(nx, ny, sm.getActiveCamera());
+      if (idx >= 0) {
         markerRef.current.setSelected(idx);
         setSelectedCamera(cameras[idx]);
         config.onCameraSelect?.(cameras[idx]);
@@ -4476,6 +4564,7 @@ function Viewport({ className }) {
     lastSnapRef.current = null;
     measureRef.current?.clearSnap();
     magRef.current?.clearCursor();
+    markerRef.current?.setHovered(-1);
   }, [cancelSnap]);
   const handleContextMenu = useCallback((e) => {
     e.preventDefault();
@@ -7849,7 +7938,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "212baea \xB7 2026-10-20 19:05Z" ;
+var PCV_BUILD = "6d281c1 \xB7 2026-10-20 19:15Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
