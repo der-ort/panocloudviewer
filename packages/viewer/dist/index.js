@@ -1758,7 +1758,15 @@ var init_dist = __esm({
       clearAll() {
         for (const id of this.measurements.keys()) this.remove(id);
       }
+      /**
+       * Tearing down the manager is not the user deleting measurements, so it
+       * says nothing: the listener is dropped before the list is cleared. A host
+       * that saves what `onChange` reports (the SMAAG platform syncs it to its
+       * database) otherwise deleted every saved measurement each time the
+       * viewport unmounted.
+       */
       dispose() {
+        this.onChange = void 0;
         this.clearAll();
         this.clearPreview();
         this.clearSnap();
@@ -7696,7 +7704,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "0df8014 \xB7 2026-10-19 16:21Z" ;
+var PCV_BUILD = "3c3e3a8 \xB7 2026-10-20 09:44Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
