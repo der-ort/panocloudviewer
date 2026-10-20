@@ -63,7 +63,7 @@ export function ExportTools() {
   };
 
   const views: { value: ExportView; label: string }[] = [
-    { value: "current", label: "Current view" },
+    { value: "current", label: t.viewCurrent },
     { value: "top",   label: t.viewTop },
     { value: "front", label: t.viewFront },
     { value: "side",  label: t.viewSide },

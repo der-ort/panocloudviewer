@@ -59,6 +59,7 @@ export const de = createLocale(en, {
     exportImageTitle: "Orthografisches Bild exportieren",
     title: "Bild exportieren",
     view: "Ansicht",
+    viewCurrent: "Aktuelle Ansicht",
     viewTop: "Oben (Plan)",
     viewFront: "Vorne",
     viewSide: "Seite",

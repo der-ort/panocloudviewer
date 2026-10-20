@@ -3771,6 +3771,7 @@ var init_en = __esm({
         exportImageTitle: "Export orthographic image",
         title: "Export Image",
         view: "View",
+        viewCurrent: "Current view",
         viewTop: "Top (Plan)",
         viewFront: "Front",
         viewSide: "Side",
@@ -5106,7 +5107,7 @@ function ExportTools() {
     }
   };
   const views = [
-    { value: "current", label: "Current view" },
+    { value: "current", label: t.viewCurrent },
     { value: "top", label: t.viewTop },
     { value: "front", label: t.viewFront },
     { value: "side", label: t.viewSide },
@@ -5501,6 +5502,9 @@ function ToggleRow({ icon, label, active, onToggle, disabled, hint }) {
     }
   );
 }
+
+// src/components/sidebar/layers-panel.tsx
+init_locale_context();
 function LayersPanel() {
   const {
     showMarkers,
@@ -5510,13 +5514,14 @@ function LayersPanel() {
   } = useViewer();
   const { cameras } = useData();
   const hasPanoramas = cameras.length > 0;
+  const t = useLocale().sidebar;
   return /* @__PURE__ */ jsxs("div", { className: "p-3 space-y-1 overflow-y-auto h-full", children: [
-    /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60 px-1 mb-1", children: "Layers" }),
+    /* @__PURE__ */ jsx("p", { className: "text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60 px-1 mb-1", children: t.tabLayers }),
     hasPanoramas && /* @__PURE__ */ jsx(
       ToggleRow,
       {
         icon: /* @__PURE__ */ jsx(Camera, { size: 15 }),
-        label: "Panoramas",
+        label: t.tabPanoramas,
         active: showMarkers,
         onToggle: () => setShowMarkers(!showMarkers)
       }
@@ -5525,7 +5530,7 @@ function LayersPanel() {
       ToggleRow,
       {
         icon: /* @__PURE__ */ jsx(Ruler, { size: 15 }),
-        label: "Measurements",
+        label: t.tabMeasurements,
         active: showMeasurements,
         onToggle: () => setShowMeasurements(!showMeasurements)
       }
@@ -5535,6 +5540,7 @@ function LayersPanel() {
 }
 function ClassificationSection() {
   const [open, setOpen] = React26.useState(false);
+  const t = useLocale().sidebar;
   return /* @__PURE__ */ jsxs("div", { className: "mt-1 border-t border-border pt-1", children: [
     /* @__PURE__ */ jsxs(
       "button",
@@ -5543,7 +5549,7 @@ function ClassificationSection() {
         className: "flex items-center gap-2.5 w-full px-2 py-2 rounded-lg hover:bg-muted transition-colors text-left",
         children: [
           /* @__PURE__ */ jsx("span", { className: "text-muted-foreground", children: /* @__PURE__ */ jsx(Tag, { size: 15 }) }),
-          /* @__PURE__ */ jsx("span", { className: "flex-1 text-xs text-foreground", children: "Classification" }),
+          /* @__PURE__ */ jsx("span", { className: "flex-1 text-xs text-foreground", children: t.tabClassification }),
           /* @__PURE__ */ jsx(ChevronRight, { size: 14, className: cn("text-muted-foreground/60 transition-transform", open && "rotate-90") })
         ]
       }
@@ -6923,15 +6929,15 @@ function useDraggable(options) {
 // src/components/overlays/rendering-settings.tsx
 init_utils();
 var COLOR_MODES2 = [
-  { value: "rgb", label: "RGB" },
-  { value: "height", label: "Elevation" },
-  { value: "intensity", label: "Intensity" },
-  { value: "classification", label: "Classification" }
+  { value: "rgb", key: "colorRgb" },
+  { value: "height", key: "colorElevation" },
+  { value: "intensity", key: "colorIntensity" },
+  { value: "classification", key: "colorClassification" }
 ];
 var QUALITY = [
-  { value: "performance", label: "Performance" },
-  { value: "balanced", label: "Balanced" },
-  { value: "high", label: "High" }
+  { value: "performance", key: "qualityPerformance" },
+  { value: "balanced", key: "qualityBalanced" },
+  { value: "high", key: "qualityHigh" }
 ];
 function RenderingSettings({ open, onClose }) {
   const { loader, colorMode, setColorMode, pointSize, setPointSize, pointBudget, setPointBudget } = useViewer();
@@ -6941,6 +6947,7 @@ function RenderingSettings({ open, onClose }) {
   const { settings: display, updateSetting: updateDisplay } = useDisplaySettings();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().renderingSettings;
+  const tb = useLocale().toolbar;
   const pcvRoot = usePcvRoot();
   const { position, onDragStart, reset } = useDraggable({ bounds: pcvRoot ?? void 0 });
   useEffect(() => {
@@ -7051,14 +7058,14 @@ function RenderingSettings({ open, onClose }) {
                   loader?.setColorMode(cm.value);
                 },
                 className: colorMode === cm.value ? "text-[10px] py-1 px-2 rounded bg-[hsl(var(--brand)/0.2)] text-[hsl(var(--brand))]" : "text-[10px] py-1 px-2 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60",
-                children: cm.label
+                children: tb[cm.key]
               },
               cm.value
             )) }),
             /* @__PURE__ */ jsx(
               Slider,
               {
-                label: "Point size",
+                label: tb.size,
                 value: pointSize,
                 min: 0.1,
                 max: 5,
@@ -7073,7 +7080,7 @@ function RenderingSettings({ open, onClose }) {
             /* @__PURE__ */ jsx(
               Slider,
               {
-                label: "Budget",
+                label: tb.budget,
                 value: pointBudget,
                 min: budgetRange.min,
                 max: budgetRange.max,
@@ -7092,7 +7099,7 @@ function RenderingSettings({ open, onClose }) {
               {
                 onClick: () => setQualityPreset(q.value),
                 className: "flex-1 text-[10px] py-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60",
-                children: q.label
+                children: tb[q.key]
               },
               q.value
             )) })
@@ -7249,7 +7256,7 @@ function RenderingSettings({ open, onClose }) {
             /* @__PURE__ */ jsx(
               Slider,
               {
-                label: "Point size",
+                label: tb.size,
                 value: display.measurementSphereRadius,
                 min: 0.05,
                 max: 0.4,
@@ -7960,7 +7967,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "a7ca858 \xB7 2026-10-20 19:21Z" ;
+var PCV_BUILD = "5c8a066 \xB7 2026-10-20 19:54Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
@@ -9139,6 +9146,7 @@ var de = createLocale(en, {
     exportImageTitle: "Orthografisches Bild exportieren",
     title: "Bild exportieren",
     view: "Ansicht",
+    viewCurrent: "Aktuelle Ansicht",
     viewTop: "Oben (Plan)",
     viewFront: "Vorne",
     viewSide: "Seite",

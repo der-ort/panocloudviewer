@@ -1257,6 +1257,7 @@ interface ViewerLocale {
         exportImageTitle: string;
         title: string;
         view: string;
+        viewCurrent: string;
         viewTop: string;
         viewFront: string;
         viewSide: string;

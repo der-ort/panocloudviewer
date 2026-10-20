@@ -7,6 +7,7 @@ import { useViewer } from "../../providers/viewer-provider";
 import { useData } from "../../providers/data-provider";
 import { ClassificationPanel } from "./classification-panel";
 import { ToggleRow as LayerRow } from "../../ui/toggle-row";
+import { useLocale } from "../../i18n/locale-context";
 
 /**
  * Layers panel — one place to toggle every overlay (panoramas, measurements,
@@ -20,24 +21,25 @@ export function LayersPanel() {
   } = useViewer();
   const { cameras } = useData();
   const hasPanoramas = cameras.length > 0;
+  const t = useLocale().sidebar;
 
   return (
     <div className="p-3 space-y-1 overflow-y-auto h-full">
       <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60 px-1 mb-1">
-        Layers
+        {t.tabLayers}
       </p>
 
       {hasPanoramas && (
         <LayerRow
           icon={<Camera size={15} />}
-          label="Panoramas"
+          label={t.tabPanoramas}
           active={showMarkers}
           onToggle={() => setShowMarkers(!showMarkers)}
         />
       )}
       <LayerRow
         icon={<Ruler size={15} />}
-        label="Measurements"
+        label={t.tabMeasurements}
         active={showMeasurements}
         onToggle={() => setShowMeasurements(!showMeasurements)}
       />
@@ -51,6 +53,7 @@ export function LayersPanel() {
 /** Collapsible "Classification" block folded into the Layers panel. */
 function ClassificationSection() {
   const [open, setOpen] = React.useState(false);
+  const t = useLocale().sidebar;
   return (
     <div className="mt-1 border-t border-border pt-1">
       <button
@@ -58,7 +61,7 @@ function ClassificationSection() {
         className="flex items-center gap-2.5 w-full px-2 py-2 rounded-lg hover:bg-muted transition-colors text-left"
       >
         <span className="text-muted-foreground"><Tag size={15} /></span>
-        <span className="flex-1 text-xs text-foreground">Classification</span>
+        <span className="flex-1 text-xs text-foreground">{t.tabClassification}</span>
         <ChevronRight size={14} className={cn("text-muted-foreground/60 transition-transform", open && "rotate-90")} />
       </button>
       {open && (

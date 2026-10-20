@@ -58,6 +58,7 @@ export const en: ViewerLocale = {
     exportImageTitle: "Export orthographic image",
     title: "Export Image",
     view: "View",
+    viewCurrent: "Current view",
     viewTop: "Top (Plan)",
     viewFront: "Front",
     viewSide: "Side",

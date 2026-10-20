@@ -18,17 +18,18 @@ interface RenderingSettingsProps {
   onClose: () => void;
 }
 
-const COLOR_MODES: { value: ColorMode; label: string }[] = [
-  { value: "rgb", label: "RGB" },
-  { value: "height", label: "Elevation" },
-  { value: "intensity", label: "Intensity" },
-  { value: "classification", label: "Classification" },
+// Labels from the toolbar's locale: the same words the toolbar's own selects use.
+const COLOR_MODES: { value: ColorMode; key: "colorRgb" | "colorElevation" | "colorIntensity" | "colorClassification" }[] = [
+  { value: "rgb", key: "colorRgb" },
+  { value: "height", key: "colorElevation" },
+  { value: "intensity", key: "colorIntensity" },
+  { value: "classification", key: "colorClassification" },
 ];
 
 const QUALITY = [
-  { value: "performance" as const, label: "Performance" },
-  { value: "balanced" as const, label: "Balanced" },
-  { value: "high" as const, label: "High" },
+  { value: "performance" as const, key: "qualityPerformance" as const },
+  { value: "balanced" as const, key: "qualityBalanced" as const },
+  { value: "high" as const, key: "qualityHigh" as const },
 ];
 
 /**
@@ -46,6 +47,7 @@ export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
   const { settings: display, updateSetting: updateDisplay } = useDisplaySettings();
   const { resolvedTheme, toggleTheme } = useTheme();
   const t = useLocale().renderingSettings;
+  const tb = useLocale().toolbar;
   const pcvRoot = usePcvRoot();
   const { position, onDragStart, reset } = useDraggable({ bounds: pcvRoot ?? undefined });
 
@@ -169,21 +171,21 @@ export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
                     : "text-[10px] py-1 px-2 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60"
                 }
               >
-                {cm.label}
+                {tb[cm.key]}
               </button>
             ))}
           </div>
-          <Slider label="Point size" value={pointSize} min={0.1} max={5} step={0.1}
+          <Slider label={tb.size} value={pointSize} min={0.1} max={5} step={0.1}
             decimals={1}
             onChange={v => { setPointSize(v); loader?.setPointSize(v); }} />
-          <Slider label="Budget" value={pointBudget} min={budgetRange.min} max={budgetRange.max} step={budgetRange.step}
+          <Slider label={tb.budget} value={pointBudget} min={budgetRange.min} max={budgetRange.max} step={budgetRange.step}
             scale={1e6} unit="M" decimals={1}
             onChange={v => { setPointBudget(v); loader?.setPointBudget(v); }} />
           <div className="flex items-center gap-1 pt-0.5">
             {QUALITY.map(q => (
               <button key={q.value} onClick={() => setQualityPreset(q.value)}
                 className="flex-1 text-[10px] py-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60">
-                {q.label}
+                {tb[q.key]}
               </button>
             ))}
           </div>
@@ -239,7 +241,7 @@ export function RenderingSettings({ open, onClose }: RenderingSettingsProps) {
         <Section title="Measurements & markers">
           <Slider label="Label size" value={display.measurementLabelScale} min={0.3} max={2.5} step={0.1}
             unit="×" decimals={1} onChange={v => updateDisplay("measurementLabelScale", v)} />
-          <Slider label="Point size" value={display.measurementSphereRadius} min={0.05} max={0.4} step={0.01}
+          <Slider label={tb.size} value={display.measurementSphereRadius} min={0.05} max={0.4} step={0.01}
             scale={0.15} unit="×" decimals={1} onChange={v => updateDisplay("measurementSphereRadius", v)} />
           <Slider label="Pin size" value={display.markerSphereScale} min={0.4} max={2} step={0.1}
             unit="×" decimals={1} onChange={v => updateDisplay("markerSphereScale", v)} />
