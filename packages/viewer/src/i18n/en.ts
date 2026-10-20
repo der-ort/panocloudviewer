@@ -133,6 +133,8 @@ export const en: ViewerLocale = {
     noMeasurements: "No measurements yet.",
     useMeasureToolHint: "Use the toolbar to start measuring.",
     measurementCount: (n) => `${n} measurement${n === 1 ? "" : "s"}`,
+    confirmClearAll: (n) =>
+      `Delete ${n === 1 ? "the measurement" : `all ${n} measurements`}? Deleted measurements cannot be restored.`,
     downloadCsv: "Download CSV",
     csv: "CSV",
     clearAll: "Clear all",

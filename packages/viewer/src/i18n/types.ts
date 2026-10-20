@@ -131,6 +131,8 @@ export interface ViewerLocale {
     noMeasurements: string;
     useMeasureToolHint: string;
     measurementCount: (count: number) => string;
+    /** Asked before every "clear all": saved measurements cannot be restored. */
+    confirmClearAll: (count: number) => string;
     downloadCsv: string;
     csv: string;
     clearAll: string;

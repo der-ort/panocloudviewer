@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
+import { useLocale } from "../../i18n/locale-context";
+import { confirmClearAll } from "../../lib/confirm-clear";
 import { FloatingPalette } from "./floating-palette";
 import type { ActiveTool } from "@der-ort/pano-cloud-viewer-core";
 import type { ClipMode } from "@der-ort/pano-cloud-viewer-core";
@@ -45,6 +47,7 @@ const MEASURE_TOOLS: { tool: ActiveTool; icon: React.ReactNode; label: string }[
 
 export function ToolsPalette() {
   const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, clipBoxEntries } = useViewer();
+  const confirmQuestion = useLocale().measurementsPanel.confirmClearAll;
 
   const toggle = useCallback((tool: ActiveTool) => {
     setActiveTool(activeTool === tool ? "none" : tool);
@@ -77,7 +80,7 @@ export function ToolsPalette() {
         {MEASURE_TOOLS.map(def => (
           <ToolBtn key={def.tool} icon={def.icon} label={def.label} active={activeTool === def.tool} onClick={() => toggle(def.tool)} />
         ))}
-        <ToolBtn icon={<X size={14} />} label="Clear All" onClick={() => { measurementManager?.clearAll(); setMeasurementList([]); }} />
+        <ToolBtn icon={<X size={14} />} label="Clear All" onClick={() => { if (!confirmClearAll(measurementManager, confirmQuestion)) return; measurementManager?.clearAll(); setMeasurementList([]); }} />
       </div>
 
       <p className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-3 mb-1">Clipping</p>

@@ -8,6 +8,7 @@ import {
 import { cn } from "../../lib/utils";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
+import { confirmClearAll } from "../../lib/confirm-clear";
 import type { ActiveTool, MeasurementType } from "@der-ort/pano-cloud-viewer-core";
 
 interface RailBtnProps {
@@ -61,6 +62,7 @@ const ADVANCED_MEASURES: { type: MeasurementType; tool: ActiveTool; icon: React.
 export function ToolRail() {
   const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, uiMode, selectedClipBoxId, showMagnifier, setShowMagnifier } = useViewer();
   const t = useLocale().toolRail;
+  const confirmQuestion = useLocale().measurementsPanel.confirmClearAll;
 
   const isPro = uiMode === "professional";
 
@@ -92,6 +94,7 @@ export function ToolRail() {
   };
 
   const clearMeasurements = () => {
+    if (!confirmClearAll(measurementManager, confirmQuestion)) return;
     measurementManager?.clearAll();
     setMeasurementList([]);
   };

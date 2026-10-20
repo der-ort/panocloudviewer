@@ -134,6 +134,8 @@ export const de = createLocale(en, {
     noMeasurements: "Noch keine Messungen.",
     useMeasureToolHint: "Werkzeuge nutzen um zu messen.",
     measurementCount: (n: number) => `${n} Messung${n === 1 ? "" : "en"}`,
+    confirmClearAll: (n: number) =>
+      `${n === 1 ? "Die Messung" : `Alle ${n} Messungen`} löschen? Gelöschte Messungen lassen sich nicht wiederherstellen.`,
     downloadCsv: "CSV herunterladen",
     csv: "CSV",
     clearAll: "Alle löschen",

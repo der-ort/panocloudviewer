@@ -369,6 +369,9 @@ export class SceneManager {
     window.removeEventListener("blur", this.onWindowBlur);
     this.controls.dispose();
     this.renderer.dispose();
+    // dispose() frees three's GL objects but not the context, which lives
+    // until the canvas is collected; a browser keeps a handful at most.
+    this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
   }
 

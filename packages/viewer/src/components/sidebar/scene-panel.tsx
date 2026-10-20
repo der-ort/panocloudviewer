@@ -5,10 +5,12 @@ import { CloudCog, Ruler, Trash2 } from "lucide-react";
 import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
 import { ClipToolbar } from "../toolbar/clip-toolbar";
+import { confirmClearAll } from "../../lib/confirm-clear";
 
 export function ScenePanel() {
   const { measurementList, measurementManager, setMeasurementList, loader, uiMode } = useViewer();
   const t = useLocale().scenePanel;
+  const confirmQuestion = useLocale().measurementsPanel.confirmClearAll;
 
   // The section (clipping) tool is Professional-only — it's gated the same way
   // in the tool rail — so don't advertise "Sections" in the sidebar in Lite mode.
@@ -20,6 +22,7 @@ export function ScenePanel() {
   };
 
   const clearAll = () => {
+    if (!confirmClearAll(measurementManager, confirmQuestion)) return;
     measurementManager?.clearAll();
     setMeasurementList([]);
   };

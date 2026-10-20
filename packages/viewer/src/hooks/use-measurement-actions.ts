@@ -3,10 +3,13 @@
 import { useCallback } from "react";
 import { useViewer } from "../providers/viewer-provider";
 import { exportMeasurementsCSV } from "../lib/utils";
+import { confirmClearAll } from "../lib/confirm-clear";
+import { useLocale } from "../i18n/locale-context";
 import type { ActiveTool, MeasurementType } from "@der-ort/pano-cloud-viewer-core";
 
 export function useMeasurementActions() {
   const { activeTool, setActiveTool, measurementManager, measurementList, setMeasurementList } = useViewer();
+  const confirmQuestion = useLocale().measurementsPanel.confirmClearAll;
 
   const startTool = useCallback((type: MeasurementType) => {
     const tool = `measure-${type}` as ActiveTool;
@@ -18,9 +21,10 @@ export function useMeasurementActions() {
   }, [setActiveTool]);
 
   const clearAll = useCallback(() => {
+    if (!confirmClearAll(measurementManager, confirmQuestion)) return;
     measurementManager?.clearAll();
     setMeasurementList([]);
-  }, [measurementManager, setMeasurementList]);
+  }, [measurementManager, setMeasurementList, confirmQuestion]);
 
   const remove = useCallback((id: string) => {
     measurementManager?.remove(id);

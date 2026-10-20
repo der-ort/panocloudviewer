@@ -204,7 +204,10 @@ export function Viewport({ className }: ViewportProps) {
     // link, a scene, the person), which wins. The box is kept either way for the
     // "Gebäude einpassen" button and the view presets.
     let frameTimer: number | undefined;
+    let disposed = false;
     loader.load("metadata.json", config.pointBudget).then(() => {
+      // Unmounted while loading: the cloud arrived into a disposed scene.
+      if (disposed) { loader.clear(); return; }
       setPointBudget(loader.appliedBudget);
       const opened = { position: sm.camera.position.clone(), target: sm.controls.target.clone() };
       const started = performance.now();
@@ -227,11 +230,20 @@ export function Viewport({ className }: ViewportProps) {
     }).catch(console.error);
 
     return () => {
+      disposed = true;
       if (frameTimer !== undefined) window.clearTimeout(frameTimer);
       if (clipChangeRaf != null) cancelAnimationFrame(clipChangeRaf);
       sm.removePostRenderCallback(axisFrame);
       sm.removePostRenderCallback(magFrame);
       magnifier.dispose();
+      // The loaded octree is most of what a viewport holds (about 95 MB for a
+      // small scan), and the potree instance caches its nodes. Neither was
+      // released, and three's renderer.dispose() leaves the WebGL context to
+      // the garbage collector: every scan opened inside a host app stayed in
+      // memory with its context, until an integrated GPU dropped the oldest.
+      // Released here explicitly, whatever else may still hold `sm`.
+      loader.clear();
+      sm.potree = null;
       sm.dispose();
       measureMgr.dispose();
       markerMgr.dispose();

@@ -459,6 +459,7 @@ var init_dist = __esm({
         window.removeEventListener("blur", this.onWindowBlur);
         this.controls.dispose();
         this.renderer.dispose();
+        this.renderer.forceContextLoss();
         this.renderer.domElement.remove();
       }
       /**
@@ -828,15 +829,22 @@ var init_dist = __esm({
         return this.currentClouds[0] ?? null;
       }
       /**
+       * The most an automatic budget asks for. 8% of an 870 M-point scan was a
+       * 70 M budget: about 1.1 GB of point data once streamed, twice what a
+       * laptop's integrated GPU has, at 8–10 fps. 6 M stays fluid there and still
+       * shows a building in detail; the budget slider (an explicit budget) can go
+       * higher on a machine that has the memory.
+       */
+      static MAX_AUTO_BUDGET = 6e6;
+      /**
        * Calculate an optimal point budget from the total point count.
-       * Proportional (30% / 15% / 8% by cloud size), floored at 500K, and never
-       * above the cloud's own total — no fixed upper cap, so large clouds aren't
-       * artificially starved.
+       * Proportional (30% / 15% / 8% by cloud size), floored at 500K, never above
+       * the cloud's own total, and capped at {@link MAX_AUTO_BUDGET}.
        */
       static calcOptimalBudget(totalPoints) {
         const ratio = totalPoints < 5e6 ? 0.3 : totalPoints < 5e7 ? 0.15 : 0.08;
         const raw = Math.round(totalPoints * ratio / 1e5) * 1e5;
-        return Math.min(Math.max(raw, 5e5), Math.max(totalPoints, 5e5));
+        return Math.min(Math.max(raw, 5e5), Math.max(totalPoints, 5e5), _PointCloudLoader.MAX_AUTO_BUDGET);
       }
     };
     EASINGS = {
@@ -3716,6 +3724,7 @@ var init_en = __esm({
         noMeasurements: "No measurements yet.",
         useMeasureToolHint: "Use the toolbar to start measuring.",
         measurementCount: (n) => `${n} measurement${n === 1 ? "" : "s"}`,
+        confirmClearAll: (n) => `Delete ${n === 1 ? "the measurement" : `all ${n} measurements`}? Deleted measurements cannot be restored.`,
         downloadCsv: "Download CSV",
         csv: "CSV",
         clearAll: "Clear all",
@@ -4026,7 +4035,12 @@ function Viewport({ className }) {
     sm.addPostRenderCallback(magFrame);
     sm.start();
     let frameTimer;
+    let disposed = false;
     loader.load("metadata.json", config.pointBudget).then(() => {
+      if (disposed) {
+        loader.clear();
+        return;
+      }
       setPointBudget(loader.appliedBudget);
       const opened = { position: sm.camera.position.clone(), target: sm.controls.target.clone() };
       const started = performance.now();
@@ -4048,11 +4062,14 @@ function Viewport({ className }) {
       frame();
     }).catch(console.error);
     return () => {
+      disposed = true;
       if (frameTimer !== void 0) window.clearTimeout(frameTimer);
       if (clipChangeRaf != null) cancelAnimationFrame(clipChangeRaf);
       sm.removePostRenderCallback(axisFrame);
       sm.removePostRenderCallback(magFrame);
       magnifier.dispose();
+      loader.clear();
+      sm.potree = null;
       sm.dispose();
       measureMgr.dispose();
       markerMgr.dispose();
@@ -5001,6 +5018,13 @@ function ToolbarIconBtn({ icon, label, active, onClick, title }) {
 init_utils();
 init_viewer_provider();
 init_locale_context();
+
+// src/lib/confirm-clear.ts
+function confirmClearAll(manager, question) {
+  const count = manager?.getAll().length ?? 0;
+  if (count === 0) return false;
+  return window.confirm(question(count));
+}
 function RailBtn({ icon, title, active, onClick, disabled, compact }) {
   return /* @__PURE__ */ jsxRuntime.jsx(
     "button",
@@ -5035,6 +5059,7 @@ var ADVANCED_MEASURES = [
 function ToolRail() {
   const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, uiMode, selectedClipBoxId, showMagnifier, setShowMagnifier } = useViewer();
   const t = useLocale().toolRail;
+  const confirmQuestion = useLocale().measurementsPanel.confirmClearAll;
   const isPro = uiMode === "professional";
   const toggle = (tool) => setActiveTool(activeTool === tool ? "none" : tool);
   const boxes = clipManager?.getBoxes() ?? [];
@@ -5057,6 +5082,7 @@ function ToolRail() {
     if (activeTool === "section-box") setActiveTool("none");
   };
   const clearMeasurements = () => {
+    if (!confirmClearAll(measurementManager, confirmQuestion)) return;
     measurementManager?.clearAll();
     setMeasurementList([]);
   };
@@ -5657,12 +5683,14 @@ function ClipToolbar() {
 function ScenePanel() {
   const { measurementList, measurementManager, setMeasurementList, loader, uiMode } = useViewer();
   const t = useLocale().scenePanel;
+  const confirmQuestion = useLocale().measurementsPanel.confirmClearAll;
   const isPro = uiMode === "professional";
   const deleteMeasurement = (id) => {
     measurementManager?.remove(id);
     setMeasurementList((prev) => prev.filter((m) => m.id !== id));
   };
   const clearAll = () => {
+    if (!confirmClearAll(measurementManager, confirmQuestion)) return;
     measurementManager?.clearAll();
     setMeasurementList([]);
   };
@@ -5792,6 +5820,7 @@ function MeasurementsPanel() {
     setMeasurementList((prev) => prev.filter((m) => m.id !== id));
   };
   const clearAll = () => {
+    if (!confirmClearAll(measurementManager, t.confirmClearAll)) return;
     measurementManager?.clearAll();
     setMeasurementList([]);
   };
@@ -7736,7 +7765,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "3c3e3a8 \xB7 2026-10-20 09:44Z" ;
+var PCV_BUILD = "c698aa0 \xB7 2026-10-20 15:03Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts
@@ -8058,6 +8087,7 @@ function CollapsibleSidebar({ side, children, defaultOpen = true, width = "w-60"
 // src/layouts/workstation/tools-palette.tsx
 init_utils();
 init_viewer_provider();
+init_locale_context();
 
 // src/layouts/workstation/floating-palette.tsx
 init_utils();
@@ -8113,6 +8143,7 @@ var MEASURE_TOOLS = [
 ];
 function ToolsPalette() {
   const { activeTool, setActiveTool, clipManager, loader, measurementManager, setMeasurementList, clipBoxEntries } = useViewer();
+  const confirmQuestion = useLocale().measurementsPanel.confirmClearAll;
   const toggle = React26.useCallback((tool) => {
     setActiveTool(activeTool === tool ? "none" : tool);
   }, [activeTool, setActiveTool]);
@@ -8137,6 +8168,7 @@ function ToolsPalette() {
     /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "space-y-0.5", children: [
       MEASURE_TOOLS.map((def) => /* @__PURE__ */ jsxRuntime.jsx(ToolBtn, { icon: def.icon, label: def.label, active: activeTool === def.tool, onClick: () => toggle(def.tool) }, def.tool)),
       /* @__PURE__ */ jsxRuntime.jsx(ToolBtn, { icon: /* @__PURE__ */ jsxRuntime.jsx(lucideReact.X, { size: 14 }), label: "Clear All", onClick: () => {
+        if (!confirmClearAll(measurementManager, confirmQuestion)) return;
         measurementManager?.clearAll();
         setMeasurementList([]);
       } })
@@ -8768,8 +8800,10 @@ function DisplaySettingsDialog({
 // src/hooks/use-measurement-actions.ts
 init_viewer_provider();
 init_utils();
+init_locale_context();
 function useMeasurementActions() {
   const { activeTool, setActiveTool, measurementManager, measurementList, setMeasurementList } = useViewer();
+  const confirmQuestion = useLocale().measurementsPanel.confirmClearAll;
   const startTool = React26.useCallback((type) => {
     const tool = `measure-${type}`;
     setActiveTool(activeTool === tool ? "none" : tool);
@@ -8778,9 +8812,10 @@ function useMeasurementActions() {
     setActiveTool("none");
   }, [setActiveTool]);
   const clearAll = React26.useCallback(() => {
+    if (!confirmClearAll(measurementManager, confirmQuestion)) return;
     measurementManager?.clearAll();
     setMeasurementList([]);
-  }, [measurementManager, setMeasurementList]);
+  }, [measurementManager, setMeasurementList, confirmQuestion]);
   const remove = React26.useCallback((id) => {
     measurementManager?.remove(id);
   }, [measurementManager]);
@@ -8984,6 +9019,7 @@ var de = createLocale(exports.en, {
     noMeasurements: "Noch keine Messungen.",
     useMeasureToolHint: "Werkzeuge nutzen um zu messen.",
     measurementCount: (n) => `${n} Messung${n === 1 ? "" : "en"}`,
+    confirmClearAll: (n) => `${n === 1 ? "Die Messung" : `Alle ${n} Messungen`} l\xF6schen? Gel\xF6schte Messungen lassen sich nicht wiederherstellen.`,
     downloadCsv: "CSV herunterladen",
     csv: "CSV",
     clearAll: "Alle l\xF6schen",

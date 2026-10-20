@@ -6,6 +6,7 @@ import { useViewer } from "../../providers/viewer-provider";
 import { useLocale } from "../../i18n/locale-context";
 import { formatLength, formatArea, formatVolume, formatAngle, formatCoord, exportMeasurementsCSV } from "../../lib/utils";
 import { InlineEdit } from "./inline-edit";
+import { confirmClearAll } from "../../lib/confirm-clear";
 import type { Measurement } from "@der-ort/pano-cloud-viewer-core";
 
 // Resolved at runtime inside the component — see TYPE_LABELS below
@@ -37,6 +38,7 @@ export function MeasurementsPanel() {
   };
 
   const clearAll = () => {
+    if (!confirmClearAll(measurementManager, t.confirmClearAll)) return;
     measurementManager?.clearAll();
     setMeasurementList([]);
   };

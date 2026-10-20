@@ -389,10 +389,17 @@ declare class PointCloudLoader {
     /** Return the first loaded point cloud object, if any */
     getPointCloud(): THREE.Object3D | null;
     /**
+     * The most an automatic budget asks for. 8% of an 870 M-point scan was a
+     * 70 M budget: about 1.1 GB of point data once streamed, twice what a
+     * laptop's integrated GPU has, at 8–10 fps. 6 M stays fluid there and still
+     * shows a building in detail; the budget slider (an explicit budget) can go
+     * higher on a machine that has the memory.
+     */
+    static readonly MAX_AUTO_BUDGET = 6000000;
+    /**
      * Calculate an optimal point budget from the total point count.
-     * Proportional (30% / 15% / 8% by cloud size), floored at 500K, and never
-     * above the cloud's own total — no fixed upper cap, so large clouds aren't
-     * artificially starved.
+     * Proportional (30% / 15% / 8% by cloud size), floored at 500K, never above
+     * the cloud's own total, and capped at {@link MAX_AUTO_BUDGET}.
      */
     static calcOptimalBudget(totalPoints: number): number;
 }
