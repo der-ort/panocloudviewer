@@ -370,10 +370,20 @@ declare class PointCloudLoader {
     /** Point budget actually applied by the last load() (auto-derived or explicit). */
     appliedBudget: number;
     /**
+     * True when the last load() left the camera where it was instead of framing
+     * the scan, because it had been moved while the scan loaded: a shared view
+     * link, a restored scene, the person. That view wins.
+     */
+    keptView: boolean;
+    /**
      * Load a point cloud from the adapter's base URL.
      * @param pointBudget Explicit budget. When omitted, the budget is derived
      *                    from the cloud's total point count via
      *                    {@link PointCloudLoader.calcOptimalBudget} — no fixed cap.
+     *
+     * Frames the camera on the scan unless the camera moved while it loaded
+     * (see {@link keptView}). Resets point size and colour to the defaults;
+     * apply a saved display state after the promise resolves.
      */
     load(metadataPath?: string, pointBudget?: number): Promise<void>;
     /**
@@ -1687,6 +1697,14 @@ interface ViewerContextValue {
     setCameraAnimator: (a: CameraAnimator) => void;
     setExporter: (e: ExportManager) => void;
     setClipManager: (c: ClipManager) => void;
+    /**
+     * The scan has loaded: framed (unless a view was set while it loaded), with
+     * the budget and point size defaults applied. Restore a shared view or a
+     * saved scene after this, or the load's defaults overwrite it. False again
+     * when the viewport unmounts.
+     */
+    loaded: boolean;
+    setLoaded: (v: boolean) => void;
     activeTool: ActiveTool;
     setActiveTool: (tool: ActiveTool) => void;
     pointBudget: number;

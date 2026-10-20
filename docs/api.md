@@ -309,6 +309,7 @@ function MyComponent() {
 
 | Property | Type | Default | Description |
 |---|---|---|---|
+| `loaded` | `boolean` | `false` | The scan has loaded: framed (unless a view was set while it loaded), budget and point-size defaults applied. Restore a shared view or a saved scene once this is `true`, or the load's defaults overwrite it |
 | `activeTool` | `ActiveTool` | `"none"` | Currently active interaction tool |
 | `setActiveTool` | `(tool: ActiveTool) => void` | — | Set the active tool |
 | `pointBudget` | `number` | `2_000_000` | Max points rendered per frame |

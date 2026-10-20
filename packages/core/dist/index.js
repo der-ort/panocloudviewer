@@ -427,12 +427,25 @@ var PointCloudLoader = class _PointCloudLoader {
   /** Point budget actually applied by the last load() (auto-derived or explicit). */
   appliedBudget = 2e6;
   /**
+   * True when the last load() left the camera where it was instead of framing
+   * the scan, because it had been moved while the scan loaded: a shared view
+   * link, a restored scene, the person. That view wins.
+   */
+  keptView = false;
+  /**
    * Load a point cloud from the adapter's base URL.
    * @param pointBudget Explicit budget. When omitted, the budget is derived
    *                    from the cloud's total point count via
    *                    {@link PointCloudLoader.calcOptimalBudget} — no fixed cap.
+   *
+   * Frames the camera on the scan unless the camera moved while it loaded
+   * (see {@link keptView}). Resets point size and colour to the defaults;
+   * apply a saved display state after the promise resolves.
    */
   async load(metadataPath = "metadata.json", pointBudget) {
+    const camera = this.sceneManager.camera;
+    const target = this.sceneManager.controls.target;
+    const before = { position: camera.position.clone(), target: target.clone() };
     const { Potree, PointColorType } = await import('potree-core');
     if (!this.sceneManager.potree) {
       this.sceneManager.potree = new Potree();
@@ -493,8 +506,9 @@ var PointCloudLoader = class _PointCloudLoader {
       worldBox.setFromObject(pointCloud);
     }
     this.worldBox = worldBox.clone();
+    this.keptView = camera.position.distanceTo(before.position) > 1e-3 || target.distanceTo(before.target) > 1e-3;
     if (!worldBox.isEmpty()) {
-      this.sceneManager.fitToBox(worldBox);
+      if (!this.keptView) this.sceneManager.fitToBox(worldBox);
       const zMin = worldBox.min.z;
       const zMax = worldBox.max.z;
       const mat = pointCloud.material;

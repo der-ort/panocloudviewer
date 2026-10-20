@@ -44,12 +44,29 @@ export class PointCloudLoader {
   appliedBudget = 2_000_000;
 
   /**
+   * True when the last load() left the camera where it was instead of framing
+   * the scan, because it had been moved while the scan loaded: a shared view
+   * link, a restored scene, the person. That view wins.
+   */
+  keptView = false;
+
+  /**
    * Load a point cloud from the adapter's base URL.
    * @param pointBudget Explicit budget. When omitted, the budget is derived
    *                    from the cloud's total point count via
    *                    {@link PointCloudLoader.calcOptimalBudget} — no fixed cap.
+   *
+   * Frames the camera on the scan unless the camera moved while it loaded
+   * (see {@link keptView}). Resets point size and colour to the defaults;
+   * apply a saved display state after the promise resolves.
    */
   async load(metadataPath = "metadata.json", pointBudget?: number): Promise<void> {
+    // Where the camera is now, before the first await: anything that moves it
+    // before the scan arrives has set a view, and the fit must not undo it.
+    const camera = this.sceneManager.camera;
+    const target = this.sceneManager.controls.target;
+    const before = { position: camera.position.clone(), target: target.clone() };
+
     // Lazy-import potree-core (client-only, heavy)
     const { Potree, PointColorType } = await import("potree-core");
 
@@ -147,8 +164,9 @@ export class PointCloudLoader {
 
     this.worldBox = worldBox.clone();
 
+    this.keptView = camera.position.distanceTo(before.position) > 1e-3 || target.distanceTo(before.target) > 1e-3;
     if (!worldBox.isEmpty()) {
-      this.sceneManager.fitToBox(worldBox);
+      if (!this.keptView) this.sceneManager.fitToBox(worldBox);
 
       // Set height range for elevation-based coloring
       const zMin = worldBox.min.z;

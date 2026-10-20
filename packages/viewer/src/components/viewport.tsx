@@ -32,7 +32,7 @@ export function Viewport({ className }: ViewportProps) {
   const {
     config,
     setSceneManager, setLoader, setMeasurementManager, setMarkerManager,
-    setCameraAnimator, setExporter, setClipManager,
+    setCameraAnimator, setExporter, setClipManager, setLoaded,
     setFps, activeTool, pointBudget, setPointBudget, pointSize, colorMode,
     showMarkers, showMeasurements, showMagnifier, setMeasurementList, selectedCamera, setSelectedCamera,
     clipBoxEntries, setClipBoxEntries, setSelectedClipBoxId,
@@ -215,8 +215,10 @@ export function Viewport({ className }: ViewportProps) {
     // sync the applied value back into React state so sliders/status show it.
     // Frame the building, not the scan: once the coarse octree levels are in,
     // their points give `loader.coreBox`, and the camera eases from the bounding
-    // box fit onto it — unless something moved the camera meanwhile (a viewpoint
-    // link, a scene, the person), which wins. The box is kept either way for the
+    // box fit onto it — unless something moved the camera (a viewpoint link, a
+    // scene, the person), which wins: before the load finished, so the load kept
+    // that view (`loader.keptView`) and there is nothing to ease; or after it,
+    // before the coarse levels came in. The box is kept either way for the
     // "Gebäude einpassen" button and the view presets.
     let frameTimer: number | undefined;
     let disposed = false;
@@ -224,7 +226,11 @@ export function Viewport({ className }: ViewportProps) {
       // Unmounted while loading: the cloud arrived into a disposed scene.
       if (disposed) { loader.clear(); return; }
       setPointBudget(loader.appliedBudget);
+      // Boxes added while the scan loaded (a restored scene) reach the cloud too.
+      clipMgr.applyAll();
       const opened = { position: sm.camera.position.clone(), target: sm.controls.target.clone() };
+      setLoaded(true);
+      if (loader.keptView) return;
       const started = performance.now();
       const frame = () => {
         if (loader.coreBox.isEmpty()) {
@@ -246,6 +252,7 @@ export function Viewport({ className }: ViewportProps) {
 
     return () => {
       disposed = true;
+      setLoaded(false);
       if (frameTimer !== undefined) window.clearTimeout(frameTimer);
       if (clipChangeRaf != null) cancelAnimationFrame(clipChangeRaf);
       sm.removePostRenderCallback(axisFrame);

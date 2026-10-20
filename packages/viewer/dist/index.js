@@ -580,12 +580,25 @@ var init_dist = __esm({
       /** Point budget actually applied by the last load() (auto-derived or explicit). */
       appliedBudget = 2e6;
       /**
+       * True when the last load() left the camera where it was instead of framing
+       * the scan, because it had been moved while the scan loaded: a shared view
+       * link, a restored scene, the person. That view wins.
+       */
+      keptView = false;
+      /**
        * Load a point cloud from the adapter's base URL.
        * @param pointBudget Explicit budget. When omitted, the budget is derived
        *                    from the cloud's total point count via
        *                    {@link PointCloudLoader.calcOptimalBudget} — no fixed cap.
+       *
+       * Frames the camera on the scan unless the camera moved while it loaded
+       * (see {@link keptView}). Resets point size and colour to the defaults;
+       * apply a saved display state after the promise resolves.
        */
       async load(metadataPath = "metadata.json", pointBudget) {
+        const camera = this.sceneManager.camera;
+        const target = this.sceneManager.controls.target;
+        const before = { position: camera.position.clone(), target: target.clone() };
         const { Potree, PointColorType } = await import('potree-core');
         if (!this.sceneManager.potree) {
           this.sceneManager.potree = new Potree();
@@ -646,8 +659,9 @@ var init_dist = __esm({
           worldBox.setFromObject(pointCloud);
         }
         this.worldBox = worldBox.clone();
+        this.keptView = camera.position.distanceTo(before.position) > 1e-3 || target.distanceTo(before.target) > 1e-3;
         if (!worldBox.isEmpty()) {
-          this.sceneManager.fitToBox(worldBox);
+          if (!this.keptView) this.sceneManager.fitToBox(worldBox);
           const zMin = worldBox.min.z;
           const zMax = worldBox.max.z;
           const mat = pointCloud.material;
@@ -3533,6 +3547,7 @@ function ViewerProvider({ config, children }) {
   const [cameraAnimator, _setCameraAnimator] = useState(null);
   const [exporter, _setExporter] = useState(null);
   const [clipManager, _setClipManager] = useState(null);
+  const [loaded, setLoaded] = useState(false);
   const [activeTool, setActiveTool] = useState("none");
   const [pointBudget, setPointBudget] = useState(config.pointBudget ?? 2e6);
   const [pointSize, setPointSize] = useState(0.1);
@@ -3593,6 +3608,8 @@ function ViewerProvider({ config, children }) {
     setCameraAnimator,
     setExporter,
     setClipManager,
+    loaded,
+    setLoaded,
     activeTool,
     setActiveTool,
     pointBudget,
@@ -4060,6 +4077,7 @@ function Viewport({ className }) {
     setCameraAnimator,
     setExporter,
     setClipManager,
+    setLoaded,
     setFps,
     activeTool,
     pointBudget,
@@ -4201,7 +4219,10 @@ function Viewport({ className }) {
         return;
       }
       setPointBudget(loader.appliedBudget);
+      clipMgr.applyAll();
       const opened = { position: sm.camera.position.clone(), target: sm.controls.target.clone() };
+      setLoaded(true);
+      if (loader.keptView) return;
       const started = performance.now();
       const frame = () => {
         if (loader.coreBox.isEmpty()) {
@@ -4222,6 +4243,7 @@ function Viewport({ className }) {
     }).catch(console.error);
     return () => {
       disposed = true;
+      setLoaded(false);
       if (frameTimer !== void 0) window.clearTimeout(frameTimer);
       if (clipChangeRaf != null) cancelAnimationFrame(clipChangeRaf);
       sm.removePostRenderCallback(axisFrame);
@@ -7938,7 +7960,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "6d281c1 \xB7 2026-10-20 19:15Z" ;
+var PCV_BUILD = "a7ca858 \xB7 2026-10-20 19:21Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

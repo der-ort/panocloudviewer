@@ -32,6 +32,15 @@ interface ViewerContextValue {
   setExporter: (e: ExportManager) => void;
   setClipManager: (c: ClipManager) => void;
 
+  /**
+   * The scan has loaded: framed (unless a view was set while it loaded), with
+   * the budget and point size defaults applied. Restore a shared view or a
+   * saved scene after this, or the load's defaults overwrite it. False again
+   * when the viewport unmounts.
+   */
+  loaded: boolean;
+  setLoaded: (v: boolean) => void;
+
   // Viewer state
   activeTool: ActiveTool;
   setActiveTool: (tool: ActiveTool) => void;
@@ -114,6 +123,7 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const [cameraAnimator, _setCameraAnimator] = useState<CameraAnimator | null>(null);
   const [exporter, _setExporter] = useState<ExportManager | null>(null);
   const [clipManager, _setClipManager] = useState<ClipManager | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   const [activeTool, setActiveTool] = useState<ActiveTool>("none");
   const [pointBudget, setPointBudget] = useState(config.pointBudget ?? 2_000_000);
@@ -173,6 +183,7 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const value: ViewerContextValue = {
     sceneManager, loader, measurementManager, markerManager, cameraAnimator, exporter, clipManager,
     setSceneManager, setLoader, setMeasurementManager, setMarkerManager, setCameraAnimator, setExporter, setClipManager,
+    loaded, setLoaded,
     activeTool, setActiveTool,
     pointBudget, setPointBudget,
     pointSize, setPointSize,
