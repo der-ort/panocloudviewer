@@ -787,8 +787,14 @@ declare class FaceHandleController {
     setGroupVisible(visible: boolean): void;
     isDragging(): boolean;
     getHandleMeshes(): THREE.Mesh[];
-    /** Update handle positions and sizes to match the current box */
+    /** Mount each arrow on its face of the current box (size: see fitToScreen). */
     updatePositions(): void;
+    /**
+     * One size on screen, whatever the box: sized to the box diagonal, the
+     * arrows grew with every resize and turned into blobs on a room-sized box.
+     * Each arrow stands a few pixels off its face, pointing outward.
+     */
+    private fitToScreen;
     /**
      * Try to start a drag. Call on pointerdown.
      * Returns true if a handle was grabbed (caller should disable orbit controls).
@@ -817,7 +823,8 @@ declare class FaceHandleController {
  *
  * The three quarters meet at the box's +X/+Y/+Z corner region (Blender-style
  * corner triad): X-ring spans +Y→+Z, Y-ring +Z→+X, Z-ring +X→+Y. They follow
- * the box's position, size and orientation.
+ * the box's position and orientation, but keep one size on screen: sized to
+ * the box, they grew with every resize and dwarfed a room-sized box.
  */
 declare class RotationRingController {
     private scene;
@@ -841,7 +848,7 @@ declare class RotationRingController {
     isDragging(): boolean;
     /** Show/hide without detaching (outline toggle). */
     setGroupVisible(visible: boolean): void;
-    /** Follow the box: center, orientation, and a radius just outside the box. */
+    /** Follow the box: center and orientation (the radius is set per frame). */
     updatePose(box: THREE.Box3, quaternion: THREE.Quaternion): void;
     /** Try to start a rotation drag. Returns true if an arc was grabbed. */
     onPointerDown(clientX: number, clientY: number): boolean;

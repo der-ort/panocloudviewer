@@ -1,4 +1,8 @@
 import * as THREE from "three";
+import { fitEachFrame, worldPerPixel } from "./screen-size";
+
+/** Arrow length on screen, in CSS pixels, at any box size or distance. */
+const ARROW_PX = 52;
 
 /** Axis index → human name for cursor logic */
 type FaceAxis = "x" | "y" | "z";
@@ -15,6 +19,9 @@ interface FaceHandle {
   localQuat: THREE.Quaternion;
   axis: FaceAxis;
   sign: FaceSign;
+  /** Face center and outward direction in world space (from the box). */
+  base: THREE.Vector3;
+  dir: THREE.Vector3;
 }
 
 interface DragState {
@@ -69,13 +76,15 @@ export class FaceHandleController {
     this.group.name = "face-handles";
     this.scene.add(this.group);
     this.createHandles();
+    fitEachFrame(this.group, () => this.fitToScreen());
   }
 
   // Shared arrow geometries for all 6 handles — each disposed once in dispose().
-  // Local space: arrow points along +Y, base at the origin (mounted on the face).
-  private shaftGeometry = new THREE.CylinderGeometry(0.09, 0.09, 0.55, 10).translate(0, 0.275, 0);
-  private coneGeometry = new THREE.ConeGeometry(0.26, 0.5, 12).translate(0, 0.8, 0);
-  private grabGeometry = new THREE.SphereGeometry(0.6, 8, 6).translate(0, 0.65, 0);
+  // Local space: arrow points along +Y, base at the origin (mounted on the face),
+  // one unit long — scaled to ARROW_PX on screen.
+  private shaftGeometry = new THREE.CylinderGeometry(0.035, 0.035, 0.6, 8).translate(0, 0.3, 0);
+  private coneGeometry = new THREE.ConeGeometry(0.15, 0.4, 16).translate(0, 0.8, 0);
+  private grabGeometry = new THREE.SphereGeometry(0.5, 8, 6).translate(0, 0.55, 0);
   /** One invisible material shared by all grab spheres. */
   private grabMaterial = new THREE.MeshBasicMaterial({
     transparent: true, opacity: 0, depthTest: false, depthWrite: false,
@@ -113,7 +122,10 @@ export class FaceHandleController {
         const localQuat = new THREE.Quaternion().setFromUnitVectors(UP, dir);
 
         this.group.add(arrow);
-        this.handles.push({ group: arrow, material, grab, localQuat, axis, sign });
+        this.handles.push({
+          group: arrow, material, grab, localQuat, axis, sign,
+          base: new THREE.Vector3(), dir: new THREE.Vector3(),
+        });
       }
     }
   }
@@ -156,37 +168,39 @@ export class FaceHandleController {
     return this.handles.map(h => h.grab);
   }
 
-  /** Update handle positions and sizes to match the current box */
+  /** Mount each arrow on its face of the current box (size: see fitToScreen). */
   updatePositions(): void {
     if (!this.box) return;
     const center = new THREE.Vector3();
-    const size = new THREE.Vector3();
     this.box.getCenter(center);
-    this.box.getSize(size);
-
-    // Arrow scale: ~6% of box diagonal per local unit (arrow is ~1.3 units
-    // long) — proportional at any box size, floored so tiny boxes stay grabbable.
-    // No upper clamp: a fixed cap made arrows invisible on large site-scale boxes.
-    const diag = size.length();
-    const scale = Math.max(0.1, diag * 0.06);
 
     for (const h of this.handles) {
-      // Face-center offset from the box center, in box-local (unrotated) space.
+      // Face-center offset from the box center, in box-local (unrotated) space,
+      // rotated by the box orientation, then translated by the center.
       const offset = new THREE.Vector3();
-      if (h.sign === 1) {
-        offset[h.axis] = this.box.max[h.axis] - center[h.axis];
-      } else {
-        offset[h.axis] = this.box.min[h.axis] - center[h.axis];
-      }
-      // Arrow base sits just off the face, pointing outward along its axis.
-      const half = Math.abs(offset[h.axis]);
-      offset[h.axis] += h.sign * (half * 0.04 + scale * 0.1);
-      // Rotate the offset by the box orientation, then translate by center.
-      offset.applyQuaternion(this._quaternion);
-      h.group.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
-      h.group.scale.setScalar(scale);
+      offset[h.axis] = (h.sign === 1 ? this.box.max : this.box.min)[h.axis] - center[h.axis];
+      h.base.copy(offset.applyQuaternion(this._quaternion)).add(center);
+      h.dir.set(0, 0, 0);
+      h.dir[h.axis] = h.sign;
+      h.dir.applyQuaternion(this._quaternion);
       // Box orientation × local face direction — the arrow follows rotation.
       h.group.quaternion.copy(this._quaternion).multiply(h.localQuat);
+    }
+    this.fitToScreen();
+  }
+
+  /**
+   * One size on screen, whatever the box: sized to the box diagonal, the
+   * arrows grew with every resize and turned into blobs on a room-sized box.
+   * Each arrow stands a few pixels off its face, pointing outward.
+   */
+  private fitToScreen(): void {
+    if (!this.box) return;
+    const heightPx = this.domElement.clientHeight;
+    for (const h of this.handles) {
+      const scale = ARROW_PX * worldPerPixel(this.camera, h.base, heightPx);
+      h.group.scale.setScalar(scale);
+      h.group.position.copy(h.base).addScaledVector(h.dir, scale * 0.12);
     }
   }
 

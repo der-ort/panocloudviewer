@@ -1,6 +1,13 @@
 import * as THREE from "three";
+import { fitEachFrame, worldPerPixel } from "./screen-size";
 
 type RingAxis = "x" | "y" | "z";
+
+/**
+ * Ring radius on screen, in CSS pixels — clear of the move gizmo's arrows at
+ * the center (TransformControls at size 0.6 reaches ~90 px).
+ */
+const RING_RADIUS_PX = 130;
 
 /** Per-axis colors matching the face-handle arrows: X=red, Y=green, Z=blue. */
 const RING_COLOR: Record<RingAxis, number> = {
@@ -40,7 +47,8 @@ interface RingDrag {
  *
  * The three quarters meet at the box's +X/+Y/+Z corner region (Blender-style
  * corner triad): X-ring spans +Y→+Z, Y-ring +Z→+X, Z-ring +X→+Y. They follow
- * the box's position, size and orientation.
+ * the box's position and orientation, but keep one size on screen: sized to
+ * the box, they grew with every resize and dwarfed a room-sized box.
  */
 export class RotationRingController {
   private scene: THREE.Scene;
@@ -65,6 +73,10 @@ export class RotationRingController {
     this.group.visible = false;
     this.scene.add(this.group);
     this.buildRings();
+    fitEachFrame(this.group, () => {
+      const px = worldPerPixel(this.camera, this.center, this.domElement.clientHeight);
+      this.group.scale.setScalar(RING_RADIUS_PX * px);
+    });
   }
 
   private buildRings(): void {
@@ -141,20 +153,13 @@ export class RotationRingController {
     this.group.visible = visible && this.attached;
   }
 
-  /** Follow the box: center, orientation, and a radius just outside the box. */
+  /** Follow the box: center and orientation (the radius is set per frame). */
   updatePose(box: THREE.Box3, quaternion: THREE.Quaternion): void {
-    const size = new THREE.Vector3();
     box.getCenter(this.center);
-    box.getSize(size);
     this.quaternion.copy(quaternion);
 
     this.group.position.copy(this.center);
     this.group.quaternion.copy(quaternion);
-    // Mid-region radius — the arcs sit where the translate gizmo's plane quads
-    // used to be: between the center arrows and the box faces, clear of both
-    // the face-mounted resize arrows and the compact move gizmo.
-    const radius = Math.max(size.x, size.y, size.z) * 0.42;
-    this.group.scale.setScalar(Math.max(radius, 0.3));
   }
 
   /** Try to start a rotation drag. Returns true if an arc was grabbed. */

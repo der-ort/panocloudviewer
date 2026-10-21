@@ -2103,6 +2103,26 @@ var ExportManager = class _ExportManager {
     a.click();
   }
 };
+function worldPerPixel(camera, position, heightPx) {
+  const h = Math.max(heightPx, 1);
+  if (camera.isOrthographicCamera) {
+    const ortho = camera;
+    return (ortho.top - ortho.bottom) / ortho.zoom / h;
+  }
+  const persp = camera;
+  const dist = position.distanceTo(camera.getWorldPosition(new THREE5.Vector3()));
+  return 2 * Math.tan(THREE5.MathUtils.degToRad(persp.fov) / 2) * dist / persp.zoom / h;
+}
+function fitEachFrame(group, fit) {
+  const update = group.updateMatrixWorld.bind(group);
+  group.updateMatrixWorld = (force) => {
+    if (group.visible) fit();
+    update(force);
+  };
+}
+
+// src/core/face-handles.ts
+var ARROW_PX = 52;
 var AXIS_COLOR = {
   x: 15680580,
   y: 2278750,
@@ -2132,12 +2152,14 @@ var FaceHandleController = class {
     this.group.name = "face-handles";
     this.scene.add(this.group);
     this.createHandles();
+    fitEachFrame(this.group, () => this.fitToScreen());
   }
   // Shared arrow geometries for all 6 handles — each disposed once in dispose().
-  // Local space: arrow points along +Y, base at the origin (mounted on the face).
-  shaftGeometry = new THREE5.CylinderGeometry(0.09, 0.09, 0.55, 10).translate(0, 0.275, 0);
-  coneGeometry = new THREE5.ConeGeometry(0.26, 0.5, 12).translate(0, 0.8, 0);
-  grabGeometry = new THREE5.SphereGeometry(0.6, 8, 6).translate(0, 0.65, 0);
+  // Local space: arrow points along +Y, base at the origin (mounted on the face),
+  // one unit long — scaled to ARROW_PX on screen.
+  shaftGeometry = new THREE5.CylinderGeometry(0.035, 0.035, 0.6, 8).translate(0, 0.3, 0);
+  coneGeometry = new THREE5.ConeGeometry(0.15, 0.4, 16).translate(0, 0.8, 0);
+  grabGeometry = new THREE5.SphereGeometry(0.5, 8, 6).translate(0, 0.55, 0);
   /** One invisible material shared by all grab spheres. */
   grabMaterial = new THREE5.MeshBasicMaterial({
     transparent: true,
@@ -2172,7 +2194,16 @@ var FaceHandleController = class {
         );
         const localQuat = new THREE5.Quaternion().setFromUnitVectors(UP, dir);
         this.group.add(arrow);
-        this.handles.push({ group: arrow, material, grab, localQuat, axis, sign });
+        this.handles.push({
+          group: arrow,
+          material,
+          grab,
+          localQuat,
+          axis,
+          sign,
+          base: new THREE5.Vector3(),
+          dir: new THREE5.Vector3()
+        });
       }
     }
   }
@@ -2207,28 +2238,34 @@ var FaceHandleController = class {
   getHandleMeshes() {
     return this.handles.map((h) => h.grab);
   }
-  /** Update handle positions and sizes to match the current box */
+  /** Mount each arrow on its face of the current box (size: see fitToScreen). */
   updatePositions() {
     if (!this.box) return;
     const center = new THREE5.Vector3();
-    const size = new THREE5.Vector3();
     this.box.getCenter(center);
-    this.box.getSize(size);
-    const diag = size.length();
-    const scale = Math.max(0.1, diag * 0.06);
     for (const h of this.handles) {
       const offset = new THREE5.Vector3();
-      if (h.sign === 1) {
-        offset[h.axis] = this.box.max[h.axis] - center[h.axis];
-      } else {
-        offset[h.axis] = this.box.min[h.axis] - center[h.axis];
-      }
-      const half = Math.abs(offset[h.axis]);
-      offset[h.axis] += h.sign * (half * 0.04 + scale * 0.1);
-      offset.applyQuaternion(this._quaternion);
-      h.group.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
-      h.group.scale.setScalar(scale);
+      offset[h.axis] = (h.sign === 1 ? this.box.max : this.box.min)[h.axis] - center[h.axis];
+      h.base.copy(offset.applyQuaternion(this._quaternion)).add(center);
+      h.dir.set(0, 0, 0);
+      h.dir[h.axis] = h.sign;
+      h.dir.applyQuaternion(this._quaternion);
       h.group.quaternion.copy(this._quaternion).multiply(h.localQuat);
+    }
+    this.fitToScreen();
+  }
+  /**
+   * One size on screen, whatever the box: sized to the box diagonal, the
+   * arrows grew with every resize and turned into blobs on a room-sized box.
+   * Each arrow stands a few pixels off its face, pointing outward.
+   */
+  fitToScreen() {
+    if (!this.box) return;
+    const heightPx = this.domElement.clientHeight;
+    for (const h of this.handles) {
+      const scale = ARROW_PX * worldPerPixel(this.camera, h.base, heightPx);
+      h.group.scale.setScalar(scale);
+      h.group.position.copy(h.base).addScaledVector(h.dir, scale * 0.12);
     }
   }
   /**
@@ -2347,6 +2384,7 @@ var FaceHandleController = class {
     handle.material.color.setHex(color);
   }
 };
+var RING_RADIUS_PX = 130;
 var RING_COLOR = {
   x: 15680580,
   y: 2278750,
@@ -2376,6 +2414,10 @@ var RotationRingController = class {
     this.group.visible = false;
     this.scene.add(this.group);
     this.buildRings();
+    fitEachFrame(this.group, () => {
+      const px = worldPerPixel(this.camera, this.center, this.domElement.clientHeight);
+      this.group.scale.setScalar(RING_RADIUS_PX * px);
+    });
   }
   buildRings() {
     const arcGeo = new THREE5.TorusGeometry(1, 0.012, 8, 48, Math.PI / 2);
@@ -2440,16 +2482,12 @@ var RotationRingController = class {
   setGroupVisible(visible) {
     this.group.visible = visible && this.attached;
   }
-  /** Follow the box: center, orientation, and a radius just outside the box. */
+  /** Follow the box: center and orientation (the radius is set per frame). */
   updatePose(box, quaternion) {
-    const size = new THREE5.Vector3();
     box.getCenter(this.center);
-    box.getSize(size);
     this.quaternion.copy(quaternion);
     this.group.position.copy(this.center);
     this.group.quaternion.copy(quaternion);
-    const radius = Math.max(size.x, size.y, size.z) * 0.42;
-    this.group.scale.setScalar(Math.max(radius, 0.3));
   }
   /** Try to start a rotation drag. Returns true if an arc was grabbed. */
   onPointerDown(clientX, clientY) {
