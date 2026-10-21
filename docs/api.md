@@ -594,7 +594,7 @@ new SceneManager(options: SceneManagerOptions)
 | `setProjection` | `(mode: CameraProjection) => void` | Switch perspective / orthographic projection |
 | `fitToBox` | `(box: THREE.Box3) => void` | Position camera to frame a bounding box |
 | `raycast` | `(nx: number, ny: number, objects: THREE.Object3D[]) => THREE.Intersection[]` | Screen-space raycast (nx/ny are NDC: -1 to 1) |
-| `pickPoint` | `(nx: number, ny: number) => THREE.Vector3 \| null` | potree-core GPU pick — front-most rendered point under the cursor (NDC coords) |
+| `pickPoint` | `(nx: number, ny: number) => THREE.Vector3 \| null` | potree-core GPU pick — front-most rendered point under the cursor (NDC coords); perspective and orthographic, up to the canvas edge |
 | `addFrameCallback` | `(cb: () => void) => void` | Register a callback to run every frame before render |
 | `removeFrameCallback` | `(cb: () => void) => void` | Unregister a frame callback |
 | `addPostRenderCallback` | `(cb: () => void) => void` | Register a callback to run after the main render |
@@ -743,7 +743,7 @@ Interactive 3D measurement tool.
 | `rename` | `(id: string, name: string) => void` | Rename a measurement label |
 | `clearAll` | `() => void` | Remove all measurements |
 | `getAll` | `() => Measurement[]` | Get all completed measurements |
-| `updateSnap` | `(worldPos: THREE.Vector3, color?: string) => void` | Live cursor preview while measuring — constant on-screen crosshair sprite + dashed rubber-band line |
+| `updateSnap` | `(worldPos: THREE.Vector3, color?: string) => void` | Live cursor preview while measuring — constant on-screen crosshair sprite + dashed rubber-band line; while an area is drawn, its hatch with the cursor as the next vertex |
 | `clearSnap` | `() => void` | Clear the snap crosshair/rubber-band |
 | `setVisible` | `(visible: boolean) => void` | Show/hide all measurement objects |
 | `dispose` | `() => void` | Full cleanup |

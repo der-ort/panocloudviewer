@@ -30,7 +30,15 @@ export function useSnapThrottle(pick: (nx: number, ny: number) => void) {
     }
   }, []);
 
+  /** Pick again where the cursor last was — the camera moved, the mouse did not. */
+  const resnap = useCallback(() => {
+    const p = ndcRef.current;
+    if (p) scheduleSnap(p.nx, p.ny);
+  }, [scheduleSnap]);
+
+  /** Drop the pending pick and forget the cursor (it left the canvas). */
   const cancelSnap = useCallback(() => {
+    ndcRef.current = null;
     if (rafRef.current != null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -39,5 +47,5 @@ export function useSnapThrottle(pick: (nx: number, ny: number) => void) {
 
   useEffect(() => cancelSnap, [cancelSnap]);
 
-  return { scheduleSnap, cancelSnap };
+  return { scheduleSnap, cancelSnap, resnap };
 }

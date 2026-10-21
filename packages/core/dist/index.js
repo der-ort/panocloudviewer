@@ -394,15 +394,28 @@ var SceneManager = class _SceneManager {
     const camera = this.getActiveCamera();
     const raycaster = new THREE5.Raycaster();
     raycaster.setFromCamera(new THREE5.Vector2(normalizedX, normalizedY), camera);
+    const pr = this.renderer.getPixelRatio();
+    const w = Math.ceil(this.renderer.domElement.clientWidth * pr);
+    const h = Math.ceil(this.renderer.domElement.clientHeight * pr);
+    const x = (normalizedX + 1) / 2 * w;
+    const y = (normalizedY + 1) / 2 * h;
+    const half = Math.max(0, Math.floor(Math.min(x, w - 1 - x, y, h - 1 - y, (63 * pr - 1) / 2)));
     for (const pc of this.pointClouds) {
       const octree = pc;
       if (typeof octree.pick !== "function") continue;
       const result = octree.pick(this.renderer, camera, raycaster.ray, {
-        // Generous window so thin structures (edges, poles, railings) are easy
-        // to hit — the pick still returns the point closest to the ray. 63 px
-        // gives a proper point-snap feel; below that, sparse clouds miss often
-        // and the preview falls back to the ground plane.
-        pickWindowSize: 63
+        pickWindowSize: (2 * half + 1.5) / pr,
+        pixelPosition: new THREE5.Vector3(x, y, 0),
+        // The pick pass drew points as small as they are shown (2 px), so the
+        // cursor pixel often fell between a wall's points onto whatever lay
+        // behind it: half the picks on a facade landed 0.1–14 m inside the
+        // house. A 6 px minimum closes the front surface, and paraboloid depth
+        // lets the point whose centre is nearest the cursor win among its
+        // neighbours (Potree picks with paraboloids too).
+        onBeforePickRender: (material) => {
+          material.minSize = 6 * pr;
+          material.shape = 2;
+        }
       });
       if (result?.position) {
         return result.position.clone();
@@ -1255,6 +1268,20 @@ var COLORS = {
   angle: "#EC4899",
   profile: "#22D3EE"
 };
+var FLOOR_NZ = 0.7;
+function newellVector(pts) {
+  const o = pts[0];
+  const n = new THREE5.Vector3();
+  pts.forEach((p, i) => {
+    const q = pts[(i + 1) % pts.length];
+    const ay = p.y - o.y, az = p.z - o.z, ax = p.x - o.x;
+    const by = q.y - o.y, bz = q.z - o.z, bx = q.x - o.x;
+    n.x += (ay - by) * (az + bz);
+    n.y += (az - bz) * (ax + bx);
+    n.z += (ax - bx) * (ay + by);
+  });
+  return n;
+}
 var MeasurementManager = class {
   scene;
   group;
@@ -1269,6 +1296,8 @@ var MeasurementManager = class {
   // on-screen crosshair sprite (not a ball) for precise targeting.
   _snapCross = null;
   _snapLine = null;
+  /** Area being drawn: its hatch, with the cursor as the next vertex. */
+  _snapHatch = [];
   _crossTexture;
   /** Reused Color for the per-frame snap update. */
   _snapColor = new THREE5.Color("#DCD546");
@@ -1368,8 +1397,9 @@ var MeasurementManager = class {
   /**
    * Show a snap preview at the given world position. Call this on every
    * mousemove while a measurement tool is active. Renders:
-   *  - A small sphere at the snap position (shows where the point will be placed)
+   *  - A crosshair at the snap position (shows where the point will be placed)
    *  - A rubber-band line from the last placed point to the snap position
+   *  - For an area, its hatch with the snap position as the next vertex
    */
   updateSnap(worldPos, color) {
     const c = this._snapColor.set(color ?? this.activeMeasurement?.color ?? "#DCD546");
@@ -1394,26 +1424,33 @@ var MeasurementManager = class {
     const lastPt = this.activeMeasurement?.points[this.activeMeasurement.points.length - 1];
     if (lastPt) {
       if (this._snapLine) {
+        this._snapLine.position.copy(lastPt);
         const positions = this._snapLine.geometry.attributes.position;
-        positions.setXYZ(0, lastPt.x, lastPt.y, lastPt.z);
-        positions.setXYZ(1, worldPos.x, worldPos.y, worldPos.z);
+        positions.setXYZ(0, 0, 0, 0);
+        positions.setXYZ(1, worldPos.x - lastPt.x, worldPos.y - lastPt.y, worldPos.z - lastPt.z);
         positions.needsUpdate = true;
+        this._snapLine.geometry.computeBoundingSphere();
+        this._snapLine.computeLineDistances();
       } else {
-        const geo = new THREE5.BufferGeometry().setFromPoints([lastPt, worldPos]);
-        const mat = new THREE5.LineDashedMaterial({
+        this._snapLine = this.makeLine([lastPt, worldPos], new THREE5.LineDashedMaterial({
           color: c,
           depthTest: false,
           transparent: true,
           opacity: 0.5,
           dashSize: 0.3,
           gapSize: 0.15
-        });
-        this._snapLine = new THREE5.Line(geo, mat);
+        }));
         this._snapLine.computeLineDistances();
         this._snapLine.renderOrder = 3;
         this.group.add(this._snapLine);
       }
-    } else if (!this.activeMeasurement && !lastPt) ;
+    }
+    const m = this.activeMeasurement;
+    if (m?.type === "area" && m.points.length >= 2) {
+      this._disposeObjects(this._snapHatch);
+      this._snapHatch = this.makeHatch([...m.points, worldPos], new THREE5.Color(m.color));
+      for (const o of this._snapHatch) this.group.add(o);
+    }
   }
   /** Build (and cache) the stylized crosshair sprite texture. */
   _getCrossTexture() {
@@ -1464,6 +1501,8 @@ var MeasurementManager = class {
       this.group.remove(this._snapLine);
       this._snapLine = null;
     }
+    this._disposeObjects(this._snapHatch);
+    this._snapHatch = [];
   }
   // ─── Volume measurement (drag-to-create) ─────────────────────────────────
   _volumeDraft = null;
@@ -1620,15 +1659,19 @@ var MeasurementManager = class {
     for (let i = 0; i < pts.length - 1; i++) total += pts[i].distanceTo(pts[i + 1]);
     return total;
   }
+  /**
+   * Newell's vector holds the outline's area twice over in each axis plane:
+   * |n| / 2 in the polygon's own (best-fit) plane, |n.z| / 2 on the floor plan.
+   * A floor or a slope up to ~45° (FLOOR_NZ, the hatch's rule) keeps the
+   * floor-plan area it always had; on a wall the floor plan is a sliver — a
+   * hatched facade read 0.01 m² — so a wall is measured in its own plane.
+   */
   polygonArea(pts) {
     if (pts.length < 3) return 0;
-    let area = 0;
-    for (let i = 0; i < pts.length; i++) {
-      const a = pts[i];
-      const b = pts[(i + 1) % pts.length];
-      area += a.x * b.y - b.x * a.y;
-    }
-    return Math.abs(area) / 2;
+    const n = newellVector(pts);
+    const len = n.length();
+    if (len === 0) return 0;
+    return (Math.abs(n.z) / len > FLOOR_NZ ? Math.abs(n.z) : len) / 2;
   }
   convexVolume(pts) {
     const box = new THREE5.Box3();
@@ -1689,36 +1732,18 @@ var MeasurementManager = class {
       this.group.add(dot);
       objects.push(dot);
     });
-    if (pts.length >= 2) {
-      const lineType = m.type === "height" ? "vertical" : "direct";
-      if (lineType === "vertical" && m.type === "height") {
-        const corner = new THREE5.Vector3(pts[0].x, pts[0].y, pts[1].z);
-        for (const seg of [[pts[0], corner], [corner, pts[1]]]) {
-          const geo = new THREE5.BufferGeometry().setFromPoints([seg[0], seg[1]]);
-          const mat = new THREE5.LineBasicMaterial({ color, depthTest: false });
-          const line = new THREE5.Line(geo, mat);
-          line.renderOrder = 1;
-          this.group.add(line);
-          objects.push(line);
-        }
-      } else {
-        for (let i = 0; i < pts.length - 1; i++) {
-          const geo = new THREE5.BufferGeometry().setFromPoints([pts[i], pts[i + 1]]);
-          const mat = new THREE5.LineBasicMaterial({ color, depthTest: false });
-          const line = new THREE5.Line(geo, mat);
-          line.renderOrder = 1;
-          this.group.add(line);
-          objects.push(line);
-        }
-        if (m.type === "area" && pts.length >= 3) {
-          const geo = new THREE5.BufferGeometry().setFromPoints([pts[pts.length - 1], pts[0]]);
-          const mat = new THREE5.LineBasicMaterial({ color, depthTest: false });
-          const closingLine = new THREE5.Line(geo, mat);
-          closingLine.renderOrder = 1;
-          this.group.add(closingLine);
-          objects.push(closingLine);
-        }
+    if (m.type === "area") {
+      for (const o of this.makeHatch(pts, color)) {
+        this.group.add(o);
+        objects.push(o);
       }
+    }
+    if (pts.length >= 2) {
+      const path = m.type === "height" ? [pts[0], new THREE5.Vector3(pts[0].x, pts[0].y, pts[1].z), pts[1]] : m.type === "area" && pts.length >= 3 ? [...pts, pts[0]] : pts;
+      const line = this.makeLine(path, new THREE5.LineBasicMaterial({ color, depthTest: false, transparent: true }));
+      line.renderOrder = 1;
+      this.group.add(line);
+      objects.push(line);
     }
     if (m.value !== void 0) {
       let text = "";
@@ -1817,17 +1842,97 @@ var MeasurementManager = class {
   rebuildPreview() {
     this.clearPreview();
     if (!this.activeMeasurement || this.activeMeasurement.points.length < 1) return;
-    const pts = this.activeMeasurement.points;
-    const geo = new THREE5.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE5.LineBasicMaterial({
+    this.previewLine = this.makeLine(this.activeMeasurement.points, new THREE5.LineBasicMaterial({
       color: new THREE5.Color(this.activeMeasurement.color),
       depthTest: false,
       transparent: true,
       opacity: 0.7
-    });
-    this.previewLine = new THREE5.Line(geo, mat);
+    }));
     this.previewLine.renderOrder = 1;
     this.group.add(this.previewLine);
+  }
+  /**
+   * A line whose vertices are stored relative to its first point, which
+   * becomes the object's position. Scans sit at large world coordinates (the
+   * EPSG:4839 test scan at y ≈ −147 600 m), where float32 — the vertex buffer
+   * and the GPU's matrix maths — resolves about 1.5 cm: absolute vertices
+   * misplaced the line and made it jump by pixels as the camera moved, while
+   * the dots (object positions) stayed put. three composes the position into
+   * modelViewMatrix in float64, so the GPU only sees small numbers. Potree
+   * places its edges the same way (Measure.js update()).
+   */
+  makeLine(pts, material) {
+    const origin = pts[0];
+    const line = new THREE5.Line(new THREE5.BufferGeometry().setFromPoints(pts.map((p) => p.clone().sub(origin))), material);
+    line.position.copy(origin);
+    return line;
+  }
+  /**
+   * Area hatch: a light fill plus 45° lines in the measurement's colour. Laid
+   * out in the polygon's best-fit plane (Newell normal), so a wall reads like a
+   * floor: triangulated there, so non-convex outlines fill correctly, and
+   * hatched at 45° there. Drawn through the measured vertices rather than
+   * flattened onto the plane, so an outline that is not quite flat (a ledge, a
+   * plant) still meets its fill. World geometry, so it stays on the surface
+   * while orbiting; through the cloud like the outline, and under it. Spacing
+   * is about 1/20 of the polygon, rounded to a power of two and anchored at the
+   * first vertex, so the lines hold still while the next vertex follows the
+   * cursor. Relative to the first vertex, like makeLine.
+   */
+  makeHatch(pts, color) {
+    if (pts.length < 3) return [];
+    const origin = pts[0];
+    const rel = pts.map((p) => p.clone().sub(origin));
+    const n = newellVector(pts);
+    if (n.lengthSq() < 1e-12) return [];
+    n.normalize();
+    const floor = Math.abs(n.z) > FLOOR_NZ;
+    if (floor && n.z < 0) n.negate();
+    const u = (floor ? new THREE5.Vector3(1, 0, 0).addScaledVector(n, -n.x) : new THREE5.Vector3(0, 0, 1).cross(n)).normalize();
+    const v = n.clone().cross(u);
+    const flat = rel.map((p) => new THREE5.Vector2(p.dot(u), p.dot(v)));
+    const fillGeo = new THREE5.BufferGeometry().setFromPoints(rel);
+    fillGeo.setIndex(THREE5.ShapeUtils.triangulateShape(flat, []).flat());
+    const fill = new THREE5.Mesh(fillGeo, new THREE5.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.12,
+      side: THREE5.DoubleSide,
+      depthTest: false,
+      depthWrite: false
+    }));
+    fill.renderOrder = 0.5;
+    const st = flat.map((q) => [(q.x + q.y) * Math.SQRT1_2, (q.y - q.x) * Math.SQRT1_2]);
+    const box = new THREE5.Box2().setFromPoints(flat);
+    const step = 2 ** Math.round(Math.log2(box.min.distanceTo(box.max) / 20));
+    const ts = st.map((p) => p[1]);
+    const tMax = Math.max(...ts);
+    const seg = [];
+    for (let k = Math.ceil(Math.min(...ts) / step); k * step < tMax; k++) {
+      const t = k * step;
+      const hits = [];
+      st.forEach(([s0, t0], i) => {
+        const j = (i + 1) % st.length;
+        const [s1, t1] = st[j];
+        if (t0 <= t !== t1 <= t) {
+          const f = (t - t0) / (t1 - t0);
+          hits.push({ s: s0 + (s1 - s0) * f, p: rel[i].clone().lerp(rel[j], f) });
+        }
+      });
+      hits.sort((a, b) => a.s - b.s);
+      for (let i = 0; i + 1 < hits.length; i += 2) seg.push(hits[i].p, hits[i + 1].p);
+    }
+    const hatch = new THREE5.LineSegments(new THREE5.BufferGeometry().setFromPoints(seg), new THREE5.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.85,
+      depthTest: false,
+      depthWrite: false
+    }));
+    hatch.renderOrder = 0.75;
+    fill.position.copy(origin);
+    hatch.position.copy(origin);
+    return [fill, hatch];
   }
   clearPreview() {
     if (this.previewLine) {

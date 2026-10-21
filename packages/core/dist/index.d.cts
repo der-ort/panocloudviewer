@@ -609,6 +609,8 @@ declare class MeasurementManager {
     private previewLine;
     private _snapCross;
     private _snapLine;
+    /** Area being drawn: its hatch, with the cursor as the next vertex. */
+    private _snapHatch;
     private _crossTexture?;
     /** Reused Color for the per-frame snap update. */
     private _snapColor;
@@ -637,8 +639,9 @@ declare class MeasurementManager {
     /**
      * Show a snap preview at the given world position. Call this on every
      * mousemove while a measurement tool is active. Renders:
-     *  - A small sphere at the snap position (shows where the point will be placed)
+     *  - A crosshair at the snap position (shows where the point will be placed)
      *  - A rubber-band line from the last placed point to the snap position
+     *  - For an area, its hatch with the snap position as the next vertex
      */
     updateSnap(worldPos: THREE.Vector3, color?: string): void;
     /** Build (and cache) the stylized crosshair sprite texture. */
@@ -660,6 +663,13 @@ declare class MeasurementManager {
     private compute;
     /** Total 3D length along a polyline (sum of consecutive segment lengths). */
     private pathLength;
+    /**
+     * Newell's vector holds the outline's area twice over in each axis plane:
+     * |n| / 2 in the polygon's own (best-fit) plane, |n.z| / 2 on the floor plan.
+     * A floor or a slope up to ~45° (FLOOR_NZ, the hatch's rule) keeps the
+     * floor-plan area it always had; on a wall the floor plan is a sliver — a
+     * hatched facade read 0.01 m² — so a wall is measured in its own plane.
+     */
     private polygonArea;
     private convexVolume;
     /**
@@ -681,6 +691,30 @@ declare class MeasurementManager {
      */
     private makeTextSprite;
     private rebuildPreview;
+    /**
+     * A line whose vertices are stored relative to its first point, which
+     * becomes the object's position. Scans sit at large world coordinates (the
+     * EPSG:4839 test scan at y ≈ −147 600 m), where float32 — the vertex buffer
+     * and the GPU's matrix maths — resolves about 1.5 cm: absolute vertices
+     * misplaced the line and made it jump by pixels as the camera moved, while
+     * the dots (object positions) stayed put. three composes the position into
+     * modelViewMatrix in float64, so the GPU only sees small numbers. Potree
+     * places its edges the same way (Measure.js update()).
+     */
+    private makeLine;
+    /**
+     * Area hatch: a light fill plus 45° lines in the measurement's colour. Laid
+     * out in the polygon's best-fit plane (Newell normal), so a wall reads like a
+     * floor: triangulated there, so non-convex outlines fill correctly, and
+     * hatched at 45° there. Drawn through the measured vertices rather than
+     * flattened onto the plane, so an outline that is not quite flat (a ledge, a
+     * plant) still meets its fill. World geometry, so it stays on the surface
+     * while orbiting; through the cloud like the outline, and under it. Spacing
+     * is about 1/20 of the polygon, rounded to a power of two and anchored at the
+     * first vertex, so the lines hold still while the next vertex follows the
+     * cursor. Relative to the first vertex, like makeLine.
+     */
+    private makeHatch;
     private clearPreview;
     rename(id: string, name: string): void;
     remove(id: string): void;

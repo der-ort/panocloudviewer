@@ -511,16 +511,42 @@ export class SceneManager {
     const camera = this.getActiveCamera(); // ortho-aware — the GPU pick must match the displayed projection
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(normalizedX, normalizedY), camera);
+    // The cursor in the pick target's pixels (potree-core sizes the target
+    // like this). Left alone, potree-core projects camera.position +
+    // ray.direction instead — the screen centre for an orthographic camera,
+    // whose rays start on the near plane, so every ortho pick landed
+    // mid-screen. Potree passes the mouse position too.
+    const pr = this.renderer.getPixelRatio();
+    const w = Math.ceil(this.renderer.domElement.clientWidth * pr);
+    const h = Math.ceil(this.renderer.domElement.clientHeight * pr);
+    const x = ((normalizedX + 1) / 2) * w;
+    const y = ((normalizedY + 1) / 2) * h;
+    // Generous window so thin structures (edges, poles, railings) are easy to
+    // hit — the pick still returns the point closest to the cursor. 63 px
+    // gives a proper point-snap feel; below that, sparse clouds miss often and
+    // the preview falls back to the ground plane. Shrunk near the canvas edge
+    // to stay inside the target: potree-core only clamps the window's corner,
+    // moving it off the cursor (snaps 20+ px away at the left and bottom), and
+    // three reads nothing from a window that overhangs (no snap at all at the
+    // top and right). Odd size in target pixels; potree-core multiplies by pr.
+    const half = Math.max(0, Math.floor(Math.min(x, w - 1 - x, y, h - 1 - y, (63 * pr - 1) / 2)));
     for (const pc of this.pointClouds) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const octree = pc as any;
       if (typeof octree.pick !== "function") continue;
       const result = octree.pick(this.renderer, camera, raycaster.ray, {
-        // Generous window so thin structures (edges, poles, railings) are easy
-        // to hit — the pick still returns the point closest to the ray. 63 px
-        // gives a proper point-snap feel; below that, sparse clouds miss often
-        // and the preview falls back to the ground plane.
-        pickWindowSize: 63,
+        pickWindowSize: (2 * half + 1.5) / pr,
+        pixelPosition: new THREE.Vector3(x, y, 0),
+        // The pick pass drew points as small as they are shown (2 px), so the
+        // cursor pixel often fell between a wall's points onto whatever lay
+        // behind it: half the picks on a facade landed 0.1–14 m inside the
+        // house. A 6 px minimum closes the front surface, and paraboloid depth
+        // lets the point whose centre is nearest the cursor win among its
+        // neighbours (Potree picks with paraboloids too).
+        onBeforePickRender: (material: { minSize: number; shape: number }) => {
+          material.minSize = 6 * pr;
+          material.shape = 2; // PARABOLOID
+        },
       });
       if (result?.position) {
         return result.position.clone();

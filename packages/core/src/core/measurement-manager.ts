@@ -16,6 +16,28 @@ const COLORS: Record<MeasurementType, string> = {
   profile:  "#22D3EE",
 };
 
+/** An outline whose normal is this close to vertical (|n.z|) is a floor, not a wall. */
+const FLOOR_NZ = 0.7;
+
+/**
+ * Newell's vector of a closed outline, computed relative to its first point
+ * (scans sit at large coordinates): normal to the best-fit plane, twice the
+ * polygon's area long.
+ */
+function newellVector(pts: THREE.Vector3[]): THREE.Vector3 {
+  const o = pts[0];
+  const n = new THREE.Vector3();
+  pts.forEach((p, i) => {
+    const q = pts[(i + 1) % pts.length];
+    const ay = p.y - o.y, az = p.z - o.z, ax = p.x - o.x;
+    const by = q.y - o.y, bz = q.z - o.z, bx = q.x - o.x;
+    n.x += (ay - by) * (az + bz);
+    n.y += (az - bz) * (ax + bx);
+    n.z += (ax - bx) * (ay + by);
+  });
+  return n;
+}
+
 /** Manages 3D measurement visualizations in the scene */
 export class MeasurementManager {
   private scene: THREE.Scene;
@@ -33,6 +55,8 @@ export class MeasurementManager {
   // on-screen crosshair sprite (not a ball) for precise targeting.
   private _snapCross: THREE.Sprite | null = null;
   private _snapLine: THREE.Line | null = null;
+  /** Area being drawn: its hatch, with the cursor as the next vertex. */
+  private _snapHatch: THREE.Object3D[] = [];
   private _crossTexture?: THREE.CanvasTexture;
   /** Reused Color for the per-frame snap update. */
   private _snapColor = new THREE.Color("#DCD546");
@@ -156,8 +180,9 @@ export class MeasurementManager {
   /**
    * Show a snap preview at the given world position. Call this on every
    * mousemove while a measurement tool is active. Renders:
-   *  - A small sphere at the snap position (shows where the point will be placed)
+   *  - A crosshair at the snap position (shows where the point will be placed)
    *  - A rubber-band line from the last placed point to the snap position
+   *  - For an area, its hatch with the snap position as the next vertex
    */
   updateSnap(worldPos: THREE.Vector3, color?: string): void {
     // Reused Color — updateSnap runs ~once/frame while measuring.
@@ -185,28 +210,36 @@ export class MeasurementManager {
     const lastPt = this.activeMeasurement?.points[this.activeMeasurement.points.length - 1];
     if (lastPt) {
       if (this._snapLine) {
-        // Update existing line geometry in-place
-        const positions = (this._snapLine.geometry as THREE.BufferGeometry).attributes.position;
-        positions.setXYZ(0, lastPt.x, lastPt.y, lastPt.z);
-        positions.setXYZ(1, worldPos.x, worldPos.y, worldPos.z);
+        // Update existing line geometry in-place (relative to its start, see makeLine)
+        this._snapLine.position.copy(lastPt);
+        const positions = this._snapLine.geometry.attributes.position;
+        positions.setXYZ(0, 0, 0, 0);
+        positions.setXYZ(1, worldPos.x - lastPt.x, worldPos.y - lastPt.y, worldPos.z - lastPt.z);
         positions.needsUpdate = true;
+        // Stale bounds culled the line, stale distances stretched the dashes.
+        this._snapLine.geometry.computeBoundingSphere();
+        this._snapLine.computeLineDistances();
       } else {
-        const geo = new THREE.BufferGeometry().setFromPoints([lastPt, worldPos]);
-        const mat = new THREE.LineDashedMaterial({
+        this._snapLine = this.makeLine([lastPt, worldPos], new THREE.LineDashedMaterial({
           color: c,
           depthTest: false,
           transparent: true,
           opacity: 0.5,
           dashSize: 0.3,
           gapSize: 0.15,
-        });
-        this._snapLine = new THREE.Line(geo, mat);
+        }));
         this._snapLine.computeLineDistances();
         this._snapLine.renderOrder = 3;
         this.group.add(this._snapLine);
       }
-    } else if (!this.activeMeasurement && !lastPt) {
-      // No measurement started yet — just show the sphere (first click indicator)
+    }
+
+    // ── Area: the hatch follows the cursor as the next vertex ──
+    const m = this.activeMeasurement;
+    if (m?.type === "area" && m.points.length >= 2) {
+      this._disposeObjects(this._snapHatch);
+      this._snapHatch = this.makeHatch([...m.points, worldPos], new THREE.Color(m.color));
+      for (const o of this._snapHatch) this.group.add(o);
     }
   }
 
@@ -258,6 +291,8 @@ export class MeasurementManager {
       this.group.remove(this._snapLine);
       this._snapLine = null;
     }
+    this._disposeObjects(this._snapHatch);
+    this._snapHatch = [];
   }
 
   // ─── Volume measurement (drag-to-create) ─────────────────────────────────
@@ -426,15 +461,19 @@ export class MeasurementManager {
     return total;
   }
 
+  /**
+   * Newell's vector holds the outline's area twice over in each axis plane:
+   * |n| / 2 in the polygon's own (best-fit) plane, |n.z| / 2 on the floor plan.
+   * A floor or a slope up to ~45° (FLOOR_NZ, the hatch's rule) keeps the
+   * floor-plan area it always had; on a wall the floor plan is a sliver — a
+   * hatched facade read 0.01 m² — so a wall is measured in its own plane.
+   */
   private polygonArea(pts: THREE.Vector3[]): number {
     if (pts.length < 3) return 0;
-    let area = 0;
-    for (let i = 0; i < pts.length; i++) {
-      const a = pts[i];
-      const b = pts[(i + 1) % pts.length];
-      area += a.x * b.y - b.x * a.y;
-    }
-    return Math.abs(area) / 2;
+    const n = newellVector(pts);
+    const len = n.length();
+    if (len === 0) return 0;
+    return (Math.abs(n.z) / len > FLOOR_NZ ? Math.abs(n.z) : len) / 2;
   }
 
   private convexVolume(pts: THREE.Vector3[]): number {
@@ -498,41 +537,27 @@ export class MeasurementManager {
       objects.push(dot);
     });
 
-    // Lines between points
+    // Area hatch, under the outline.
+    if (m.type === "area") {
+      for (const o of this.makeHatch(pts, color)) {
+        this.group.add(o);
+        objects.push(o);
+      }
+    }
+
+    // Lines between points — one line per measurement.
     if (pts.length >= 2) {
-      const lineType = m.type === "height" ? "vertical" : "direct";
-      if (lineType === "vertical" && m.type === "height") {
+      const path = m.type === "height"
         // Vertical drop from pt0 up/down to the endpoint's height, then a
         // horizontal connector across to the actual endpoint so it's clear
         // which point the height refers to (an "L" from pt0 to pt1).
-        const corner = new THREE.Vector3(pts[0].x, pts[0].y, pts[1].z);
-        for (const seg of [[pts[0], corner], [corner, pts[1]]] as const) {
-          const geo = new THREE.BufferGeometry().setFromPoints([seg[0], seg[1]]);
-          const mat = new THREE.LineBasicMaterial({ color, depthTest: false });
-          const line = new THREE.Line(geo, mat);
-          line.renderOrder = 1;
-          this.group.add(line);
-          objects.push(line);
-        }
-      } else {
-        for (let i = 0; i < pts.length - 1; i++) {
-          const geo = new THREE.BufferGeometry().setFromPoints([pts[i], pts[i+1]]);
-          const mat = new THREE.LineBasicMaterial({ color, depthTest: false });
-          const line = new THREE.Line(geo, mat);
-          line.renderOrder = 1;
-          this.group.add(line);
-          objects.push(line);
-        }
-        // Close polygon for area — track it in `objects` so it's disposed with the rest.
-        if (m.type === "area" && pts.length >= 3) {
-          const geo = new THREE.BufferGeometry().setFromPoints([pts[pts.length - 1], pts[0]]);
-          const mat = new THREE.LineBasicMaterial({ color, depthTest: false });
-          const closingLine = new THREE.Line(geo, mat);
-          closingLine.renderOrder = 1;
-          this.group.add(closingLine);
-          objects.push(closingLine);
-        }
-      }
+        ? [pts[0], new THREE.Vector3(pts[0].x, pts[0].y, pts[1].z), pts[1]]
+        : m.type === "area" && pts.length >= 3 ? [...pts, pts[0]] : pts; // area closes the polygon
+      // Transparent only to be drawn in the same pass as the hatch, after it.
+      const line = this.makeLine(path, new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true }));
+      line.renderOrder = 1;
+      this.group.add(line);
+      objects.push(line);
     }
 
     // Label — anchored ON the measured geometry (segment midpoint), not floated
@@ -637,17 +662,96 @@ export class MeasurementManager {
   private rebuildPreview() {
     this.clearPreview();
     if (!this.activeMeasurement || this.activeMeasurement.points.length < 1) return;
-    const pts = this.activeMeasurement.points;
-    const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE.LineBasicMaterial({
+    this.previewLine = this.makeLine(this.activeMeasurement.points, new THREE.LineBasicMaterial({
       color: new THREE.Color(this.activeMeasurement.color),
       depthTest: false,
       transparent: true,
       opacity: 0.7,
-    });
-    this.previewLine = new THREE.Line(geo, mat);
+    }));
     this.previewLine.renderOrder = 1;
     this.group.add(this.previewLine);
+  }
+
+  /**
+   * A line whose vertices are stored relative to its first point, which
+   * becomes the object's position. Scans sit at large world coordinates (the
+   * EPSG:4839 test scan at y ≈ −147 600 m), where float32 — the vertex buffer
+   * and the GPU's matrix maths — resolves about 1.5 cm: absolute vertices
+   * misplaced the line and made it jump by pixels as the camera moved, while
+   * the dots (object positions) stayed put. three composes the position into
+   * modelViewMatrix in float64, so the GPU only sees small numbers. Potree
+   * places its edges the same way (Measure.js update()).
+   */
+  private makeLine(pts: THREE.Vector3[], material: THREE.LineBasicMaterial): THREE.Line {
+    const origin = pts[0];
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.map(p => p.clone().sub(origin))), material);
+    line.position.copy(origin);
+    return line;
+  }
+
+  /**
+   * Area hatch: a light fill plus 45° lines in the measurement's colour. Laid
+   * out in the polygon's best-fit plane (Newell normal), so a wall reads like a
+   * floor: triangulated there, so non-convex outlines fill correctly, and
+   * hatched at 45° there. Drawn through the measured vertices rather than
+   * flattened onto the plane, so an outline that is not quite flat (a ledge, a
+   * plant) still meets its fill. World geometry, so it stays on the surface
+   * while orbiting; through the cloud like the outline, and under it. Spacing
+   * is about 1/20 of the polygon, rounded to a power of two and anchored at the
+   * first vertex, so the lines hold still while the next vertex follows the
+   * cursor. Relative to the first vertex, like makeLine.
+   */
+  private makeHatch(pts: THREE.Vector3[], color: THREE.Color): THREE.Object3D[] {
+    if (pts.length < 3) return [];
+    const origin = pts[0];
+    const rel = pts.map(p => p.clone().sub(origin));
+    const n = newellVector(pts);
+    if (n.lengthSq() < 1e-12) return []; // collinear: no plane, nothing to fill
+    n.normalize();
+    // In-plane axes: world X/Y on a floor, horizontal and up on a wall.
+    const floor = Math.abs(n.z) > FLOOR_NZ;
+    if (floor && n.z < 0) n.negate(); // the same hatch whichever way the outline was drawn
+    const u = (floor ? new THREE.Vector3(1, 0, 0).addScaledVector(n, -n.x) : new THREE.Vector3(0, 0, 1).cross(n)).normalize();
+    const v = n.clone().cross(u);
+    const flat = rel.map(p => new THREE.Vector2(p.dot(u), p.dot(v)));
+
+    const fillGeo = new THREE.BufferGeometry().setFromPoints(rel);
+    fillGeo.setIndex(THREE.ShapeUtils.triangulateShape(flat, []).flat());
+    const fill = new THREE.Mesh(fillGeo, new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthTest: false, depthWrite: false,
+    }));
+    fill.renderOrder = 0.5; // fill → hatch → outline (1)
+
+    // Lines t = const in plane coordinates rotated 45°; the outline crossings,
+    // paired in order along the line (even-odd), are the segments inside.
+    const st = flat.map(q => [(q.x + q.y) * Math.SQRT1_2, (q.y - q.x) * Math.SQRT1_2]);
+    const box = new THREE.Box2().setFromPoints(flat);
+    const step = 2 ** Math.round(Math.log2(box.min.distanceTo(box.max) / 20));
+    const ts = st.map(p => p[1]);
+    const tMax = Math.max(...ts);
+    const seg: THREE.Vector3[] = [];
+    for (let k = Math.ceil(Math.min(...ts) / step); k * step < tMax; k++) {
+      const t = k * step;
+      const hits: { s: number; p: THREE.Vector3 }[] = [];
+      st.forEach(([s0, t0], i) => {
+        const j = (i + 1) % st.length;
+        const [s1, t1] = st[j];
+        if ((t0 <= t) !== (t1 <= t)) {
+          const f = (t - t0) / (t1 - t0);
+          hits.push({ s: s0 + (s1 - s0) * f, p: rel[i].clone().lerp(rel[j], f) });
+        }
+      });
+      hits.sort((a, b) => a.s - b.s);
+      for (let i = 0; i + 1 < hits.length; i += 2) seg.push(hits[i].p, hits[i + 1].p);
+    }
+    const hatch = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(seg), new THREE.LineBasicMaterial({
+      color, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false,
+    }));
+    hatch.renderOrder = 0.75;
+
+    fill.position.copy(origin);
+    hatch.position.copy(origin);
+    return [fill, hatch];
   }
 
   private clearPreview() {

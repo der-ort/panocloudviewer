@@ -23,6 +23,8 @@ interface ViewportProps {
   className?: string;
 }
 
+/** px — a press that travels further is an orbit drag, not a click. */
+const DRAG_THRESHOLD = 5;
 
 export function Viewport({ className }: ViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -70,6 +72,8 @@ export function Viewport({ className }: ViewportProps) {
   // (used to distinguish a placement click from an orbit drag).
   const clipDraftRef = useRef<THREE.Box3 | null>(null);
   const clipDownRef = useRef<{ x: number; y: number } | null>(null);
+  // Where the last press started, for measuring clicks.
+  const measureDownRef = useRef<{ x: number; y: number } | null>(null);
 
   // Volume measurement drag state (two-phase: footprint → height). The
   // footprint plane sits at the Z of the CLOUD POINT picked at drag start (so
@@ -386,7 +390,8 @@ export function Viewport({ className }: ViewportProps) {
     const sm = smRef.current;
     if (!sm) return null;
     const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(new THREE.Vector2(nx, ny), sm.camera);
+    // The displayed projection: the perspective ray put the ortho fallback point 100+ px off the cursor.
+    raycaster.setFromCamera(new THREE.Vector2(nx, ny), sm.getActiveCamera());
     const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -planeZ);
     const hit = new THREE.Vector3();
     return raycaster.ray.intersectPlane(plane, hit) ? hit : null;
@@ -410,11 +415,24 @@ export function Viewport({ className }: ViewportProps) {
   // previewed point is kept so a click commits EXACTLY what the crosshair shows
   // (WYSIWYG) instead of re-picking — re-picking could land on a different point.
   const lastSnapRef = useRef<THREE.Vector3 | null>(null);
-  const { scheduleSnap, cancelSnap } = useSnapThrottle((nx, ny) => {
+  const { scheduleSnap, cancelSnap, resnap } = useSnapThrottle((nx, ny) => {
     const hit = pickVisiblePoint(nx, ny);
     lastSnapRef.current = hit;
+    // No hit: no crosshair either — a stale one showed a point a click would not place.
     if (hit) measureRef.current?.updateSnap(hit);
+    else measureRef.current?.clearSnap();
   });
+
+  // The camera moved under a still cursor (wheel zoom, damping, WASD, a
+  // fly-to): pick again. The crosshair, and the click that commits it, kept
+  // the point that used to be under the cursor — 170 px off after one wheel
+  // zoom.
+  useEffect(() => {
+    const controls = smRef.current?.controls;
+    if (!controls || !activeTool.startsWith("measure-")) return;
+    controls.addEventListener("change", resnap);
+    return () => controls.removeEventListener("change", resnap);
+  }, [activeTool, resnap]);
 
   // Build a section-box draft centered at the cursor's ground point. The box is
   // kept compact (flat in Z) so all six face handles stay on screen.
@@ -469,6 +487,7 @@ export function Viewport({ className }: ViewportProps) {
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const sm = smRef.current;
     if (!sm) return;
+    measureDownRef.current = { x: e.clientX, y: e.clientY }; // see handleClick
 
     // Face-resize arrows — checked before other interactions
     const fh = clipRef.current?.faceHandles;
@@ -653,7 +672,6 @@ export function Viewport({ className }: ViewportProps) {
     if (activeTool === "section-box" && e.button === 0) {
       const down = clipDownRef.current;
       clipDownRef.current = null;
-      const DRAG_THRESHOLD = 5; // px — beyond this we treat it as an orbit drag, not a drop
       const moved = down
         ? Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_THRESHOLD
         : true;
@@ -696,6 +714,9 @@ export function Viewport({ className }: ViewportProps) {
     // fall back to a fresh pick when there is no preview (e.g. touch, no mousemove).
     // Volume uses drag, not clicks.
     if (activeTool.startsWith("measure-") && activeTool !== "measure-volume" && measureRef.current) {
+      // The click that ends an orbit drag is not a measuring click; it placed a point.
+      const down = measureDownRef.current;
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_THRESHOLD) return;
       const type = activeTool.replace("measure-", "") as import("@der-ort/pano-cloud-viewer-core").MeasurementType;
       const hit = lastSnapRef.current ?? pickVisiblePoint(nx, ny);
       if (hit) {
