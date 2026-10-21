@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import type { SceneManager } from "./scene-manager";
 
+/** The size uniforms of a potree-core point material, in pixels. */
+interface PointSizes { size: number; minSize: number; maxSize: number }
+
 /**
  * NavVis-style picking magnifier: while a measurement tool is active, a small
  * zoomed inset follows the cursor so the user can see exactly which detail
@@ -154,11 +157,22 @@ export class MagnifierRenderer {
       if (obj && obj.visible) { obj.visible = false; restore.push(obj); }
     }
 
+    // Potree sizes points in pixels for the main camera, so the crop showed the
+    // same 2 px points ZOOM times further apart — sparse specks. Scale them by
+    // ZOOM for this pass only (plain uniforms, no shader rebuild).
+    const zoom = MagnifierRenderer.ZOOM;
+    const mats = (this.sm.pointClouds as { material?: PointSizes }[])
+      .map(pc => pc.material)
+      .filter((m): m is PointSizes => m !== undefined);
+    const sizes = mats.map(m => [m.size, m.minSize, m.maxSize]);
+    for (const m of mats) { m.size *= zoom; m.minSize *= zoom; m.maxSize *= zoom; }
+
     // The scene's own background fills the square (clearDepth keeps the main
     // image outside the scissor untouched).
     renderer.clearDepth();
     renderer.render(this.sm.scene, zoomCamera);
 
+    mats.forEach((m, i) => { [m.size, m.minSize, m.maxSize] = sizes[i]; });
     for (const obj of restore) obj.visible = true;
 
     // Frame + crisp vector crosshair on top

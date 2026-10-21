@@ -739,6 +739,7 @@ Interactive 3D measurement tool.
 | `start` | `(type: MeasurementType) => Measurement` | Begin a new measurement |
 | `addPoint` | `(point: THREE.Vector3) => Measurement \| null` | Add a 3D point; auto-finishes when enough points collected |
 | `finish` | `() => Measurement \| null` | Finalize active measurement; computes value; builds scene objects |
+| `cancel` | `() => void` | Drop the measurement being drawn without keeping it |
 | `remove` | `(id: string) => void` | Remove a measurement and dispose its geometry |
 | `rename` | `(id: string, name: string) => void` | Rename a measurement label |
 | `clearAll` | `() => void` | Remove all measurements |

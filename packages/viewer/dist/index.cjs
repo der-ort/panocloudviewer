@@ -1489,6 +1489,12 @@ var init_dist = __esm({
         this.rebuildPreview();
         return null;
       }
+      /** Drop the measurement being drawn without keeping it. */
+      cancel() {
+        this.activeMeasurement = null;
+        this.clearPreview();
+        this.clearSnap();
+      }
       /** Finalize the active measurement */
       finish() {
         if (!this.activeMeasurement || this.activeMeasurement.points.length === 0) return null;
@@ -3548,8 +3554,19 @@ var init_dist = __esm({
             restore.push(obj);
           }
         }
+        const zoom = _MagnifierRenderer.ZOOM;
+        const mats = this.sm.pointClouds.map((pc) => pc.material).filter((m) => m !== void 0);
+        const sizes = mats.map((m) => [m.size, m.minSize, m.maxSize]);
+        for (const m of mats) {
+          m.size *= zoom;
+          m.minSize *= zoom;
+          m.maxSize *= zoom;
+        }
         renderer.clearDepth();
         renderer.render(this.sm.scene, zoomCamera);
+        mats.forEach((m, i) => {
+          [m.size, m.minSize, m.maxSize] = sizes[i];
+        });
         for (const obj of restore) obj.visible = true;
         renderer.clearDepth();
         renderer.render(this.frameScene, this.frameCamera);
@@ -3740,7 +3757,7 @@ function ViewerProvider({ config, children }) {
   const [measurementList, setMeasurementList] = React26.useState([]);
   const [showMarkers, setShowMarkers] = React26.useState(true);
   const [showMeasurements, setShowMeasurements] = React26.useState(true);
-  const [showMagnifier, setShowMagnifier] = React26.useState(true);
+  const [showMagnifier, setShowMagnifier] = React26.useState(false);
   const [selectedCamera, setSelectedCamera] = React26.useState(null);
   const [clipBoxEntries, setClipBoxEntries] = React26.useState([]);
   const [selectedClipBoxId, setSelectedClipBoxId] = React26.useState(null);
@@ -4490,6 +4507,13 @@ function Viewport({ className }) {
   }, [clipBoxEntries]);
   React26.useEffect(() => {
     lastSnapRef.current = null;
+    const mm = measureRef.current;
+    const m = mm?.activeMeasurement;
+    if (mm && m && activeTool !== `measure-${m.type}`) {
+      const whole = m.type === "area" && m.points.length >= 3 || m.type === "profile" && m.points.length >= 2;
+      if (whole) mm.finish();
+      else mm.cancel();
+    }
     if (!activeTool.startsWith("measure-")) {
       measureRef.current?.clearSnap();
     }
@@ -8158,7 +8182,7 @@ function PanoCloudViewer({ source, theme = "dark", className, locale, uiMode, pa
 
 // src/version.ts
 var PCV_VERSION = "0.2.0" ;
-var PCV_BUILD = "53bd9c1 \xB7 2026-10-21 09:33Z" ;
+var PCV_BUILD = "3283349 \xB7 2026-10-21 10:18Z" ;
 var PCV_VERSION_STRING = `v${PCV_VERSION} \xB7 ${PCV_BUILD}`;
 
 // src/index.ts

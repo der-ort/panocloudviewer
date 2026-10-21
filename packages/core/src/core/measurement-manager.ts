@@ -157,6 +157,13 @@ export class MeasurementManager {
     return null;
   }
 
+  /** Drop the measurement being drawn without keeping it. */
+  cancel(): void {
+    this.activeMeasurement = null;
+    this.clearPreview();
+    this.clearSnap();
+  }
+
   /** Finalize the active measurement */
   finish(): Measurement | null {
     if (!this.activeMeasurement || this.activeMeasurement.points.length === 0) return null;

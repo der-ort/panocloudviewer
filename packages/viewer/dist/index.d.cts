@@ -646,6 +646,8 @@ declare class MeasurementManager {
     start(type: MeasurementType): Measurement;
     /** Add a 3D point to the active measurement */
     addPoint(point: THREE.Vector3): Measurement | null;
+    /** Drop the measurement being drawn without keeping it. */
+    cancel(): void;
     /** Finalize the active measurement */
     finish(): Measurement | null;
     /**

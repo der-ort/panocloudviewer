@@ -1402,6 +1402,12 @@ var MeasurementManager = class {
     this.rebuildPreview();
     return null;
   }
+  /** Drop the measurement being drawn without keeping it. */
+  cancel() {
+    this.activeMeasurement = null;
+    this.clearPreview();
+    this.clearSnap();
+  }
   /** Finalize the active measurement */
   finish() {
     if (!this.activeMeasurement || this.activeMeasurement.points.length === 0) return null;
@@ -3492,8 +3498,19 @@ var MagnifierRenderer = class _MagnifierRenderer {
         restore.push(obj);
       }
     }
+    const zoom = _MagnifierRenderer.ZOOM;
+    const mats = this.sm.pointClouds.map((pc) => pc.material).filter((m) => m !== void 0);
+    const sizes = mats.map((m) => [m.size, m.minSize, m.maxSize]);
+    for (const m of mats) {
+      m.size *= zoom;
+      m.minSize *= zoom;
+      m.maxSize *= zoom;
+    }
     renderer.clearDepth();
     renderer.render(this.sm.scene, zoomCamera);
+    mats.forEach((m, i) => {
+      [m.size, m.minSize, m.maxSize] = sizes[i];
+    });
     for (const obj of restore) obj.visible = true;
     renderer.clearDepth();
     renderer.render(this.frameScene, this.frameCamera);

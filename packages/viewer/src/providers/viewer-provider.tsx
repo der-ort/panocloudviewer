@@ -147,9 +147,10 @@ export function ViewerProvider({ config, children }: ViewerProviderProps) {
   const [measurementList, setMeasurementList] = useState<Measurement[]>([]);
   const [showMarkers, setShowMarkers] = useState(true);
   const [showMeasurements, setShowMeasurements] = useState(true);
-  // On by default — the crosshair inset is the precision aid while measuring
-  // (it only renders while a measurement tool is active).
-  const [showMagnifier, setShowMagnifier] = useState(true);
+  // Off by default (product owner, 2026-10-21): the inset covers part of the
+  // view in every measuring session; it is a precision aid to switch on in the
+  // tool rail, not chrome everyone gets. It renders only while measuring.
+  const [showMagnifier, setShowMagnifier] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState<import("@der-ort/pano-cloud-viewer-core").CameraData | null>(null);
   const [clipBoxEntries, setClipBoxEntries] = useState<ClipBoxEntry[]>([]);
   const [selectedClipBoxId, setSelectedClipBoxId] = useState<string | null>(null);

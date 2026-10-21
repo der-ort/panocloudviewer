@@ -350,6 +350,18 @@ export function Viewport({ className }: ViewportProps) {
   // Clear snap/draft preview when switching away from a measurement tool
   useEffect(() => {
     lastSnapRef.current = null;
+    // A half-drawn measurement belongs to the tool that started it: the next
+    // tool's clicks went on adding points to it (a distance click became an
+    // area's next corner). Switching keeps it when it is already a whole
+    // measurement — an area with 3 corners, a profile with 2 points, as a
+    // right-click would — and drops it otherwise.
+    const mm = measureRef.current;
+    const m = mm?.activeMeasurement;
+    if (mm && m && activeTool !== `measure-${m.type}`) {
+      const whole = (m.type === "area" && m.points.length >= 3) || (m.type === "profile" && m.points.length >= 2);
+      if (whole) mm.finish();
+      else mm.cancel();
+    }
     if (!activeTool.startsWith("measure-")) {
       measureRef.current?.clearSnap();
     }
